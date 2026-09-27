@@ -109,6 +109,15 @@ namespace OpenKingdomsUnity.Game.World
             world.Entities.Ghost = null;
         }
 
+        // Escape and the original's right click: let go of an armed command,
+        // or else deselect.
+        public void Cancel()
+        {
+            if (ArmedAction != null || Armed != null) { Disarm(); return; }
+            if (Classic) { backend.Cancel(); PullSelection(); }
+            else { Selected.Clear(); PushSelection(); }
+        }
+
         public void Stop()
         {
             if (Classic) backend.OrderSelection(CommandKind.Stop);
@@ -171,7 +180,6 @@ namespace OpenKingdomsUnity.Game.World
                     else if (onGround) MoveBlock(CommandKind.Move, at);
                 }
             }
-            if (Input.GetKeyDown(KeyCode.Escape) && Armed != null) { Disarm(); }
 
             if (Input.GetMouseButtonDown(0) && !overUi) { dragFrom = m; dragging = true; }
             if (!Input.GetMouseButtonUp(0) || !dragging) return;
@@ -184,6 +192,7 @@ namespace OpenKingdomsUnity.Game.World
                 for (int i = 0; i < count; i++)
                 {
                     if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Dying) != 0) continue;
+                    if (!world.Entities.IsDrawn(units[i].Handle)) continue;
                     var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
                     if (s.z > 0 && box.Contains(s)) inBox.Add(units[i].Handle);
                 }
@@ -373,21 +382,63 @@ namespace OpenKingdomsUnity.Game.World
 
         // The unit nearest the pointer: the player's own, anyone else's, or
         // either when own is null.
+        // The unit under the pointer: the player's own, anyone else's, or
+        // either when own is null. A unit is hit anywhere in its drawn
+        // bounds on screen (at least a small ring round its feet), the
+        // nearest to the camera first. Units not drawn, such as enemies in
+        // the fog, cannot be picked.
+        // The unit under a screen point, of any owner, as a click would pick it.
+        public int UnitAt(Vector2 screen)
+        {
+            var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
+            return cam == null ? -1 : Pick(cam, screen, world.Entities.Units, world.Entities.UnitCount, null);
+        }
+
         int Pick(Camera cam, Vector3 m, UnitState[] units, int count, bool? own)
         {
             int best = -1;
-            float bestD = PickPixels;
+            float bestDepth = float.MaxValue;
             int me = backend.LocalPlayer;
+            var drawn = world.Entities.DrawnSize;
             for (int i = 0; i < count; i++)
             {
                 if ((units[i].Flags & UnitFlags.Dying) != 0) continue;
                 if (own != null && (units[i].Player == me) != own.Value) continue;
-                var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
-                if (s.z <= 0) continue;
-                float d = Vector2.Distance(s, m);
-                if (d < bestD) { bestD = d; best = units[i].Handle; }
+                if (!drawn.TryGetValue(units[i].Handle, out var size)) continue;
+                if (!OnScreen(cam, units[i].Position, size.x, size.y, out var box, out float depth)) continue;
+                if (!box.Contains(m) || depth >= bestDepth) continue;
+                bestDepth = depth;
+                best = units[i].Handle;
             }
             return best;
+        }
+
+        // A unit's bounds on screen, from its feet to its height and out to
+        // its radius, never smaller than a ring of MinPickPixels.
+        const float MinPickPixels = 14f;
+
+        public static bool OnScreen(Camera cam, Vector3 feet, float height, float radius, out Rect box, out float depth)
+        {
+            box = default;
+            depth = 0;
+            float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+            bool any = false;
+            var right = cam.transform.right * radius;
+            foreach (var p in new[] { feet - right, feet + right, feet + Vector3.up * height - right, feet + Vector3.up * height + right })
+            {
+                var s = cam.WorldToScreenPoint(p);
+                if (s.z <= 0) continue;
+                any = true;
+                x0 = Mathf.Min(x0, s.x); x1 = Mathf.Max(x1, s.x);
+                y0 = Mathf.Min(y0, s.y); y1 = Mathf.Max(y1, s.y);
+            }
+            if (!any) return false;
+            var c = cam.WorldToScreenPoint(feet + Vector3.up * height * 0.5f);
+            depth = c.z;
+            if (x1 - x0 < 2 * MinPickPixels) { float cx = (x0 + x1) / 2; x0 = cx - MinPickPixels; x1 = cx + MinPickPixels; }
+            if (y1 - y0 < 2 * MinPickPixels) { float cy = (y0 + y1) / 2; y0 = cy - MinPickPixels; y1 = cy + MinPickPixels; }
+            box = Rect.MinMaxRect(x0, y0, x1, y1);
+            return true;
         }
 
         // Where a ray meets the ground: march, then halve the last step.

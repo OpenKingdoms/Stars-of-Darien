@@ -283,6 +283,7 @@ namespace OpenKingdomsUnity.Game.World
             billboards.Clear();
 
             UnitCount = backend.ReadUnits(Units);
+            DrawnSize.Clear();
             for (int i = 0; i < UnitCount; i++) AddUnit(ref Units[i], cam);
 
             AddFeatures(cam);
@@ -304,6 +305,12 @@ namespace OpenKingdomsUnity.Game.World
             billboards.Draw();
             overlay.Draw();
         }
+
+        // Each unit drawn this frame and how big it is: height and radius in
+        // world units. Picking uses it, so a unit is picked where it shows.
+        public readonly Dictionary<int, Vector2> DrawnSize = new Dictionary<int, Vector2>();
+
+        public bool IsDrawn(int handle) => DrawnSize.ContainsKey(handle);
 
         void AddUnit(ref UnitState u, Camera cam)
         {
@@ -350,6 +357,7 @@ namespace OpenKingdomsUnity.Game.World
                 height = Mathf.Max(Mathf.Abs(b.max.y), Mathf.Abs(b.min.y)) + 0.4f;
                 radius = Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.z) * 0.9f, 0.4f, 6f);
             }
+            DrawnSize[u.Handle] = new Vector2(height, radius);
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;
             bool selected = Selected.Contains(u.Handle);

@@ -303,7 +303,7 @@ namespace OpenKingdomsUnity.Game.UI
             actions = mine ? b.SelectionActions() : System.Array.Empty<UnitAction>();
             if (root.Orders != null) root.Orders.Actions = actions;
             string armedId = root.Orders?.ArmedAction?.Id ?? "";
-            string key = mine ? string.Join(",", defs) + "|" + string.Join(",", actions.Select(a => a.Id + (a.Enabled ? "1" : "0") + (a.Toggled ? "1" : "0"))) + "|" + buildPage + "|" + armedId : "";
+            string key = mine ? string.Join(",", chosen.Select(u => u.Handle)) + "|" + string.Join(",", defs) + "|" + string.Join(",", actions.Select(a => a.Id + (a.Enabled ? "1" : "0") + (a.Toggled ? "1" : "0"))) + "|" + buildPage + "|" + armedId : "";
             if (key != gridKey)
             {
                 gridKey = key;

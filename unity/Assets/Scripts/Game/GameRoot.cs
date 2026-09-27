@@ -254,7 +254,9 @@ namespace OpenKingdomsUnity.Game
                     }
                     break;
                 case FlowState.Playing:
-                    if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Pause)) { Flow.Fire(FlowEvent.Pause); break; }
+                    foreach (var k in BattleKeys)
+                        if (Input.GetKeyDown(k)) BattleKey(k);
+                    if (Flow.State != FlowState.Playing) break;
                     using (SimMarker.Auto()) RunSim(Time.deltaTime);
                     using (InputMarker.Auto()) input?.Update();
                     FramesPlayed++;
@@ -354,6 +356,23 @@ namespace OpenKingdomsUnity.Game
             if (c == null) return;
             float wide = 2f * cam.distance * Mathf.Tan(c.fieldOfView * 0.5f * Mathf.Deg2Rad);
             Backend.SetView(cam.focus, wide * c.aspect, wide / Mathf.Max(0.2f, Mathf.Sin(cam.pitch * Mathf.Deg2Rad)));
+        }
+
+        static readonly KeyCode[] BattleKeys = { KeyCode.Escape, KeyCode.Pause, KeyCode.F1, KeyCode.F2 };
+
+        // As in the original: Escape only cancels an armed command or the
+        // selection, F1 is the game menu and F2 its options. The Pause key
+        // still pauses.
+        public void BattleKey(KeyCode k)
+        {
+            if (Flow.State != FlowState.Playing) return;
+            switch (k)
+            {
+                case KeyCode.Escape: input?.Cancel(); break;
+                case KeyCode.Pause:
+                case KeyCode.F1: Flow.Fire(FlowEvent.Pause); break;
+                case KeyCode.F2: Flow.Fire(FlowEvent.Pause); Flow.Fire(FlowEvent.OpenOptions); break;
+            }
         }
 
         void RunSim(float dt)
