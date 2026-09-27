@@ -155,6 +155,7 @@ namespace OpenKingdomsUnity.Game.World
             int n = backend.ReadFeatures(features);
             if (n != featureCount)
             {
+                bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
                 featureCount = n;
                 featureDraws.Clear();
                 spriteFeatures.Clear();
@@ -163,6 +164,8 @@ namespace OpenKingdomsUnity.Game.World
                     var f = features[i];
                     var fdef = f.Def >= 0 && f.Def < backend.FeatureDefs.Count ? backend.FeatureDefs[f.Def] : null;
                     var fnames = fdef != null ? new[] { fdef.Name, fdef.SequenceName, fdef.ObjectName } : new string[0];
+                    // Shoreline wave sprites give way to the sea's own foam.
+                    if (f.Model < 0 && fdef != null && seaOn && IsWave(fdef)) continue;
                     if (f.Model < 0 && f.Sprite >= 0)
                     {
                         // A sprite feature with a drop-in model draws the model.
@@ -211,6 +214,10 @@ namespace OpenKingdomsUnity.Game.World
                 billboards.Add(quad, 0, mat, Matrix4x4.TRS(centre, face, new Vector3(s.w, h, 1)));
             }
         }
+
+        static bool IsWave(FeatureDef d) =>
+            (d.Name ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+            (d.SequenceName ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0;
 
         Material SpriteMaterial(int sprite)
         {
