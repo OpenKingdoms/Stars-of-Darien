@@ -27,6 +27,7 @@ namespace OpenKingdomsUnity.Game.World
         readonly FeatureState[] features = new FeatureState[MaxFeatures];
         readonly ProjectileState[] shots = new ProjectileState[MaxProjectiles];
         readonly PiecePose[] poses = new PiecePose[MaxPieces];
+        readonly Matrix4x4[] posed = new Matrix4x4[MaxPieces];
         public readonly HashSet<int> Selected = new HashSet<int>();
         public int Drawn => solid.Count + billboards.Count;
 
@@ -202,14 +203,17 @@ namespace OpenKingdomsUnity.Game.World
             }
             else if (model != null)
             {
-                int n = backend.ReadUnitPose(u.Handle, poses);
-                for (int p = 0; p < n && p < model.Pieces.Length; p++)
+                int n = Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length);
+                for (int p = 0; p < n; p++) posed[p] = poses[p].Matrix * model.Unscale;
+                // Nudges from the animation editor, for every animation.
+                var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
+                nudges?.Apply(model.Data.Pieces, posed, n, AnimOverride.All);
+                for (int p = 0; p < n; p++)
                 {
                     var mesh = model.Pieces[p];
                     if (mesh == null || poses[p].Hidden) continue;
                     var mats = model.Materials[p];
-                    var m = poses[p].Matrix * model.Unscale;
-                    for (int s = 0; s < mats.Length; s++) solid.Add(mesh, s, mats[s], m);
+                    for (int s = 0; s < mats.Length; s++) solid.Add(mesh, s, mats[s], posed[p]);
                 }
                 var b = model.RestBounds;
                 height = Mathf.Max(Mathf.Abs(b.max.y), Mathf.Abs(b.min.y)) + 0.4f;

@@ -79,6 +79,32 @@ namespace OpenKingdomsUnity.Studio
             }
         }
 
+        // A model at matrices already free of scale, with a piece to mark.
+        public void SetPosed(PresentedModel model, Matrix4x4[] posed, bool[] hidden, int count, int highlight = -1)
+        {
+            Clear();
+            if (model == null) return;
+            bool first = true;
+            for (int p = 0; p < model.Pieces.Length && p < count; p++)
+            {
+                var mesh = model.Pieces[p];
+                if (mesh == null || (hidden != null && hidden[p])) continue;
+                for (int s = 0; s < model.Materials[p].Length; s++)
+                    draws.Add((mesh, s, p == highlight ? Highlight(model.Materials[p][s]) : model.Materials[p][s], posed[p]));
+                Grow(mesh.bounds, posed[p], ref first);
+            }
+        }
+
+        readonly Dictionary<Material, Material> highlights = new Dictionary<Material, Material>();
+
+        Material Highlight(Material m)
+        {
+            if (highlights.TryGetValue(m, out var h)) return h;
+            h = new Material(m) { hideFlags = HideFlags.DontSave, color = new Color(1.6f, 1.3f, 0.6f) };
+            highlights[m] = h;
+            return h;
+        }
+
         static Matrix4x4 Rest(ModelData d, int p)
         {
             var m = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
@@ -148,6 +174,7 @@ namespace OpenKingdomsUnity.Studio
         public void Dispose()
         {
             util.Cleanup();
+            foreach (var h in highlights.Values) if (h != null) UnityEngine.Object.DestroyImmediate(h);
             if (disc != null) UnityEngine.Object.DestroyImmediate(disc);
             if (discMat != null) UnityEngine.Object.DestroyImmediate(discMat);
         }
