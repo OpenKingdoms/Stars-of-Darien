@@ -271,8 +271,8 @@ namespace OpenKingdomsUnity.Game.UI
             if (mobile)
             {
                 Command("Move", "M", () => root.Orders?.Arm(CommandKind.Move));
-                Command("Attack", "A", () => root.Orders?.Arm(CommandKind.Attack));
-                Command("Stop", "S", () => root.Orders?.Stop());
+                Command("Attack", "Ctrl A", () => root.Orders?.Arm(CommandKind.Attack));
+                Command("Stop", "Ctrl S", () => root.Orders?.Stop());
                 Command("Patrol", "P", () => root.Orders?.Arm(CommandKind.Patrol));
                 Command("Guard", "G", () => root.Orders?.Arm(CommandKind.Guard));
             }

@@ -169,9 +169,10 @@ namespace OpenKingdomsUnity.Game.World
                 else if (backend.RecallGroup(g) > 0) PullSelection();
             }
             if (Selected.Count == 0) return;
-            if (Input.GetKeyDown(KeyCode.S) && !Ctrl) { Stop(); Disarm(); }
+            // A and S pan the camera, so attack and stop take Ctrl.
+            if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); }
             if (Input.GetKeyDown(KeyCode.M)) Arm(CommandKind.Move);
-            if (Input.GetKeyDown(KeyCode.A)) Arm(CommandKind.Attack);
+            if (Input.GetKeyDown(KeyCode.A) && Ctrl) Arm(CommandKind.Attack);
             if (Input.GetKeyDown(KeyCode.P)) Arm(CommandKind.Patrol);
             if (Input.GetKeyDown(KeyCode.G)) Arm(CommandKind.Guard);
         }

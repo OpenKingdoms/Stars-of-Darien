@@ -1,4 +1,4 @@
-// GameCamera.cs - the RTS camera over a backend's map. Arrows, the
+// GameCamera.cs - the RTS camera over a backend's map. Arrows, WASD, the
 // screen edge or a middle drag pan it, the wheel zooms, Q and E or an Alt
 // middle drag turn it, Page Up and Page Down tilt it, and Home returns to
 // the classic view: north up, looking steeply down. It rides the ground.
@@ -47,10 +47,16 @@ namespace OpenKingdomsUnity.Game.World
             var move = Vector3.zero;
             if (keyboard)
             {
-                if (Input.GetKey(KeyCode.UpArrow)) move.z += 1;
-                if (Input.GetKey(KeyCode.DownArrow)) move.z -= 1;
-                if (Input.GetKey(KeyCode.RightArrow)) move.x += 1;
-                if (Input.GetKey(KeyCode.LeftArrow)) move.x -= 1;
+                // WASD pans too, bare keys only: with Ctrl they are orders.
+                bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+                bool typing = UnityEngine.EventSystems.EventSystem.current != null &&
+                    UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject != null &&
+                    UnityEngine.EventSystems.EventSystem.current.currentSelectedGameObject.GetComponent<UnityEngine.UI.InputField>() != null;
+                bool wasd = !ctrl && !typing;
+                if (Input.GetKey(KeyCode.UpArrow) || wasd && Input.GetKey(KeyCode.W)) move.z += 1;
+                if (Input.GetKey(KeyCode.DownArrow) || wasd && Input.GetKey(KeyCode.S)) move.z -= 1;
+                if (Input.GetKey(KeyCode.RightArrow) || wasd && Input.GetKey(KeyCode.D)) move.x += 1;
+                if (Input.GetKey(KeyCode.LeftArrow) || wasd && Input.GetKey(KeyCode.A)) move.x -= 1;
                 if (Input.GetKey(KeyCode.Q)) yaw += turnSpeed * dt;
                 if (Input.GetKey(KeyCode.E)) yaw -= turnSpeed * dt;
                 if (Input.GetKey(KeyCode.PageUp)) pitch += tiltSpeed * dt;

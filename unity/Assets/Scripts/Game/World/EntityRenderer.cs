@@ -269,6 +269,8 @@ namespace OpenKingdomsUnity.Game.World
                 bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
                 featureCount = n;
                 featureDraws.Clear();
+                foreach (var d in drapes) { owned.Remove(d); Looks.Release(d); }
+                drapes.Clear();
                 spriteFeatures.Clear();
                 for (int i = 0; i < n; i++)
                 {
@@ -306,6 +308,13 @@ namespace OpenKingdomsUnity.Game.World
                             for (int s = 0; s < mats.Length; s++) featureDraws.Add((model.Pieces[p], s, mats[s], poses[p].Matrix * model.Unscale, false));
                         }
                     }
+                    else if (f.Sprite >= 0 && f.Flat)
+                    {
+                        // A flat sprite, such as a lodestone site, lies on the
+                        // ground and follows it, north up.
+                        var mat = SpriteMaterial(f.Sprite);
+                        if (mat != null) featureDraws.Add((Drape(f), 0, mat, Matrix4x4.identity, true));
+                    }
                     else if (f.Sprite >= 0)
                         spriteFeatures.Add((f.Sprite, f.Position, f.SpriteWidth, f.SpriteBottom, f.SpriteTop, f.SpriteOffsetX));
                 }
@@ -329,6 +338,45 @@ namespace OpenKingdomsUnity.Game.World
         static bool IsWave(FeatureDef d) =>
             (d.Name ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
             (d.SequenceName ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+        readonly List<Mesh> drapes = new List<Mesh>();
+
+        // A grid over the sprite's rectangle, each vertex a hair above the ground.
+        Mesh Drape(FeatureState f)
+        {
+            const int N = 8;
+            float x0 = f.Position.x - f.SpriteOffsetX, w = f.SpriteWidth;
+            float half = (f.SpriteTop - f.SpriteBottom) * 0.5f;
+            float zNorth = f.Position.z + half, depth = half * 2;
+            var v = new Vector3[(N + 1) * (N + 1)];
+            var uv = new Vector2[v.Length];
+            var n = new Vector3[v.Length];
+            var c = new Color32[v.Length];
+            for (int j = 0; j <= N; j++)
+                for (int i = 0; i <= N; i++)
+                {
+                    float x = x0 + w * i / N, z = zNorth - depth * j / N;
+                    int k = j * (N + 1) + i;
+                    v[k] = new Vector3(x, backend.GroundHeight(x, z) + 0.04f, z);
+                    uv[k] = new Vector2((float)i / N, 1f - (float)j / N);
+                    n[k] = Vector3.up;
+                    c[k] = new Color32(255, 255, 255, 255);
+                }
+            var t = new List<int>();
+            for (int j = 0; j < N; j++)
+                for (int i = 0; i < N; i++)
+                {
+                    int a = j * (N + 1) + i, b = a + 1, d = a + N + 1, e = d + 1;
+                    t.Add(a); t.Add(b); t.Add(e);
+                    t.Add(a); t.Add(e); t.Add(d);
+                }
+            var mesh = new Mesh { name = "flat sprite", hideFlags = HideFlags.DontSave, vertices = v, uv = uv, normals = n, colors32 = c };
+            mesh.SetTriangles(t, 0);
+            mesh.RecalculateBounds();
+            drapes.Add(mesh);
+            owned.Add(mesh);
+            return mesh;
+        }
 
         Material SpriteMaterial(int sprite)
         {

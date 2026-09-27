@@ -73,14 +73,15 @@ namespace OpenKingdomsUnity.Tests
                 var d = root.Backend.FeatureDefs[feats[i].Def];
                 string how = feats[i].Model >= 0 ? "model" : feats[i].Sprite >= 0 ? "sprite" : "none";
                 string over = OpenKingdomsUnity.Game.World.OverrideLoader.EnsureIndex().Find(OverrideKind.Feature, d.Name, d.SequenceName, d.ObjectName);
-                string key = $"{d.Name} {how} {(over ?? "-")}";
+                string key = $"{d.Name} {how}{(feats[i].Flat ? " flat" : "")} seq={d.SequenceName} {(over ?? "-")}";
                 seen[key] = seen.TryGetValue(key, out int c) ? c + 1 : 1;
             }
             var lines = new System.Collections.Generic.List<string> { "map " + map };
             foreach (var kv in seen) lines.Add(kv.Value + " x " + kv.Key);
             File.WriteAllLines(Path.Combine(dir, "features.txt"), lines);
             var cam3 = root.World.Camera;
-            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TREES") == "1")
+            string focusOn = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_FOCUS") ?? (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TREES") == "1" ? "Tree" : null);
+            if (focusOn != null)
             {
                 // Close over the thickest stand of trees, with the fog off.
                 OpenKingdomsUnity.Game.World.FogView.Disabled = true;
@@ -91,11 +92,11 @@ namespace OpenKingdomsUnity.Tests
                 for (int i = 0; i < fc; i++)
                 {
                     var d = root.Backend.FeatureDefs[feats[i].Def];
-                    if (d.Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (d.Name.IndexOf(focusOn, System.StringComparison.OrdinalIgnoreCase) < 0) continue;
                     int near = 0;
                     for (int j = 0; j < fc; j++)
                         if ((feats[j].Position - feats[i].Position).sqrMagnitude < 64f &&
-                            root.Backend.FeatureDefs[feats[j].Def].Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) >= 0) near++;
+                            root.Backend.FeatureDefs[feats[j].Def].Name.IndexOf(focusOn, System.StringComparison.OrdinalIgnoreCase) >= 0) near++;
                     if (near > bestCount) { bestCount = near; best = feats[i].Position; }
                 }
                 cam3.focus = best;
