@@ -107,7 +107,7 @@ namespace OpenKingdomsUnity.Game.UI
             var panel = UiKit.Panel(s, "Tools", false).Place(0, 0, 0, 1, 0, 0, -380, 64);
             var col = UiKit.Rect(panel, "Column").Place(0, 0, 1, 1, 18, 18, 18, 18);
             UiKit.Column(col, 8);
-            var tools = UiKit.Rect(col, "ToolGrid").Size(0, 210);
+            var tools = UiKit.Rect(col, "ToolGrid").Size(0, 276);
             var grid = tools.gameObject.AddComponent<GridLayoutGroup>();
             grid.cellSize = new Vector2(166, 62);
             grid.spacing = new Vector2(8, 8);
@@ -145,7 +145,7 @@ namespace OpenKingdomsUnity.Game.UI
         public void RefreshTools()
         {
             var map = root.CurrentMap();
-            nameField.text = map != null ? map.Name + " edited" : "new map";
+            nameField.text = FreeName(map != null ? map.Name + " edited" : "new map");
             note.text = "";
             library = null;
             page = 0;
@@ -237,12 +237,29 @@ namespace OpenKingdomsUnity.Game.UI
         {
             string name = (nameField.text ?? "").Trim();
             if (name.Length == 0) { note.text = "Give the map a name first."; return; }
+            // Saving never replaces a map, the game's own least of all.
+            if (Taken(name)) { note.text = "A map called " + name + " exists. Pick a new name."; return; }
             if (root.Backend.SaveMap(name))
             {
                 note.text = "Saved as " + name + ". It is in the skirmish list now.";
+                nameField.text = FreeName(name);
                 root.Editor?.MarkSaved();
             }
             else note.text = "The map could not be saved.";
+        }
+
+        bool Taken(string name)
+        {
+            foreach (var m in root.Backend.Maps)
+                if (string.Equals(m.Id, name, System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(m.Name, name, System.StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        string FreeName(string wanted)
+        {
+            if (!Taken(wanted)) return wanted;
+            for (int i = 2; ; i++) if (!Taken(wanted + " " + i)) return wanted + " " + i;
         }
 
         public void Tick()

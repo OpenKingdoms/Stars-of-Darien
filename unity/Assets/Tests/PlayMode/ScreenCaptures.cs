@@ -115,6 +115,40 @@ namespace OpenKingdomsUnity.Tests
             root.Flow.Fire(FlowEvent.Pause);
             yield return null;
             yield return Shoot(cam, canvas, Path.Combine(dir, "7-pause.png"));
+
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_EDITOR") == "1")
+            {
+                // The map editor on the same map: a raised hill, a painted
+                // patch and the paint palette open.
+                root.Flow.Fire(FlowEvent.ToMenu);
+                yield return null;
+                root.Flow.Fire(FlowEvent.OpenEditor);
+                root.Setup = GameRoot.DefaultSetup(root.Backend);
+                root.Setup.MapId = map;
+                root.Flow.Fire(FlowEvent.Start);
+                deadline = Time.realtimeSinceStartup + 240f;
+                while (root.Flow.State != FlowState.Editing && Time.realtimeSinceStartup < deadline) yield return null;
+                Assert.AreEqual(FlowState.Editing, root.Flow.State, "the editor opened: " + root.LastError);
+                var ed = root.Editor;
+                var t = root.Backend.Terrain;
+                var focus = root.World.Camera.focus;
+                int cx = Mathf.RoundToInt(focus.x / t.CellSize) + 6, cz = Mathf.RoundToInt(-focus.z / t.CellSize) - 4;
+                ed.Tool = OpenKingdomsUnity.Game.World.EditTool.Raise;
+                ed.Radius = 6;
+                ed.Strength = 8;
+                for (int i = 0; i < 6; i++) ed.Sculpt(cx, cz);
+                var lib = root.Backend.ChunkLibrary();
+                if (lib.Length > 3)
+                {
+                    ed.PaintChunk = lib[lib.Length / 3];
+                    ed.Radius = 4;
+                    ed.Paint(new Vector3((cx - 10) * t.CellSize, 0, -(cz + 6) * t.CellSize));
+                }
+                ed.Tool = OpenKingdomsUnity.Game.World.EditTool.Paint;
+                root.Screens.Show(FlowState.Editing);
+                yield return View(root.World.Camera, 40f, 45f, 0f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "8-editor.png"));
+            }
             Object.Destroy(root.gameObject);
         }
 
