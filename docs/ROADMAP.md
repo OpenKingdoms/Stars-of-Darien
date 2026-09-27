@@ -27,6 +27,21 @@ Status is one of: done, in progress, next, later.
 - `scripts/build-engine.sh` builds okengine from the OpenKingdoms branch `unity-embed` and copies it with `SDL2.dll` into `Assets/Plugins/x86_64`.
 - Tests: `test_embed` in OpenKingdoms, `OkEngineTests` (EditMode) and `EnginePlayTests` (PlayMode) here. The PlayMode test boots two castles, sends a unit east, checks it walked, and with `OK_CAPTURE_DIR` set saves three views as PNG.
 
+## M2 so far
+
+The engine side of a playable skirmish is in place and tested (okengine API 7). Through `IGameBackend` the presentation gets:
+
+- the seats, each player's mana pool and income, every builder's menu with its costs, and victory or defeat
+- orders through the engine's command queue: move, attack, build at a site, stop, patrol, guard, factory queues and the rest of the game's commands
+- a build site snapped to the grid the way the game places it, with whether it can be built, factory queue counts for build card badges, and what each unit is doing
+- the local player's fog, one byte per height sample
+- projectiles, and explosions, sparks, blood and smoke as camera-facing frames
+- the engine's own sound and music, placed and faded by where the camera looks
+- a skirmish load in slices with the loading screen's own progress and status line
+- for the Unit Browser, any of a unit's script functions (walk, attack and so on) played outside the battle
+
+What remains for M2 is on the presentation side: the HUD, selection and the controls.
+
 ## Drop-in models
 
 One naming rule on both sides: `<unitname>.glb` for a unit and `<feature>.glb` for a feature, matched without regard to case. While iterating in the editor, models go in `unity/Assets/Overrides/Units` and `unity/Assets/Overrides/Features` (glb, gltf, fbx or prefab), and `docs/STUDIO.md` covers scale, pivot and facing. For a shipped or modded build, `.glb` files in `unity/Assets/StreamingAssets/Overrides/` are read by the engine's own glTF loader. That loader goes by the model's object name, which for most units is the unit name, and a node named like a piece of the original model follows that piece's pose.
