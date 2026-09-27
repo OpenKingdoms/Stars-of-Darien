@@ -146,6 +146,9 @@ def carve(r, spr):
 
     solid = bytearray(nx * ny * nz)
     ymid = (y0 + y1) / 2
+    # a tree may stand lower than the sprite's height; its crown still
+    # takes the sprite's full height of painting, stretched down
+    zscale = 1.0
     if tree:
         wide = (x1 - x0) > 0.6 * H
         trunk_top = H * (0.32 if wide else 0.14)
@@ -156,12 +159,14 @@ def carve(r, spr):
         crown_c = (trunk_top * 0.7 + H) / 2
         crown_h = (H - trunk_top * 0.7) / 2
         if shape == "crown":
-            # a dome about as tall as it is wide, sitting on the trunk
-            crown_h = min(crown_h, crown_r * 0.9)
-            crown_c = H - crown_h
-            trunk_top = max(0.3, crown_c - crown_h * 0.5)
-            # a trunk that can carry the crown, not a stick
-            trunk_r = min(0.6, max(trunk_r, crown_r * 0.13))
+            # a round crown on a short trunk, the tree no taller than
+            # its crown is wide and a bit
+            low = min(H, crown_r * 2.5)
+            zscale = H / low
+            crown_h = min(crown_h, crown_r * 0.8)
+            crown_c = low - crown_h
+            trunk_top = max(0.3, crown_c - crown_h * 0.8)
+            trunk_r = min(0.45, max(trunk_r, crown_r * 0.11))
         elif shape == "bush":
             # a low dome from the ground, no trunk
             crown_h = min(H * 0.5, crown_r * 0.7)
@@ -177,7 +182,7 @@ def carve(r, spr):
         for j in range(ny):
             for i in range(nx):
                 x, y, z = centre(i, j, k)
-                sx, sy = screen(hx, hy, x, y, z)
+                sx, sy = screen(hx, hy, x, y, z * zscale)
                 if tree and z < trunk_top:
                     # the trunk, hidden behind the crown in the sprite
                     if (x - trunk_x) ** 2 + (y - ymid) ** 2 <= trunk_r * trunk_r:
@@ -264,6 +269,9 @@ def carve(r, spr):
     for p in ob.data.polygons:
         p.use_smooth = True
     ob["box"] = (x0, x1, y0, y1)
+    ob["zscale"] = zscale
+    if tree and trunk_top > 0:
+        ob["trunk"] = (trunk_x, ymid, trunk_r, trunk_top)
     return ob, (nx * ny * nz, faces)
 
 
@@ -275,6 +283,8 @@ def paint(ob, r, spr):
     x0, x1, y0, y1 = ob["box"]
     xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
     stretch = (x1 - x0) / max(1e-3, (y1 - y0))
+    zscale = ob.get("zscale", 1.0)
+    trunk = tuple(ob["trunk"]) if "trunk" in ob else None
     for poly in me.polygons:
         n = poly.normal
         for li in poly.loop_indices:
@@ -292,6 +302,12 @@ def paint(ob, r, spr):
                 # east and west sides: the painting turned onto the side
                 side = 1.0 if n.x > 0 else -1.0
                 px, py, pz = xc + side * (y - yc) * stretch, yc, z
+            if trunk and z < trunk[3] - 0.05 and (x - trunk[0]) ** 2 + (y - trunk[1]) ** 2 < (trunk[2] * 1.8) ** 2:
+                # the trunk is hidden in the sprite: take the bark it
+                # shows where the tree meets the ground
+                px, py, pz = x, 0.0, 0.1 + 0.2 * z / trunk[3]
+            else:
+                pz *= zscale
             sx, sy = screen(hx, hy, px, py, pz)
             uv.data[li].uv = (sx / spr.w, 1.0 - sy / spr.h)
     mat = bpy.data.materials.new(r["name"])
