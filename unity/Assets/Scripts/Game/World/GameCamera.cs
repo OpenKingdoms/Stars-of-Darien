@@ -1,7 +1,8 @@
-// GameCamera.cs - the RTS camera over a backend's map. Arrows, WASD, the
-// screen edge or a middle drag pan it, the wheel zooms, Q and E or an Alt
-// middle drag turn it, Page Up and Page Down tilt it, and Home returns to
-// the classic view: north up, looking steeply down. It rides the ground.
+// GameCamera.cs - the RTS camera over a backend's map. WASD, the arrows,
+// the screen edge or a Shift middle drag pan it, the wheel zooms, a middle
+// drag tilts and raises it (up and down) and turns it (left and right), as
+// do Page Up, Page Down, Q and E, and Home returns to the classic view:
+// north up, looking steeply down. It rides the ground.
 using System;
 using UnityEngine;
 
@@ -13,7 +14,8 @@ namespace OpenKingdomsUnity.Game.World
 
         public Vector3 focus;
         public float distance = 34f, pitch = ClassicPitch, yaw;
-        public float minDistance = 8f, maxDistance = 110f, minPitch = 25f, maxPitch = 89f;
+        // From a low cinematic angle to nearly straight down.
+        public float minDistance = 8f, maxDistance = 110f, minPitch = 18f, maxPitch = 88f;
         public float panSpeed = 28f, turnSpeed = 90f, tiltSpeed = 40f;
         public Vector2 boundsMin, boundsMax = new Vector2(64, 0);
         public bool edgePan = true, keyboard = true;
@@ -43,7 +45,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             float dt = Time.unscaledDeltaTime;
             var m = Input.mousePosition;
-            bool inside = m.x >= 0 && m.y >= 0 && m.x <= Screen.width && m.y <= Screen.height;
+            bool inside = m.x >= -1 && m.y >= -1 && m.x <= Screen.width + 1 && m.y <= Screen.height + 1;
             var move = Vector3.zero;
             if (keyboard)
             {
@@ -75,24 +77,54 @@ namespace OpenKingdomsUnity.Game.World
             var turn = Quaternion.Euler(0, yaw, 0);
             focus += turn * move * panSpeed * (distance / 34f) * dt;
 
+            // Middle drag: up and down tilt the camera and raise or lower it
+            // together, left and right turn it. With Shift it pans instead.
             if (Input.GetMouseButton(2) && !Input.GetMouseButtonDown(2))
             {
                 var d = m - lastMouse;
-                if (Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt))
-                {
-                    yaw += d.x * 0.25f;
-                    pitch -= d.y * 0.2f;
-                }
-                else
+                if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
                 {
                     float perPixel = distance * 1.2f / Mathf.Max(1, Screen.height);
                     focus -= turn * new Vector3(d.x, 0, d.y) * perPixel;
                 }
+                else
+                {
+                    yaw += d.x * 0.25f;
+                    pitch += d.y * 0.2f;
+                    targetDistance = Mathf.Clamp(targetDistance * (1f + d.y * 0.003f), minDistance, maxDistance);
+                    distance = targetDistance;
+                }
             }
             lastMouse = m;
 
-            if (inside) targetDistance = Mathf.Clamp(targetDistance * (1f - Input.mouseScrollDelta.y * 0.12f), minDistance, maxDistance);
+            // The wheel zooms toward the ground under the pointer, anywhere
+            // over the view.
+            float scroll = Input.mouseScrollDelta.y;
+            if (scroll != 0 && inside)
+            {
+                float before = targetDistance;
+                targetDistance = Mathf.Clamp(targetDistance * (1f - scroll * 0.12f), minDistance, maxDistance);
+                var cam = GetComponent<Camera>();
+                if (cam != null && targetDistance < before && PointerGround(cam.ScreenPointToRay(m), out var hit))
+                {
+                    var toward = hit - focus;
+                    toward.y = 0;
+                    focus += toward * (1f - targetDistance / before);
+                }
+            }
             Apply(dt);
+        }
+
+        bool PointerGround(Ray ray, out Vector3 at)
+        {
+            at = default;
+            for (float t = 0.5f; t < 1500f; t += t < 60f ? 0.5f : 2f)
+            {
+                var p = ray.GetPoint(t);
+                float g = ground != null ? ground(p.x, p.z) : 0f;
+                if (p.y <= g) { at = p; return true; }
+            }
+            return false;
         }
 
         void Apply(float dt)
