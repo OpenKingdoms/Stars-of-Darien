@@ -23,6 +23,28 @@ namespace OpenKingdomsUnity.Game.World
         readonly IGameBackend backend;
         readonly Dictionary<int, PresentedModel> models = new Dictionary<int, PresentedModel>();
         readonly Dictionary<int, Material> materials = new Dictionary<int, Material>();
+        readonly Dictionary<Material, Material> flatMaterials = new Dictionary<Material, Material>();
+
+        // A piece thinner than this, in world units, lies flat: a build pad
+        // or a floor decal. It draws pulled toward the camera, so it never
+        // fights the ground it lies on.
+        public const float FlatHeight = 0.02f;
+        public const float FlatOffsetFactor = -1f, FlatOffsetUnits = -4f;
+
+        public static bool IsFlat(Bounds b) => b.size.y < FlatHeight && Mathf.Max(b.size.x, b.size.z) > FlatHeight * 10f;
+
+        // The material for a flat piece: the same look with a depth offset.
+        public Material FlatMaterial(Material m)
+        {
+            if (m == null) return null;
+            if (flatMaterials.TryGetValue(m, out var f)) return f;
+            f = new Material(m) { name = m.name + " (flat)", hideFlags = HideFlags.DontSave };
+            f.SetFloat("_OffsetFactor", FlatOffsetFactor);
+            f.SetFloat("_OffsetUnits", FlatOffsetUnits);
+            owned.Add(f);
+            flatMaterials[m] = f;
+            return f;
+        }
         readonly List<Object> owned = new List<Object>();
 
         // Faceted pieces shade smooth across edges gentler than this, in degrees. 0 keeps the given normals.
@@ -121,6 +143,8 @@ namespace OpenKingdomsUnity.Game.World
                 mesh.subMeshCount = subs.Count;
                 for (int s = 0; s < subs.Count; s++) mesh.SetTriangles(subs[s], s);
                 mesh.RecalculateBounds();
+                if (IsFlat(mesh.bounds))
+                    for (int s = 0; s < mats.Count; s++) mats[s] = FlatMaterial(mats[s]);
                 owned.Add(mesh);
                 result.Pieces[p] = mesh;
                 result.Materials[p] = mats.ToArray();

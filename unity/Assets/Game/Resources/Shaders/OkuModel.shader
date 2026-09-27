@@ -11,6 +11,8 @@ Shader "OpenKingdoms/Presentation/Model"
         _Glossiness ("Smoothness", Range(0, 1)) = 0.2
         _Rim ("Rim light", Range(0, 1)) = 0.3
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
+        _OffsetFactor ("Depth offset factor", Float) = 0
+        _OffsetUnits ("Depth offset units", Float) = 0
     }
     // URP: the same look, lit by OkuLit.hlsl.
     SubShader
@@ -31,6 +33,7 @@ Shader "OpenKingdoms/Presentation/Model"
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
+            Offset [_OffsetFactor], [_OffsetUnits]
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -115,6 +118,7 @@ Shader "OpenKingdoms/Presentation/Model"
             Name "DepthOnly"
             Tags { "LightMode" = "DepthOnly" }
             ZWrite On
+            Offset [_OffsetFactor], [_OffsetUnits]
             ColorMask R
             HLSLPROGRAM
             #pragma vertex vert
@@ -142,6 +146,7 @@ Shader "OpenKingdoms/Presentation/Model"
     {
         Tags { "RenderType" = "TransparentCutout" "Queue" = "AlphaTest" }
         Cull [_Cull]
+        Offset [_OffsetFactor], [_OffsetUnits]
         CGPROGRAM
         #pragma surface surf Standard fullforwardshadows addshadow alphatest:_Cutoff
         #pragma multi_compile_instancing
