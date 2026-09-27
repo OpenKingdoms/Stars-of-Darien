@@ -370,6 +370,44 @@ namespace OpenKingdomsUnity.Game.UI
         }
     }
 
+    // Keeps a panel stretched to its parent's height no taller than Max,
+    // centred.
+    [ExecuteAlways]
+    public sealed class MaxHeight : MonoBehaviour
+    {
+        public float Max = 1000, Margin = 24;
+
+        void LateUpdate()
+        {
+            var rt = (RectTransform)transform;
+            var parent = rt.parent as RectTransform;
+            if (parent == null) return;
+            float h = parent.rect.height;
+            float margin = Mathf.Max(Margin, (h - Max) / 2f);
+            if (!Mathf.Approximately(rt.offsetMin.y, margin) || !Mathf.Approximately(-rt.offsetMax.y, margin))
+            {
+                rt.offsetMin = new Vector2(rt.offsetMin.x, margin);
+                rt.offsetMax = new Vector2(rt.offsetMax.x, -margin);
+            }
+        }
+    }
+
+    // Shrinks a fixed-size panel uniformly when its parent is smaller.
+    public sealed class FitInParent : MonoBehaviour
+    {
+        public float Margin = 20;
+
+        void LateUpdate()
+        {
+            var rt = (RectTransform)transform;
+            var parent = rt.parent as RectTransform;
+            if (parent == null) return;
+            var size = rt.rect.size;
+            float k = Mathf.Min(1f, (parent.rect.width - 2 * Margin) / Mathf.Max(1, size.x), (parent.rect.height - 2 * Margin) / Mathf.Max(1, size.y));
+            rt.localScale = new Vector3(k, k, 1);
+        }
+    }
+
     public sealed class CyclePicker : MonoBehaviour, IPointerClickHandler
     {
         public int Index { get; private set; }

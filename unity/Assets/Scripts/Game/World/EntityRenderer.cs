@@ -108,27 +108,54 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
+        // The build preview as the original draws it: the building itself
+        // at the snapped site, its colours mixed half way to green where it
+        // can stand or red where it cannot, see-through, casting nothing.
+        readonly Dictionary<(Material, bool), Material> ghostMats = new Dictionary<(Material, bool), Material>();
+
+        Material GhostMaterial(Material from, bool ok)
+        {
+            if (ghostMats.TryGetValue((from, ok), out var m)) return m;
+            m = Keep(new Material(Looks.Find("OkuGhost", "Sprites/Default")) { hideFlags = HideFlags.DontSave, enableInstancing = true });
+            m.mainTexture = from.mainTexture;
+            m.SetColor("_Tint", ok ? new Color(60 / 255f, 220 / 255f, 90 / 255f) : new Color(200 / 255f, 60 / 255f, 60 / 255f));
+            ghostMats[(from, ok)] = m;
+            return m;
+        }
+
         void AddGhost()
         {
             if (Ghost == null) return;
             var g = Ghost.Value;
             if (g.Def < 0 || g.Def >= backend.UnitDefs.Count) return;
             var def = backend.UnitDefs[g.Def];
-            var fp = new Vector3(Mathf.Max(1, def.Footprint.x), 1, Mathf.Max(1, def.Footprint.y));
-            overlay.Add(flat, 0, g.Ok ? ghostGood : ghostBad, Matrix4x4.TRS(g.At + Vector3.up * 0.06f, Quaternion.identity, fp));
             int id = backend.LoadModel(def.ObjectName, backend.Players.Count > 0 ? backend.Players[backend.LocalPlayer].Colour : 0);
             var model = models.Get(id);
             if (model == null) return;
             var d = model.Data;
-            var rest = new Matrix4x4[d.Pieces.Length];
-            for (int p = 0; p < d.Pieces.Length; p++)
+            // The engine's pose for the model at rest, with its script's
+            // alternate pieces hidden. Without one, the pieces' offsets.
+            int n = Mathf.Min(backend.PoseModel(id, "", 0f, poses), model.Pieces.Length);
+            var at = Matrix4x4.Translate(g.At);
+            for (int p = 0; p < model.Pieces.Length; p++)
             {
-                var m = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
-                int parent = d.Pieces[p].Parent;
-                rest[p] = parent >= 0 && parent < p ? rest[parent] * m : m;
+                Matrix4x4 m;
+                if (n > 0)
+                {
+                    if (p >= n || poses[p].Hidden) continue;
+                    m = at * poses[p].Matrix * model.Unscale;
+                }
+                else
+                {
+                    string name = d.Pieces[p].Name ?? "";
+                    if (name.EndsWith("_off") || name.EndsWith("_dead")) continue;
+                    var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+                    for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
+                    m = at * r;
+                }
                 if (model.Pieces[p] == null) continue;
-                var at = Matrix4x4.Translate(g.At) * rest[p];
-                for (int s = 0; s < model.Materials[p].Length; s++) billboards.Add(model.Pieces[p], s, model.Materials[p][s], at);
+                for (int s = 0; s < model.Materials[p].Length; s++)
+                    overlay.Add(model.Pieces[p], s, GhostMaterial(model.Materials[p][s], g.Ok), m);
             }
         }
 
@@ -193,6 +220,9 @@ namespace OpenKingdomsUnity.Game.World
         void AddUnit(ref UnitState u, Camera cam)
         {
             if (Hidden != null && Hidden(u)) return;
+            // A frame under half built is not drawn, as in the original:
+            // only its construction sparkles mark the site.
+            if ((u.Flags & UnitFlags.Building) != 0 && u.MaxHealth > 0 && u.Health * 2 < u.MaxHealth) return;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
             float height = 1.5f, radius = 0.6f;

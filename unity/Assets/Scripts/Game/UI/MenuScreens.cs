@@ -56,7 +56,13 @@ namespace OpenKingdomsUnity.Game.UI
             BuildResult();
             BuildLoadList();
             editor = new EditorScreens(root, this);
+            // Modal screens draw over the battle HUD, and their dimmed
+            // backdrops take every click meant for what lies beneath.
+            foreach (var name in new[] { "Pause", "Options", "Load", "Result" })
+                if (screens.TryGetValue(name, out var modal)) modal.transform.SetAsLastSibling();
         }
+
+        public Canvas Canvas => canvas;
 
         public GameObject Screen(string name) => screens.TryGetValue(name, out var s) ? s : null;
 
@@ -326,10 +332,18 @@ namespace OpenKingdomsUnity.Game.UI
             var s = NewScreen("Options", false);
             var dim = UiKit.Picture(s, "Dim", UiKit.White, new Color(0, 0, 0, 0.55f));
             dim.rectTransform.Fill();
-            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -420, -480, -420, -480);
-            Heading(p, "Options", 60, 0.87f, 0.98f);
-            var rows = UiKit.Rect(p, "Rows").Place(0, 0, 1, 1, 60, 150, 60, 150);
-            UiKit.Column(rows, 14);
+            dim.raycastTarget = true;
+            // As tall as the screen allows, never taller: the rows scroll,
+            // and Back and the close cross stay in view.
+            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0, 0.5f, 1, -440, 24, -440, 24);
+            p.gameObject.AddComponent<MaxHeight>().Max = 1020;
+            var title = UiKit.Label(p, "Options", 60, UiKit.Gold, TextAnchor.MiddleCenter, true);
+            title.rectTransform.Place(0, 1, 1, 1, 0, -110, 0, 20);
+            var close = UiKit.MakeButton(p, "X", () => { root.Options.Save(); root.Flow.Fire(FlowEvent.Back); }, 30);
+            close.name = "Close";
+            close.GetComponent<RectTransform>().Place(1, 1, 1, 1, -84, -84, 20, 20);
+            var rows = UiKit.ScrollList(p, "Rows", 14);
+            ((RectTransform)rows.parent.parent).Place(0, 0, 1, 1, 60, 130, 60, 120);
             var o = root.Options;
             OptionRow(rows, "Weather", new[] { "By map", "Clear", "Rain", "Snow", "Fog" }, (int)o.Weather, i =>
             {
@@ -357,6 +371,8 @@ namespace OpenKingdomsUnity.Game.UI
                 o.CursorScale = i;
                 if (root.Pointer != null) root.Pointer.ScaleSetting = i;
             });
+            var help = UiKit.Label(rows, "Camera: WASD, the arrows or the screen edge pan. The wheel zooms. Middle drag up and down tilts and raises, left and right turns, and with Shift pans. Q and E turn, Page Up and Page Down tilt, Home returns to the classic view.", 21, UiKit.Dim, TextAnchor.UpperLeft);
+            help.rectTransform.Size(0, 84);
             var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
             int vi = 0;
             for (int k = 0; k < volumes.Length; k++) if (Mathf.Abs(volumes[k] - o.Volume) < Mathf.Abs(volumes[vi] - o.Volume)) vi = k;
@@ -368,7 +384,8 @@ namespace OpenKingdomsUnity.Game.UI
                 if (!Application.isEditor) UnityEngine.Screen.fullScreen = o.Fullscreen;
             });
             var back = UiKit.MakeButton(p, "Back", () => { o.Save(); root.Flow.Fire(FlowEvent.Back); }, 32);
-            back.GetComponent<RectTransform>().Place(0.5f, 0, 0.5f, 0, -180, 50, -180, -130);
+            back.name = "Back";
+            back.GetComponent<RectTransform>().Place(0.5f, 0, 0.5f, 0, -180, 34, -180, -114);
         }
 
         void BuildLoading()
@@ -435,6 +452,7 @@ namespace OpenKingdomsUnity.Game.UI
             var dim = UiKit.Picture(s, "Dim", UiKit.White, new Color(0, 0, 0, 0.5f));
             dim.rectTransform.Fill();
             var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -300, -340, -300, -340);
+            p.gameObject.AddComponent<FitInParent>().Margin = 24;
             Heading(p, "Paused", 60, 0.8f, 0.96f);
             var col = UiKit.Rect(p, "Buttons").Place(0, 0, 1, 1, 70, 90, 70, 150);
             UiKit.Column(col, 18);

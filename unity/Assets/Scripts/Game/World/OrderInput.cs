@@ -26,6 +26,8 @@ namespace OpenKingdomsUnity.Game.World
         readonly int[] selectionBuffer = new int[EntityRenderer.MaxUnits];
 
         public bool Classic = true;
+        // Held still, for scripted captures that place things themselves.
+        public bool Frozen;
         // The command waiting for a click, if any, mirrored here for the ghost.
         public CommandKind? Armed { get; private set; }
         public int ArmedDef { get; private set; } = -1;
@@ -96,7 +98,7 @@ namespace OpenKingdomsUnity.Game.World
         public void Update()
         {
             var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
-            if (cam == null) return;
+            if (cam == null || Frozen) return;
             if (Classic) PullSelection();
             bool overUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
             var m = Input.mousePosition;

@@ -80,6 +80,37 @@ namespace OpenKingdomsUnity.Tests
             foreach (var kv in seen) lines.Add(kv.Value + " x " + kv.Key);
             File.WriteAllLines(Path.Combine(dir, "features.txt"), lines);
             var cam3 = root.World.Camera;
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_GHOST") == "1")
+            {
+                // A lodestone placed on the nearest site, then beside it.
+                int lode = -1;
+                foreach (var d in root.Backend.UnitDefs) if (d.Name.ToUpperInvariant().Contains("LODE") && lode < 0) lode = d.Id;
+                Vector3 site = cam3.focus;
+                float bestD = float.MaxValue;
+                for (int i = 0; i < fc; i++)
+                {
+                    if (root.Backend.FeatureDefs[feats[i].Def].Name.IndexOf("Mana", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    float dd = (feats[i].Position - cam3.focus).sqrMagnitude;
+                    if (dd < bestD) { bestD = dd; site = feats[i].Position; }
+                }
+                OpenKingdomsUnity.Game.World.FogView.Disabled = true;
+                root.World.Fog.Update(true);
+                root.Orders.Frozen = true;
+                cam3.focus = site;
+                bool ok = root.Backend.CanBuildAt(lode, site, out var snapped);
+                root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
+                yield return View(cam3, 22f, 50f, 0f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-on-site.png"));
+                var off = site + new Vector3(5, 0, 3);
+                ok = root.Backend.CanBuildAt(lode, off, out snapped);
+                root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
+                yield return null;
+                yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-off-site.png"));
+                root.World.Entities.Ghost = null;
+                root.Orders.Frozen = false;
+                OpenKingdomsUnity.Game.World.FogView.Disabled = false;
+                File.WriteAllText(Path.Combine(dir, "ghost.txt"), $"lodestone def {lode} {(lode >= 0 ? root.Backend.UnitDefs[lode].Name : "")}, site {site}");
+            }
             string focusOn = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_FOCUS") ?? (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TREES") == "1" ? "Tree" : null);
             if (focusOn != null)
             {
