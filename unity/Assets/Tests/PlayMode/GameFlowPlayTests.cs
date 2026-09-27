@@ -82,6 +82,37 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [UnityTest]
+        public IEnumerator AGameSavedFromPauseLoadsFromTheMenu()
+        {
+            var mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
+            root = GameRoot.Boot(mock);
+            yield return null;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            root.Setup.MapId = "mock_highlands";
+            root.Screens.StartGame();
+            yield return Until(() => root.Flow.State == FlowState.Playing, 30f, "the game to load");
+            for (int i = 0; i < 30; i++) yield return null;
+            root.Flow.Fire(FlowEvent.Pause);
+            Assert.IsTrue(root.SaveNow(out var path), "the save was written");
+            try
+            {
+                root.Flow.Fire(FlowEvent.ToMenu);
+                yield return null;
+                Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenLoad));
+                yield return null;
+                Assert.AreEqual("Load", root.Screens.Visible);
+                var saves = root.ListSaves();
+                var mine = saves.Find(e => e.Path == path);
+                Assert.AreEqual("mock_highlands", mine.Map);
+                root.LoadSave(mine);
+                yield return Until(() => root.Flow.State == FlowState.Playing, 30f, "the save to load");
+                Assert.AreEqual("mock_highlands", root.CurrentMap().Id);
+                Assert.AreEqual(18, root.World.Entities.UnitCount);
+            }
+            finally { System.IO.File.Delete(path); }
+        }
+
+        [UnityTest]
         public IEnumerator AWonGameShowsVictory()
         {
             var mock = new MockBackend { StageSeconds = 0f };

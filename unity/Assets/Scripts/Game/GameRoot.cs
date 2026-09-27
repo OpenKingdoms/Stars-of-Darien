@@ -3,6 +3,8 @@
 // runs the simulation at its own tick rate while a game is on. Put it in
 // a scene (Assets/Scenes/Remaster.unity has one) or call GameRoot.Boot().
 using System;
+using System.Collections.Generic;
+using System.IO;
 using OpenKingdomsUnity.Game.UI;
 using OpenKingdomsUnity.Game.World;
 using UnityEngine;
@@ -26,6 +28,8 @@ namespace OpenKingdomsUnity.Game
         public MenuScreens Screens { get; private set; }
         OrderInput input;
         float clock;
+        string pendingLoad;
+        bool loadRefused;
         IGameBackend injected;
 
         public static GameRoot Boot(IGameBackend backend = null)
@@ -118,13 +122,20 @@ namespace OpenKingdomsUnity.Game
                     LastError = null;
                     Loading = default;
                     ApplyAudio();
-                    Backend.StartSkirmish(Setup);
+                    if (pendingLoad != null)
+                    {
+                        // A refused save leaves the flow to Update, not this handler.
+                        loadRefused = !Backend.LoadGame(pendingLoad);
+                        pendingLoad = null;
+                    }
+                    else Backend.StartSkirmish(Setup);
                     break;
                 case FlowState.Playing:
                     clock = 0;
                     break;
                 case FlowState.MainMenu:
                 case FlowState.Skirmish:
+                    if (now == FlowState.MainMenu) LastError = null;
                     if (World != null || GameFlow.InGame(was)) EndGame();
                     break;
                 case FlowState.Quit:
@@ -153,6 +164,13 @@ namespace OpenKingdomsUnity.Game
             switch (Flow.State)
             {
                 case FlowState.Loading:
+                    if (loadRefused)
+                    {
+                        loadRefused = false;
+                        LastError = "That saved game could not be read.";
+                        Flow.Fire(FlowEvent.LoadFailed);
+                        break;
+                    }
                     Loading = Backend.PumpLoading();
                     if (Loading.Failed)
                     {
@@ -181,6 +199,7 @@ namespace OpenKingdomsUnity.Game
                     break;
                 case FlowState.Options:
                 case FlowState.Skirmish:
+                case FlowState.LoadList:
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
                     break;
             }
@@ -190,6 +209,48 @@ namespace OpenKingdomsUnity.Game
                 if (!Application.isBatchMode) TellView();
             }
             Screens.Tick();
+        }
+
+        // ---- Saved games ----
+
+        public static string SavesDir => Path.Combine(Application.persistentDataPath, "Saves");
+
+        public struct SaveEntry
+        {
+            public string Path, Map;
+            public uint Tick;
+            public DateTime SavedAt;
+        }
+
+        // Writes the running game, named by the time and the map.
+        public bool SaveNow(out string path)
+        {
+            path = null;
+            if (!GameFlow.InGame(Flow.State) && !Flow.InGameNow) return false;
+            Directory.CreateDirectory(SavesDir);
+            string map = CurrentMap()?.Name ?? "game";
+            foreach (var c in Path.GetInvalidFileNameChars()) map = map.Replace(c, '_');
+            path = Path.Combine(SavesDir, $"{DateTime.Now:yyyy-MM-dd HH-mm-ss} {map}.oksav");
+            return Backend.SaveGame(path);
+        }
+
+        // Every save this backend can read, newest first.
+        public List<SaveEntry> ListSaves()
+        {
+            var list = new List<SaveEntry>();
+            if (!Directory.Exists(SavesDir)) return list;
+            foreach (var f in Directory.GetFiles(SavesDir, "*.oksav"))
+                if (Backend.SaveInfo(f, out var map, out var tick, out var at))
+                    list.Add(new SaveEntry { Path = f, Map = map, Tick = tick, SavedAt = at });
+            list.Sort((a, b) => b.SavedAt.CompareTo(a.SavedAt));
+            return list;
+        }
+
+        public void LoadSave(SaveEntry save)
+        {
+            pendingLoad = save.Path;
+            Setup.MapId = save.Map;
+            Flow.Fire(FlowEvent.Start);
         }
 
         // Sound follows the options. Batch runs stay quiet.

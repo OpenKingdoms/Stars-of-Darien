@@ -20,6 +20,8 @@ namespace OpenKingdomsUnity.Game.UI
 
         // Skirmish setup parts that change.
         RawImage preview, loadingBackdrop;
+        Text saveNote, loadEmpty;
+        RectTransform saveItems;
         Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, hudMana, hudClock, hudSelection, resultTitle, resultInfo, setupError;
         Image loadingFill, manaFill;
         readonly List<Button> mapButtons = new List<Button>();
@@ -50,6 +52,7 @@ namespace OpenKingdomsUnity.Game.UI
             BuildHud();
             BuildPause();
             BuildResult();
+            BuildLoadList();
         }
 
         public GameObject Screen(string name) => screens.TryGetValue(name, out var s) ? s : null;
@@ -64,7 +67,8 @@ namespace OpenKingdomsUnity.Game.UI
                 case FlowState.Options: on = root.Flow.OptionsReturn == FlowState.Paused ? new[] { "Hud", "Options" } : new[] { "Options" }; break;
                 case FlowState.Loading: on = new[] { "Loading" }; RefreshLoading(); break;
                 case FlowState.Playing: on = new[] { "Hud" }; break;
-                case FlowState.Paused: on = new[] { "Hud", "Pause" }; break;
+                case FlowState.Paused: on = new[] { "Hud", "Pause" }; saveNote.text = ""; break;
+                case FlowState.LoadList: on = new[] { "Load" }; RefreshLoadList(); break;
                 case FlowState.Victory:
                 case FlowState.Defeat: on = new[] { "Hud", "Result" }; RefreshResult(state == FlowState.Victory); break;
                 default: on = new string[0]; break;
@@ -133,9 +137,10 @@ namespace OpenKingdomsUnity.Game.UI
             var rule = UiKit.Picture(s, "Rule", UiKit.BarFill, new Color(1, 1, 1, 0.8f), true);
             rule.rectTransform.Place(0.5f, 0.59f, 0.5f, 0.59f, -260, -2, -260, -2);
 
-            var col = UiKit.Rect(s, "Buttons").Place(0.5f, 0.2f, 0.5f, 0.55f, -230, 0, -230, 0);
+            var col = UiKit.Rect(s, "Buttons").Place(0.5f, 0.12f, 0.5f, 0.55f, -230, 0, -230, 0);
             UiKit.Column(col, 22);
             UiKit.MakeButton(col, "Skirmish", () => root.Flow.Fire(FlowEvent.OpenSkirmish), 38).GetComponent<RectTransform>().Size(460, 84);
+            UiKit.MakeButton(col, "Load game", () => root.Flow.Fire(FlowEvent.OpenLoad), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Quit", () => root.Flow.Fire(FlowEvent.Exit), 38).GetComponent<RectTransform>().Size(460, 84);
 
@@ -394,13 +399,20 @@ namespace OpenKingdomsUnity.Game.UI
             var s = NewScreen("Pause", false);
             var dim = UiKit.Picture(s, "Dim", UiKit.White, new Color(0, 0, 0, 0.5f));
             dim.rectTransform.Fill();
-            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -300, -280, -300, -280);
-            Heading(p, "Paused", 60, 0.76f, 0.96f);
-            var col = UiKit.Rect(p, "Buttons").Place(0, 0, 1, 1, 70, 60, 70, 150);
+            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -300, -340, -300, -340);
+            Heading(p, "Paused", 60, 0.8f, 0.96f);
+            var col = UiKit.Rect(p, "Buttons").Place(0, 0, 1, 1, 70, 90, 70, 150);
             UiKit.Column(col, 18);
             UiKit.MakeButton(col, "Resume", () => root.Flow.Fire(FlowEvent.Resume), 32).GetComponent<RectTransform>().Size(0, 72);
+            UiKit.MakeButton(col, "Save game", () =>
+            {
+                bool ok = root.SaveNow(out var path);
+                saveNote.text = ok ? "Saved as " + System.IO.Path.GetFileNameWithoutExtension(path) : "This game could not be saved.";
+            }, 32).GetComponent<RectTransform>().Size(0, 72);
             UiKit.MakeButton(col, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), 32).GetComponent<RectTransform>().Size(0, 72);
             UiKit.MakeButton(col, "Quit to menu", () => root.Flow.Fire(FlowEvent.ToMenu), 32).GetComponent<RectTransform>().Size(0, 72);
+            saveNote = UiKit.Label(p, "", 24, UiKit.Pale);
+            saveNote.rectTransform.Place(0, 0, 1, 0, 20, 24, 20, -70);
         }
 
         void BuildResult()
@@ -414,6 +426,36 @@ namespace OpenKingdomsUnity.Game.UI
             resultInfo.rectTransform.Place(0, 0.4f, 1, 0.5f);
             var back = UiKit.MakeButton(s, "Return to menu", () => root.Flow.Fire(FlowEvent.ToMenu), 32);
             back.GetComponent<RectTransform>().Place(0.5f, 0.24f, 0.5f, 0.24f, -220, -40, -220, -40);
+        }
+
+        void BuildLoadList()
+        {
+            var s = NewScreen("Load", true);
+            Heading(s, "Load a game", 72, 0.88f, 0.98f);
+            var panel = UiKit.Panel(s, "Saves", false).Place(0.5f, 0, 0.5f, 1, -560, 150, -560, 150);
+            saveItems = UiKit.ScrollList(panel, "Items", 10);
+            ((RectTransform)saveItems.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 24);
+            loadEmpty = UiKit.Label(panel, "No saved games yet. Save one from the pause menu.", 30, UiKit.Dim);
+            loadEmpty.rectTransform.Fill(40);
+            var back = UiKit.MakeButton(s, "Back", () => root.Flow.Fire(FlowEvent.Back), 32);
+            back.GetComponent<RectTransform>().Place(0, 0, 0, 0, 60, 40, -360, -110);
+        }
+
+        void RefreshLoadList()
+        {
+            for (int i = saveItems.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(saveItems.GetChild(i).gameObject);
+            var saves = root.ListSaves();
+            loadEmpty.text = root.LastError ?? "No saved games yet. Save one from the pause menu.";
+            loadEmpty.gameObject.SetActive(saves.Count == 0 || root.LastError != null);
+            foreach (var save in saves)
+            {
+                var entry = save;
+                int secs = (int)(entry.Tick / (uint)Mathf.Max(1, root.Backend.TicksPerSecond));
+                string label = $"{entry.Map}    {entry.SavedAt:d MMM yyyy, HH:mm}    {secs / 60}:{secs % 60:00} in";
+                var b = UiKit.MakeButton(saveItems, label, () => root.LoadSave(entry), 26);
+                b.GetComponent<RectTransform>().Size(0, 64);
+                b.name = "Save " + System.IO.Path.GetFileName(entry.Path);
+            }
         }
 
         void RefreshResult(bool won)

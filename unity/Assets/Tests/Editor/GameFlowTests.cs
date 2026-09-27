@@ -66,6 +66,26 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void ASavedGameLoadsFromTheMenuAndAFailedLoadReturnsThere()
+        {
+            var f = new GameFlow();
+            Assert.IsTrue(f.Fire(FlowEvent.OpenLoad));
+            Assert.AreEqual(FlowState.LoadList, f.State);
+            Assert.IsTrue(f.Fire(FlowEvent.Start));
+            Assert.AreEqual(FlowState.Loading, f.State);
+            Assert.IsTrue(f.Fire(FlowEvent.LoadFailed));
+            Assert.AreEqual(FlowState.LoadList, f.State, "back to the saves, not to skirmish setup");
+            f.Fire(FlowEvent.Start);
+            Assert.IsTrue(f.Fire(FlowEvent.Loaded));
+            Assert.AreEqual(FlowState.Playing, f.State);
+            f.Fire(FlowEvent.Pause);
+            f.Fire(FlowEvent.ToMenu);
+            f.Fire(FlowEvent.OpenLoad);
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.AreEqual(FlowState.MainMenu, f.State);
+        }
+
+        [Test]
         public void NonsenseEventsAreRefused()
         {
             var f = new GameFlow();
