@@ -1,6 +1,7 @@
 // FogView.cs - the local player's fog of war, read from the backend a few
-// times a second into a texture the terrain and model shaders darken by,
-// and asked whether a point is in sight so enemies out of it stay hidden.
+// times a second into a texture, and asked whether a point is in sight so
+// enemies out of it stay hidden. Under URP a pass lays it over the
+// finished picture, and otherwise the shaders darken by it.
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
@@ -18,6 +19,17 @@ namespace OpenKingdomsUnity.Game.World
 
         // A debug switch: draw everything as if in sight.
         public static bool Disabled;
+
+        // The camera whose pictures take the fog under URP.
+        public Camera Camera;
+
+        // Screen brightness where seen before, as the original's 0x78
+        // overlay leaves it, and how far past the map the fog lets go.
+        public const float SeenBefore = 0.53f;
+        const float Reach = EdgeRing.Width - 8f;
+
+        FogOfWarPass pass;
+        Material passMaterial;
 
         public FogView(IGameBackend backend) => this.backend = backend;
 
@@ -75,22 +87,46 @@ namespace OpenKingdomsUnity.Game.World
         void SetActive(bool on)
         {
             Active = on;
-            Shader.SetGlobalFloat("_OkuFogOn", on ? 1f : 0f);
+            bool overPicture = on && Pass() != null;
+            Shader.SetGlobalFloat("_OkuFogOn", on && !overPicture ? 1f : 0f);
+            Shader.SetGlobalFloat("_OkuSeenBefore", SeenBefore);
+            Shader.SetGlobalFloat("_OkuFogReach", Reach);
+            if (overPicture) pass.Attach(Camera);
+            else pass?.Detach();
         }
 
-        // In sight now, or true when there is no fog.
-        public bool InSight(Vector3 p)
+        // The pass over the picture, when URP runs and its shader is here.
+        FogOfWarPass Pass()
         {
-            if (!Active || fog == null) return true;
+            if (pass != null) return pass;
+            if (Looks.Urp == null || Camera == null) return null;
+            var shader = Looks.Find("OkuFogOfWar", "Hidden/OpenKingdoms/FogOfWar");
+            if (shader == null || !shader.isSupported) return null;
+            passMaterial = new Material(shader) { hideFlags = HideFlags.DontSave };
+            return pass = new FogOfWarPass(passMaterial);
+        }
+
+        // The fog at a point: 0 never seen, 1 seen before, 2 in sight, and 2
+        // everywhere when there is no fog.
+        public int State(Vector3 p)
+        {
+            if (!Active || fog == null) return 2;
             var t = backend.Terrain;
             int x = Mathf.Clamp(Mathf.RoundToInt(p.x / t.CellSize), 0, width - 1);
             int z = Mathf.Clamp(Mathf.RoundToInt(-p.z / t.CellSize), 0, height - 1);
-            return fog[z * width + x] >= 2;
+            return fog[z * width + x];
         }
+
+        // In sight now, or true when there is no fog.
+        public bool InSight(Vector3 p) => State(p) >= 2;
 
         public void Dispose()
         {
             SetActive(false);
+            pass?.Detach();
+            pass = null;
+            if (passMaterial != null) Looks.Release(passMaterial);
+            passMaterial = null;
             if (tex != null) Looks.Release(tex);
             tex = null;
         }

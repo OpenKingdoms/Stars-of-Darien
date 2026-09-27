@@ -32,6 +32,44 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(24, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer and a wagon");
         }
 
+        // A knight walks out and back. Ground it saw is dimmed after with
+        // line of sight on, and stays clear with it off.
+        static (int dim, int clear) Scouted(bool lineOfSight)
+        {
+            var b = new MockBackend { StageSeconds = 0, DamageScale = 0 };
+            var s = new SkirmishSetup { MapId = "mock_highlands", Seed = 3, LineOfSight = lineOfSight };
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = "ARAMON", Colour = 0, Team = 0 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "TAROS", Colour = 1, Team = 1 });
+            b.StartSkirmish(s);
+            for (int i = 0; i < 20 && !b.PumpLoading().Done; i++) { }
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units), knight = -1;
+            for (int i = 0; i < n && knight < 0; i++)
+                if (units[i].Player == b.LocalPlayer && b.RoleOf(units[i].Def) == MockBackend.Role.Knight) knight = i;
+            var home = units[knight].Position;
+            var out1 = home + (new Vector3(80, 0, -64) - home).normalized * 34f;
+            foreach (var to in new[] { out1, home })
+            {
+                b.Command(GameCommand.To(CommandKind.Move, units[knight].Handle, to));
+                b.Advance(1200);
+            }
+            var fog = new byte[b.ReadFog(null, out _, out _)];
+            b.ReadFog(fog, out _, out _);
+            int dim = 0, clear = 0;
+            foreach (byte f in fog) { if (f == 1) dim++; else if (f == 2) clear++; }
+            return (dim, clear);
+        }
+
+        [Test]
+        public void GroundSeenBeforeIsDimmedOnlyWithLineOfSight()
+        {
+            var on = Scouted(true);
+            var off = Scouted(false);
+            Assert.Greater(on.dim, 0, "line of sight on dims ground seen before");
+            Assert.AreEqual(0, off.dim, "line of sight off never dims");
+            Assert.AreEqual(on.clear + on.dim, off.clear, "it keeps that ground clear instead");
+        }
+
         [Test]
         public void TheTerrainMatchesItsBlocksAndChunks()
         {

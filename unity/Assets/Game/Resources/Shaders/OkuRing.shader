@@ -56,5 +56,20 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
             }
             ENDCG
         }
+        // URP's depth prepass, so the fog of war over the picture finds the
+        // ring. The built-in pipeline skips this pass.
+        Pass
+        {
+            Tags { "LightMode" = "DepthOnly" }
+            ZWrite On
+            ColorMask R
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #include "UnityCG.cginc"
+            float4 vert(float4 v : POSITION) : SV_POSITION { return UnityObjectToClipPos(v); }
+            half4 frag() : SV_Target { return 0; }
+            ENDCG
+        }
     }
 }

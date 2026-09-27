@@ -32,6 +32,7 @@ namespace OpenKingdomsUnity.Game.World
             Fog = new FogView(backend);
             Fog.Update(true);
             Entities.Hidden = u => !Fog.InSight(u.Position) && !Friendly(u.Player);
+            Entities.Unseen = p => Fog.State(p) == 0;
 
             var cam = UnityEngine.Camera.main;
             if (cam == null)
@@ -50,6 +51,8 @@ namespace OpenKingdomsUnity.Game.World
             Camera.ground = backend.GroundHeight;
             Camera.Frame(new Vector2(0, -size.y), new Vector2(size.x, 0), StartFocus());
             Atmosphere.SetPostEffects(options.PostEffects, cam);
+            Fog.Camera = cam;
+            Fog.Update(true);
         }
 
         // Over the local player's first unit, or the map centre.

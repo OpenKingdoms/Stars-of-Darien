@@ -341,6 +341,7 @@ namespace OpenKingdomsUnity.Game
             const float dt = 1f / Tps;
             Tick++;
             TickMana(dt);
+            if (Tick % 10 == 0) Look();
             for (int i = 0; i < economy.Count; i++)
             {
                 var e = economy[i];
@@ -1081,6 +1082,27 @@ namespace OpenKingdomsUnity.Game
             height = Terrain != null ? Terrain.HeightsH : 0;
             int need = width * height;
             if (into == null || into.Length < need || need == 0) return need;
+            Look();
+            bool revealed = setup != null && setup.MapRevealed;
+            bool lineOfSight = setup == null || setup.LineOfSight;
+            for (int i = 0; i < need; i++)
+            {
+                bool inSight = revealed || sight[i];
+                // Seen before is dimmed only with line of sight on, as the
+                // original's; with it off, explored ground stays clear.
+                into[i] = inSight ? (byte)2 : fogSeen[i] == 0 ? (byte)0 : lineOfSight ? (byte)1 : (byte)2;
+            }
+            return need;
+        }
+
+        // What the local player's units see now, remembered as seen. The
+        // simulation looks a few times a second, so ground passed between
+        // reads is remembered too.
+        void Look()
+        {
+            if (Terrain == null) return;
+            int width = Terrain.HeightsW, height = Terrain.HeightsH, need = width * height;
+            if (need == 0) return;
             if (fogSeen.Length != need) fogSeen = new byte[need];
             bool revealed = setup != null && setup.MapRevealed;
             float cell = Terrain.CellSize;
@@ -1104,12 +1126,7 @@ namespace OpenKingdomsUnity.Game
                 }
             }
             for (int i = 0; i < need; i++)
-            {
-                bool inSight = revealed || sight[i];
-                if (inSight) fogSeen[i] = 1;
-                into[i] = inSight ? (byte)2 : fogSeen[i];
-            }
-            return need;
+                if (revealed || sight[i]) fogSeen[i] = 1;
         }
 
         // ---- Pictures ----
