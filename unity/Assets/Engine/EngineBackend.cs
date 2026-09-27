@@ -513,6 +513,14 @@ namespace OpenKingdomsUnity.Engine
             return need;
         }
 
+        // Not in IGameBackend yet: the engine's own sound and music, and the
+        // view it places sounds by. Volume 0 to 1.
+        public bool SetAudio(float volume, bool music) =>
+            OkEngine.okx_audio(volume > 0f ? 1 : 0, Mathf.RoundToInt(Mathf.Clamp01(volume) * 127f), music ? 1 : 0) == 0;
+
+        public void SetView(Vector3 centre, float width, float depth) =>
+            OkEngine.okx_set_view((int)(centre.x / S), (int)(-centre.z / S), (int)(width / S), (int)(depth / S));
+
         public Economy ReadEconomy(int player)
         {
             if (OkEngine.okx_economy(player, out var e) != 0) return default;
@@ -522,6 +530,7 @@ namespace OpenKingdomsUnity.Engine
         public void Dispose()
         {
             EndGame();
+            OkEngine.okx_audio(0, 0, 0);
             // The engine stays up for the next backend in this process: SDL
             // and the file system are cheap to keep and slow to restart.
         }

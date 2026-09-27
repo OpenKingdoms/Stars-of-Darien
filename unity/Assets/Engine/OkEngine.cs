@@ -140,7 +140,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 4;
+        public const int ApiVersion = 5;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
@@ -176,6 +176,8 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern uint okx_tick_count();
         [DllImport(Lib)] public static extern int okx_local_player();
         [DllImport(Lib)] public static extern int okx_outcome();
+        [DllImport(Lib)] public static extern int okx_audio(int enable, int volume, int music);
+        [DllImport(Lib)] public static extern void okx_set_view(int cx, int cy, int w, int h);
         [DllImport(Lib)] public static extern int okx_command(int type, int handle, int x, int y, int target, int buildDef, int arg);
 
         [DllImport(Lib)] public static extern int okx_terrain_info(out OkxTerrainInfo info);

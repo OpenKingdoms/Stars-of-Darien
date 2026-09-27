@@ -17,6 +17,8 @@ namespace OpenKingdomsUnity.Engine
         public string kingdom = "aramon";
         public int aiPlayers = 1;
         public bool revealMap = true;
+        [Range(0, 127)] public int volume = 100;
+        public bool music = true;
 
         public static EngineDriver Current { get; private set; }
         public bool Running { get; private set; }
@@ -56,6 +58,10 @@ namespace OpenKingdomsUnity.Engine
                 if (OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir) != 0)
                     throw new InvalidOperationException("okx_init: " + OkEngine.LastError);
                 OkEngine.okx_set_override_dir(EngineSettings.OverrideDir.Replace('\\', '/'));
+                // Sound is a nicety: a machine without an audio device plays
+                // on, and a batch run (the tests) stays quiet.
+                if (!Application.isBatchMode && volume > 0 && OkEngine.okx_audio(1, volume, music ? 1 : 0) != 0)
+                    Debug.Log("OpenKingdoms: no sound, " + OkEngine.LastError);
                 var cfg = new OkxSkirmish
                 {
                     map = map, kingdom = kingdom, aiPlayers = aiPlayers,
@@ -151,8 +157,21 @@ namespace OpenKingdomsUnity.Engine
                 if (accumulator > 0.25f) accumulator = 0;
             }
             UnitCount = Mathf.Min(OkEngine.okx_units(units, units.Length), units.Length);
+            TellEngineTheView();
             HandleInput();
             Draw();
+        }
+
+        // Sounds are placed and faded by where the camera looks.
+        void TellEngineTheView()
+        {
+            if (rig == null) return;
+            var cam = rig.GetComponent<Camera>();
+            float aspect = cam != null ? cam.aspect : 16f / 9f;
+            var e = EngineSettings.ToEngine(rig.focus);
+            float wide = rig.height * 2f * aspect / EngineSettings.PxToUnits;
+            float deep = rig.height * 2f / EngineSettings.PxToUnits;
+            OkEngine.okx_set_view((int)e.x, (int)e.y, (int)wide, (int)deep);
         }
 
         void Draw()
@@ -277,6 +296,7 @@ namespace OpenKingdomsUnity.Engine
             Terrain?.Dispose();
             Models?.Dispose();
             if (Running) OkEngine.okx_end_game();
+            OkEngine.okx_audio(0, 0, 0);
             Running = false;
         }
     }
