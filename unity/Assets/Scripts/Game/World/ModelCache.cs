@@ -15,6 +15,7 @@ namespace OpenKingdomsUnity.Game.World
         public OverrideModel Override;    // a drop-in replacement, drawn instead
         public Matrix4x4[] RestInverse;   // per piece, world scale, for overrides that follow pieces
         public Matrix4x4 Unscale;         // right-multiplies a backend pose to suit the scaled meshes
+        public Bounds RestBounds;         // the whole model at rest, world units, from its root
     }
 
     public sealed class ModelCache
@@ -23,6 +24,9 @@ namespace OpenKingdomsUnity.Game.World
         readonly Dictionary<int, PresentedModel> models = new Dictionary<int, PresentedModel>();
         readonly Dictionary<int, Material> materials = new Dictionary<int, Material>();
         readonly List<Object> owned = new List<Object>();
+
+        // Faceted pieces shade smooth across edges gentler than this, in degrees. 0 keeps the given normals.
+        public float SmoothingAngle = NormalSmoother.DefaultAngle;
 
         public ModelCache(IGameBackend backend) => this.backend = backend;
 
@@ -54,8 +58,8 @@ namespace OpenKingdomsUnity.Game.World
             Texture tex = null;
             if (texture >= 0)
             {
-                var t = UI.UiKit.ToTexture(backend.Texture(texture), true);
-                if (t != null) { t.wrapMode = TextureWrapMode.Repeat; t.filterMode = FilterMode.Bilinear; owned.Add(t); }
+                var t = UI.UiKit.ToTexture(backend.Texture(texture), true, false);
+                if (t != null) { t.wrapMode = TextureWrapMode.Repeat; t.filterMode = FilterMode.Trilinear; t.anisoLevel = 4; owned.Add(t); }
                 tex = t;
             }
             m = Looks.Model(tex);
@@ -108,6 +112,7 @@ namespace OpenKingdomsUnity.Game.World
                     mats.Add(MaterialFor(batch.Texture));
                 }
                 if (subs.Count == 0) continue;
+                if (SmoothingAngle > 0) NormalSmoother.Apply(verts, norms, uvs, cols, subs, SmoothingAngle);
                 var mesh = new Mesh { name = d.Name + "/" + d.Pieces[p].Name, indexFormat = verts.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
                 mesh.SetVertices(verts);
                 mesh.SetNormals(norms);
@@ -120,11 +125,29 @@ namespace OpenKingdomsUnity.Game.World
                 result.Pieces[p] = mesh;
                 result.Materials[p] = mats.ToArray();
             }
+            // Rest bounds from the pieces themselves, placed by their offsets.
+            var rest = new Matrix4x4[pieces];
+            bool any = false;
+            for (int p = 0; p < pieces; p++)
+            {
+                var m = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+                int parent = d.Pieces[p].Parent;
+                rest[p] = parent >= 0 && parent < p ? rest[parent] * m : m;
+                if (result.Pieces[p] == null) continue;
+                var b = result.Pieces[p].bounds;
+                foreach (var corner in new[] { b.min, b.max, new Vector3(b.min.x, b.max.y, b.min.z), new Vector3(b.max.x, b.min.y, b.max.z) })
+                {
+                    var w = rest[p].MultiplyPoint3x4(corner);
+                    if (!any) { result.RestBounds = new Bounds(w, Vector3.zero); any = true; }
+                    else result.RestBounds.Encapsulate(w);
+                }
+            }
             return result;
         }
 
         public void Dispose()
         {
+            InstancedDraws.ForgetMirrors();
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
             models.Clear();

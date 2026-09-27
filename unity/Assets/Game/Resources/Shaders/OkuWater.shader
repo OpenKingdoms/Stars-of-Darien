@@ -1,6 +1,8 @@
 // The sea: gentle Gerstner waves, deep and shallow colour from the
 // water's depth over the ground, foam where the ground comes close to
-// the surface, sky reflection by Fresnel and a sun glint.
+// the surface, sky reflection by Fresnel and a sun glint. The depth comes
+// from a picture of the sea floor baked from the height grid, so it needs
+// no camera depth texture.
 Shader "OpenKingdoms/Presentation/Water"
 {
     Properties
@@ -11,10 +13,12 @@ Shader "OpenKingdoms/Presentation/Water"
         _Foam ("Foam", Color) = (0.95, 0.97, 1, 1)
         _DepthScale ("Depth to deep", Float) = 3
         _FoamWidth ("Foam width", Float) = 0.45
-        _WaveHeight ("Wave height", Float) = 0.12
+        _WaveHeight ("Wave height", Float) = 0.07
         _WaveLength ("Wave length", Float) = 7
         _WaveSpeed ("Wave speed", Float) = 1.2
         _Wind ("Wind direction", Vector) = (1, 0, 0.4, 0)
+        _DepthTex ("Depth under the surface / 4", 2D) = "white" {}
+        _MapRect ("Map x, z, width, depth", Vector) = (0, -64, 64, 64)
     }
     SubShader
     {
@@ -34,7 +38,8 @@ Shader "OpenKingdoms/Presentation/Water"
             fixed4 _Shallow, _Deep, _Sky, _Foam;
             float _DepthScale, _FoamWidth, _WaveHeight, _WaveLength, _WaveSpeed;
             float4 _Wind;
-            UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+            sampler2D _DepthTex;
+            float4 _MapRect;
 
             struct appdata { float4 vertex : POSITION; };
             struct v2f
@@ -52,7 +57,7 @@ Shader "OpenKingdoms/Presentation/Water"
             {
                 float k = 6.28318 / len;
                 float f = k * (dot(dir, p.xz) - speed * _Time.y);
-                float steep = 0.5;
+                float steep = 0.25;
                 float a = amp;
                 tangent += float3(-dir.x * dir.x * steep * sin(f), dir.x * a * k * cos(f), -dir.x * dir.y * steep * sin(f));
                 binormal += float3(-dir.x * dir.y * steep * sin(f), dir.y * a * k * cos(f), -dir.y * dir.y * steep * sin(f));
@@ -81,18 +86,17 @@ Shader "OpenKingdoms/Presentation/Water"
 
             fixed4 frag(v2f i) : SV_Target
             {
-                float scene = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screen)));
-                float depth = max(0, scene - i.eyeDepth);
+                float2 duv = (i.world.xz - _MapRect.xy) / _MapRect.zw;
+                float inside = step(0, duv.x) * step(duv.x, 1) * step(0, duv.y) * step(duv.y, 1);
+                float vdepth = lerp(4, tex2D(_DepthTex, saturate(duv)).r * 4, inside);
                 float3 view = normalize(_WorldSpaceCameraPos - i.world);
                 float3 n = normalize(i.normal);
-                // Depth along the view, turned into a rough vertical depth.
-                float vdepth = depth * saturate(view.y + 0.15);
                 fixed4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
                 float fresnel = pow(1 - saturate(dot(n, view)), 4);
                 water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.6);
                 float3 l = normalize(_WorldSpaceLightPos0.xyz);
                 float3 h = normalize(l + view);
-                float spec = pow(saturate(dot(n, h)), 220) * 2.5;
+                float spec = pow(saturate(dot(n, h)), 160) * 1.2;
                 water.rgb *= 0.55 + 0.45 * saturate(dot(n, l)) * _LightColor0.rgb;
                 water.rgb += spec * _LightColor0.rgb;
                 // Foam at the shore, broken up by moving noise.

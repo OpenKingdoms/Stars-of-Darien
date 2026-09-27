@@ -149,7 +149,7 @@ namespace OpenKingdomsUnity.Game.UI
             Heading(s, "Skirmish", 72, 0.88f, 0.98f);
 
             // Maps.
-            var list = UiKit.Panel(s, "Maps", false).Place(0, 0, 0, 1, 60, 130, -520, 150);
+            var list = UiKit.Panel(s, "Maps", false).Place(0, 0, 0, 1, 60, 130, -440, 150);
             var listTitle = UiKit.Label(list, "Maps", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
             listTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
             var items = UiKit.Rect(list, "Items").Place(0, 0, 1, 1, 24, 24, 24, 80);
@@ -164,9 +164,9 @@ namespace OpenKingdomsUnity.Game.UI
             }
 
             // Preview and details.
-            var pv = UiKit.Panel(s, "Preview", false).Place(0, 0, 0, 1, 560, 130, -1120, 150);
+            var pv = UiKit.Panel(s, "Preview", false).Place(0, 0, 0, 1, 470, 130, -1010, 150);
             var frame = UiKit.Picture(pv, "Mat", UiKit.White, new Color(0.05f, 0.04f, 0.03f));
-            frame.rectTransform.Place(0.5f, 1, 0.5f, 1, -250, -530, -250, 30);
+            frame.rectTransform.Place(0.5f, 1, 0.5f, 1, -240, -510, -240, 30);
             preview = UiKit.Rect(frame.transform, "Image").Fill(4).gameObject.AddComponent<RawImage>();
             preview.gameObject.AddComponent<AspectRatioFitter>().aspectMode = AspectRatioFitter.AspectMode.FitInParent;
             mapTitle = UiKit.Label(pv, "", 40, UiKit.Gold, TextAnchor.UpperCenter, true);
@@ -175,7 +175,7 @@ namespace OpenKingdomsUnity.Game.UI
             mapInfo.rectTransform.Place(0, 0, 1, 1, 30, 20, 30, 630);
 
             // Seats and options.
-            var seats = UiKit.Panel(s, "Seats", false).Place(0, 0, 1, 1, 1160, 130, 60, 150);
+            var seats = UiKit.Panel(s, "Seats", false).Place(0, 0, 1, 1, 1040, 130, 60, 150);
             var seatTitle = UiKit.Label(seats, "Kingdoms", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
             seatTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
             var rows = UiKit.Rect(seats, "Rows").Place(0, 0, 1, 1, 24, 24, 24, 80);
@@ -226,27 +226,27 @@ namespace OpenKingdomsUnity.Game.UI
             var row = UiKit.Rect(parent, "Seat " + index).Size(0, 58);
             UiKit.Row(row, 10);
             var name = UiKit.Label(row, index == 0 ? "You" : "Seat " + (index + 1), 28, UiKit.Pale, TextAnchor.MiddleLeft, true);
-            name.rectTransform.Size(110, 0);
+            name.rectTransform.Size(92, 0);
             if (index == 0)
             {
-                var fixedKind = UiKit.Label(row, "Human", 24, UiKit.Dim);
+                var fixedKind = UiKit.Label(row, "Human", 22, UiKit.Dim);
                 fixedKind.rectTransform.Size(150, 0);
             }
             else
                 UiKit.Cycle(row, new[] { "Closed", "Computer" }, seat.Kind == SeatKind.Computer ? 1 : 0,
-                    i => seat.Kind = i == 1 ? SeatKind.Computer : SeatKind.Closed).GetComponent<RectTransform>().Size(150, 0);
-            UiKit.Cycle(row, sideNames.ToArray(), Math.Max(0, sideIds.IndexOf(seat.Side)), i => seat.Side = sideIds[i])
-                .GetComponent<RectTransform>().Size(150, 0);
-            var colour = UiKit.Cycle(row, ColourNames, seat.Colour % ColourNames.Length, null);
+                    i => seat.Kind = i == 1 ? SeatKind.Computer : SeatKind.Closed, 21).GetComponent<RectTransform>().Size(150, 0);
+            UiKit.Cycle(row, sideNames.ToArray(), Math.Max(0, sideIds.IndexOf(seat.Side)), i => seat.Side = sideIds[i], 21)
+                .GetComponent<RectTransform>().Size(140, 0);
+            var colour = UiKit.Cycle(row, ColourNames, seat.Colour % ColourNames.Length, null, 21);
             colour.GetComponent<RectTransform>().Size(120, 0);
             var swatch = colour.GetComponent<Image>();
             swatch.color = Tint(seat.Colour);
             colour.Init(ColourNames, seat.Colour % ColourNames.Length, i => { seat.Colour = i; swatch.color = Tint(i); }, colour.GetComponentInChildren<Text>());
-            UiKit.Cycle(row, new[] { "Team 1", "Team 2", "Team 3", "Team 4" }, seat.Team % 4, i => seat.Team = i)
+            UiKit.Cycle(row, new[] { "Team 1", "Team 2", "Team 3", "Team 4" }, seat.Team % 4, i => seat.Team = i, 21)
                 .GetComponent<RectTransform>().Size(110, 0);
             if (index > 0)
-                UiKit.Cycle(row, new[] { "Easy", "Normal", "Hard" }, (int)seat.Difficulty, i => seat.Difficulty = (AiDifficulty)i)
-                    .GetComponent<RectTransform>().Size(110, 0);
+                UiKit.Cycle(row, new[] { "Easy", "Normal", "Hard" }, (int)seat.Difficulty, i => seat.Difficulty = (AiDifficulty)i, 21)
+                    .GetComponent<RectTransform>().Size(116, 0);
         }
 
         static Color Tint(int colour)

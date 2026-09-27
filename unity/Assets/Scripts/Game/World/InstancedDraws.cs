@@ -32,10 +32,52 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m)
         {
+            var matrix = m;
+            // Instancing cannot flip culling per instance, so a mirrored
+            // matrix (the original models are mirrored in x) draws a mirrored
+            // copy of the mesh with an unmirrored matrix instead.
+            if (m.determinant < 0)
+            {
+                mesh = Mirrored(mesh);
+                matrix = m * FlipX;
+            }
             var k = new Key { Mesh = mesh, Submesh = submesh, Material = material };
             if (!groups.TryGetValue(k, out var list)) groups[k] = list = new List<Matrix4x4>();
-            list.Add(m);
+            list.Add(matrix);
             Count++;
+        }
+
+        static readonly Matrix4x4 FlipX = Matrix4x4.Scale(new Vector3(-1, 1, 1));
+        static readonly Dictionary<Mesh, Mesh> mirrors = new Dictionary<Mesh, Mesh>();
+
+        public static Mesh Mirrored(Mesh mesh)
+        {
+            if (mirrors.TryGetValue(mesh, out var m) && m != null) return m;
+            m = Object.Instantiate(mesh);
+            m.name = mesh.name + " (mirrored)";
+            m.hideFlags = HideFlags.DontSave;
+            var v = m.vertices;
+            for (int i = 0; i < v.Length; i++) v[i].x = -v[i].x;
+            m.vertices = v;
+            var n = m.normals;
+            for (int i = 0; i < n.Length; i++) n[i].x = -n[i].x;
+            if (n.Length > 0) m.normals = n;
+            for (int s = 0; s < m.subMeshCount; s++)
+            {
+                var t = m.GetTriangles(s);
+                for (int i = 0; i + 2 < t.Length; i += 3) { int a = t[i + 1]; t[i + 1] = t[i + 2]; t[i + 2] = a; }
+                m.SetTriangles(t, s);
+            }
+            m.RecalculateBounds();
+            mirrors[mesh] = m;
+            return m;
+        }
+
+        // Mirrored copies outlive a game only as long as their meshes.
+        public static void ForgetMirrors()
+        {
+            foreach (var m in mirrors.Values) if (m != null) Looks.Release(m);
+            mirrors.Clear();
         }
 
         public void Draw(int layer = 0)

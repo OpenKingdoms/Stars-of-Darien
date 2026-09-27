@@ -25,14 +25,20 @@ namespace OpenKingdomsUnity.Game.World
             Sun.type = LightType.Directional;
             Sun.transform.rotation = Quaternion.Euler(48f, 150f, 0f);
             Sun.color = climate == "desert" ? new Color(1f, 0.93f, 0.8f) : climate == "snow" ? new Color(0.92f, 0.95f, 1f) : new Color(1f, 0.96f, 0.88f);
-            Sun.intensity = 1.15f;
+            Sun.intensity = 1.0f;
             Sun.shadows = shadows ? LightShadows.Soft : LightShadows.None;
             Sun.shadowStrength = 0.8f;
-            Sun.shadowBias = 0.04f;
-            Sun.shadowNormalBias = 0.3f;
             RenderSettings.sun = Sun;
-            QualitySettings.shadowDistance = Mathf.Clamp(mapSize * 0.6f, 60f, 160f);
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowResolution = ShadowResolution.VeryHigh;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
             QualitySettings.shadowCascades = 4;
+            QualitySettings.shadowCascade4Split = new Vector3(0.08f, 0.22f, 0.5f);
+            // The original models are small, a unit is about two cells tall,
+            // so the biases stay tight to keep feet on their shadows.
+            Sun.shadowBias = 0.02f;
+            Sun.shadowNormalBias = 0.25f;
+            Sun.shadowNearPlane = 0.2f;
 
             var sky = Shader.Find("Skybox/Procedural");
             if (sky != null)
@@ -45,10 +51,13 @@ namespace OpenKingdomsUnity.Game.World
                 skybox.SetFloat("_Exposure", 1.2f);
                 RenderSettings.skybox = skybox;
             }
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            // Ambient light comes from the sky itself.
+            RenderSettings.ambientMode = skybox != null ? UnityEngine.Rendering.AmbientMode.Skybox : UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientIntensity = 0.85f;
             RenderSettings.ambientSkyColor = new Color(0.62f, 0.68f, 0.78f);
             RenderSettings.ambientEquatorColor = new Color(0.5f, 0.5f, 0.48f);
             RenderSettings.ambientGroundColor = new Color(0.28f, 0.26f, 0.22f);
+            DynamicGI.UpdateEnvironment();
 
             SetWeather(GameOptions.Resolve(weather, climate));
         }
@@ -62,7 +71,7 @@ namespace OpenKingdomsUnity.Game.World
             RenderSettings.fogColor = w == WeatherChoice.Snow ? new Color(0.82f, 0.85f, 0.9f) : new Color(0.62f, 0.66f, 0.7f);
             RenderSettings.fogStartDistance = w == WeatherChoice.Fog ? 20f : 60f;
             RenderSettings.fogEndDistance = w == WeatherChoice.Fog ? 110f : 220f;
-            if (Sun != null) Sun.intensity = w == WeatherChoice.Off ? 1.15f : w == WeatherChoice.Snow ? 0.95f : 0.8f;
+            if (Sun != null) Sun.intensity = w == WeatherChoice.Off ? 1.0f : w == WeatherChoice.Snow ? 0.85f : 0.7f;
             if (w == WeatherChoice.Off || w == WeatherChoice.ByMap) return;
 
             var go = new GameObject("Weather");

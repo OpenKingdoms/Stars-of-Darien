@@ -16,6 +16,9 @@ namespace OpenKingdomsUnity.Game.World
         readonly ModelCache models;
         readonly InstancedDraws solid = new InstancedDraws();
         readonly InstancedDraws overlay = new InstancedDraws { CastShadows = false };
+        // Sprite billboards take shadows but cast none, since a flat card
+        // turned to the camera would throw a wrong one.
+        readonly InstancedDraws billboards = new InstancedDraws { CastShadows = false };
         readonly Dictionary<int, Material> spriteMats = new Dictionary<int, Material>();
         readonly List<Object> owned = new List<Object>();
 
@@ -25,7 +28,7 @@ namespace OpenKingdomsUnity.Game.World
         readonly ProjectileState[] shots = new ProjectileState[MaxProjectiles];
         readonly PiecePose[] poses = new PiecePose[MaxPieces];
         public readonly HashSet<int> Selected = new HashSet<int>();
-        public int Drawn => solid.Count;
+        public int Drawn => solid.Count + billboards.Count;
 
         readonly Mesh quad, ring, shaft, barQuad;
         readonly Material ringMat, barBack, barGood, barMid, barLow, shaftMat;
@@ -40,6 +43,8 @@ namespace OpenKingdomsUnity.Game.World
             this.backend = backend;
             this.models = models;
             quad = Keep(Quad(0.5f));
+            // Cards light like the ground under them, not like a wall facing the camera.
+            quad.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
             barQuad = Keep(Quad(0f));
             ring = Keep(Ring(0.85f, 1f, 40));
             shaft = Keep(Box(new Vector3(0.04f, 0.04f, 0.9f)));
@@ -58,6 +63,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             solid.Clear();
             overlay.Clear();
+            billboards.Clear();
 
             UnitCount = backend.ReadUnits(Units);
             for (int i = 0; i < UnitCount; i++) AddUnit(ref Units[i], cam);
@@ -73,6 +79,7 @@ namespace OpenKingdomsUnity.Game.World
             }
 
             solid.Draw();
+            billboards.Draw();
             overlay.Draw();
         }
 
@@ -97,9 +104,9 @@ namespace OpenKingdomsUnity.Game.World
                     var m = poses[p].Matrix * model.Unscale;
                     for (int s = 0; s < mats.Length; s++) solid.Add(mesh, s, mats[s], m);
                 }
-                var b = model.Data.Bounds;
-                height = b.max.y * model.Data.Scale + 0.4f;
-                radius = Mathf.Max(b.extents.x, b.extents.z) * model.Data.Scale + 0.2f;
+                var b = model.RestBounds;
+                height = Mathf.Max(Mathf.Abs(b.max.y), Mathf.Abs(b.min.y)) + 0.4f;
+                radius = Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.z) * 0.9f, 0.4f, 6f);
             }
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;
@@ -201,7 +208,7 @@ namespace OpenKingdomsUnity.Game.World
                 if (mat == null) continue;
                 float h = s.top - s.bottom;
                 var centre = s.pos + Vector3.up * (s.bottom + h * 0.5f) + face * Vector3.right * (s.w * 0.5f - s.offX);
-                solid.Add(quad, 0, mat, Matrix4x4.TRS(centre, face, new Vector3(s.w, h, 1)));
+                billboards.Add(quad, 0, mat, Matrix4x4.TRS(centre, face, new Vector3(s.w, h, 1)));
             }
         }
 

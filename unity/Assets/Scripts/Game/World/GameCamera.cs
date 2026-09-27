@@ -33,6 +33,12 @@ namespace OpenKingdomsUnity.Game.World
             Apply(1f);
         }
 
+        // Jumps straight to a distance, for scripted views.
+        public void Zoom(float d)
+        {
+            targetDistance = distance = Mathf.Clamp(d, minDistance, maxDistance);
+        }
+
         void LateUpdate()
         {
             float dt = Time.unscaledDeltaTime;

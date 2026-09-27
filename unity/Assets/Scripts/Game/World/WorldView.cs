@@ -59,6 +59,9 @@ namespace OpenKingdomsUnity.Game.World
         {
             if (Root == null || Camera == null) return;
             var cam = Camera.GetComponent<UnityEngine.Camera>();
+            // Shadows reach a little past what the camera frames, so the
+            // cascades spend their texels where the eye is.
+            QualitySettings.shadowDistance = Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f);
             Entities.Render(cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y);
         }

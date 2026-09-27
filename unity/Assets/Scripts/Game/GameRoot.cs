@@ -40,6 +40,7 @@ namespace OpenKingdomsUnity.Game
 
         void Awake()
         {
+            TakeOverScene();
             Backend = injected ?? BackendFactory?.Invoke() ?? new MockBackend();
             Options = GameOptions.Load();
             Setup = DefaultSetup(Backend);
@@ -48,22 +49,26 @@ namespace OpenKingdomsUnity.Game
             Screens.Show(Flow.State);
         }
 
-        void Start()
+        // Another game view may have booted into the scene before this one
+        // (a test scene, or GameRoot.Boot after Play): the capsule demo or
+        // the engine's own view. Only one runs, so take them and what they
+        // built away, the engine's view first so its game ends before ours.
+        static void TakeOverScene()
         {
-            // The capsule demo boots itself into every scene. It has no
-            // place here, so take it and what it built away.
-            var demo = FindAnyObjectByType<SimDriver>();
-            if (demo != null)
+            foreach (var name in new[] { "OpenKingdoms", "SimDriver" })
             {
-                foreach (var name in new[] { "Ground", "Obstacles", "Units", "Sun" })
-                {
-                    var go = GameObject.Find(name);
-                    if (go != null) Destroy(go);
-                }
-                var rig = Camera.main != null ? Camera.main.GetComponent<RtsCamera>() : null;
-                if (rig != null) Destroy(rig);
-                Destroy(demo.gameObject);
+                var go = GameObject.Find(name);
+                if (go != null) DestroyImmediate(go);
             }
+            foreach (var name in new[] { "Ground", "Obstacles", "Units", "Sun", "Terrain", "Features" })
+            {
+                var go = GameObject.Find(name);
+                if (go != null && go.transform.parent == null) DestroyImmediate(go);
+            }
+            var cam = Camera.main;
+            if (cam != null)
+                foreach (var b in cam.GetComponents<MonoBehaviour>())
+                    if (b != null && !(b is GameCamera)) DestroyImmediate(b);
         }
 
         public static SkirmishSetup DefaultSetup(IGameBackend b)

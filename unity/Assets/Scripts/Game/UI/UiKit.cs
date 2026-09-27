@@ -298,16 +298,22 @@ namespace OpenKingdomsUnity.Game.UI
             return h;
         }
 
-        public static Texture2D ToTexture(RgbaImage img, bool mipmaps = false)
+        // Row 0 of a picture is its top, and Unity uploads bottom first, so
+        // by default the rows flip and the picture stands the right way up.
+        // Model textures do not flip: their UVs expect the rows as they come.
+        public static Texture2D ToTexture(RgbaImage img, bool mipmaps = false, bool flip = true)
         {
             if (img == null) return null;
             var tex = new Texture2D(img.Width, img.Height, TextureFormat.RGBA32, mipmaps) { hideFlags = HideFlags.DontSave };
-            // Row 0 of the picture is its top, and Unity uploads bottom first.
-            var flipped = new byte[img.Pixels.Length];
-            int stride = img.Width * 4;
-            for (int y = 0; y < img.Height; y++)
-                Buffer.BlockCopy(img.Pixels, y * stride, flipped, (img.Height - 1 - y) * stride, stride);
-            tex.SetPixelData(flipped, 0);
+            var data = img.Pixels;
+            if (flip)
+            {
+                data = new byte[img.Pixels.Length];
+                int stride = img.Width * 4;
+                for (int y = 0; y < img.Height; y++)
+                    Buffer.BlockCopy(img.Pixels, y * stride, data, (img.Height - 1 - y) * stride, stride);
+            }
+            tex.SetPixelData(data, 0);
             tex.Apply(mipmaps);
             tex.wrapMode = TextureWrapMode.Clamp;
             return tex;

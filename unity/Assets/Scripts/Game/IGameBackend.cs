@@ -7,7 +7,7 @@
 // The map's north-west corner is the origin, x runs east and z runs north,
 // so the whole map lies at z <= 0. Headings are degrees about +y, 0 facing
 // north (+z), clockwise seen from above. Pictures are RGBA with row 0 at
-// the top, and a consumer that uploads them as is samples v = row / height.
+// the top. Model UVs address a texture uploaded as is, v = row / height.
 using System;
 using System.Collections.Generic;
 using UnityEngine;

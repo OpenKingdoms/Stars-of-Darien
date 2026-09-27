@@ -1,5 +1,6 @@
 // Models, features and sprites: texture times vertex colour times an
-// instanced tint, alpha tested, lit, casting and taking shadows.
+// instanced tint, alpha tested, lit, casting and taking shadows, with a
+// faint rim of sky light.
 Shader "OpenKingdoms/Presentation/Model"
 {
     Properties
@@ -8,6 +9,7 @@ Shader "OpenKingdoms/Presentation/Model"
         _Color ("Tint", Color) = (1, 1, 1, 1)
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _Glossiness ("Smoothness", Range(0, 1)) = 0.2
+        _Rim ("Rim light", Range(0, 1)) = 0.3
     }
     SubShader
     {
@@ -18,6 +20,7 @@ Shader "OpenKingdoms/Presentation/Model"
         #pragma target 3.5
         sampler2D _MainTex;
         half _Glossiness;
+        half _Rim;
         UNITY_INSTANCING_BUFFER_START(Props)
             UNITY_DEFINE_INSTANCED_PROP(fixed4, _Color)
         UNITY_INSTANCING_BUFFER_END(Props)
@@ -25,6 +28,7 @@ Shader "OpenKingdoms/Presentation/Model"
         {
             float2 uv_MainTex;
             float4 color : COLOR;
+            float3 viewDir;
         };
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
@@ -33,6 +37,9 @@ Shader "OpenKingdoms/Presentation/Model"
             o.Alpha = c.a;
             o.Smoothness = _Glossiness;
             o.Metallic = 0;
+            // A soft sky-coloured rim, so small models read against the ground.
+            half rim = 1 - saturate(dot(normalize(IN.viewDir), o.Normal));
+            o.Emission = unity_AmbientSky.rgb * c.rgb * pow(rim, 3) * _Rim * 2;
         }
         ENDCG
     }
