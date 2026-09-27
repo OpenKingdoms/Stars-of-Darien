@@ -123,6 +123,13 @@ namespace OpenKingdomsUnity.Engine
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    public struct OkxEffect
+    {
+        public int kind, id, sprite, frame;
+        public float x, y, z, top, bottom, offX, w, u0, u1, v1;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     public struct OkxOrder
     {
         public int kind, target, x, y, building;
@@ -140,7 +147,8 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 5;
+        public const int ApiVersion = 6;
+        public const int EffectImpact = 0, EffectProjectile = 1;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
@@ -164,6 +172,8 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_economy(int player, out OkxEconomy economy);
         [DllImport(Lib)] public static extern int okx_projectiles([Out] OkxProjectile[] projectiles, int cap);
         [DllImport(Lib)] public static extern int okx_projectile_pose(int id, [Out] float[] matrices, int cap);
+        [DllImport(Lib)] public static extern int okx_effects([Out] OkxEffect[] effects, int cap);
+        [DllImport(Lib)] public static extern int okx_effect_strip(int sprite, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_build_site(int def, int x, int y, out int sx, out int sy);
         [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
         [DllImport(Lib)] public static extern int okx_unit_order(int handle, out OkxOrder order);
