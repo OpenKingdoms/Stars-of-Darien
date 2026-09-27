@@ -19,56 +19,102 @@ namespace OpenKingdomsUnity.Game.World
         readonly Dictionary<int, Material> chunkMats = new Dictionary<int, Material>();
         readonly Dictionary<int, RgbaImage> chunkImages = new Dictionary<int, RgbaImage>();
 
+        IGameBackend backend;
+        GameObject[,] regions;
+        readonly Dictionary<GameObject, List<Object>> regionOwned = new Dictionary<GameObject, List<Object>>();
+
+        RgbaImage Chunk(int c)
+        {
+            if (!chunkImages.TryGetValue(c, out var img)) chunkImages[c] = img = backend.TerrainChunk(c);
+            return img;
+        }
+
+        Vector2Int Size(int c)
+        {
+            var img = Chunk(c);
+            return img != null ? new Vector2Int(img.Width, img.Height) : Vector2Int.zero;
+        }
+
         public void Build(IGameBackend backend, Transform parent)
         {
+            this.backend = backend;
             var t = backend.Terrain;
             Root = new GameObject("Terrain");
             Root.transform.SetParent(parent, false);
-
-            RgbaImage Chunk(int c)
-            {
-                if (!chunkImages.TryGetValue(c, out var img)) chunkImages[c] = img = backend.TerrainChunk(c);
-                return img;
-            }
-            Vector2Int Size(int c)
-            {
-                var img = Chunk(c);
-                return img != null ? new Vector2Int(img.Width, img.Height) : Vector2Int.zero;
-            }
-
             int rw = TerrainBuilder.RegionsW(t), rh = TerrainBuilder.RegionsH(t);
+            regions = new GameObject[rw, rh];
             for (int ry = 0; ry < rh; ry++)
                 for (int rx = 0; rx < rw; rx++)
-                {
-                    var region = new GameObject($"Region {rx},{ry}");
-                    region.transform.SetParent(Root.transform, false);
-
-                    var detail = TerrainBuilder.Detail(t, rx, ry, Size);
-                    var order = new List<int>(detail.Triangles.Keys);
-                    var near = Child(region, "LOD0", TerrainBuilder.ToMesh(detail, $"terrain {rx},{ry}", order));
-                    var mats = new Material[order.Count];
-                    for (int i = 0; i < order.Count; i++) mats[i] = ChunkMaterial(order[i], Chunk, t.SeaLevel);
-                    near.sharedMaterials = mats;
-
-                    var coarse = TerrainBuilder.Coarse(t, rx, ry, CoarseStep);
-                    var far = Child(region, "LOD1", TerrainBuilder.ToMesh(coarse, $"terrain far {rx},{ry}", new List<int> { -1 }));
-                    var baked = UI.UiKit.ToTexture(TerrainBuilder.BakeRegion(t, rx, ry, BakeSize, Chunk), true);
-                    baked.wrapMode = TextureWrapMode.Clamp;
-                    owned.Add(baked);
-                    var farMat = Looks.Terrain(baked, t.SeaLevel);
-                    owned.Add(farMat);
-                    far.sharedMaterial = farMat;
-                    far.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-
-                    var lod = region.AddComponent<LODGroup>();
-                    lod.SetLODs(new[] { new LOD(0.12f, new Renderer[] { near }), new LOD(0.0f, new Renderer[] { far }) });
-                    lod.RecalculateBounds();
-                    Regions++;
-                }
+                    regions[rx, ry] = BuildRegion(t, rx, ry);
             Apron = BuildApron(t, Chunk, Root.transform);
             chunkImages.Clear();
 
             if (t.SeaLevel > 0) Water = BuildWater(t, parent);
+        }
+
+        GameObject BuildRegion(MapTerrain t, int rx, int ry)
+        {
+            var region = new GameObject($"Region {rx},{ry}");
+            region.transform.SetParent(Root.transform, false);
+            var mine = new List<Object>();
+            regionOwned[region] = mine;
+
+            var detail = TerrainBuilder.Detail(t, rx, ry, Size);
+            var order = new List<int>(detail.Triangles.Keys);
+            var near = Child(region, "LOD0", TerrainBuilder.ToMesh(detail, $"terrain {rx},{ry}", order), mine);
+            var mats = new Material[order.Count];
+            for (int i = 0; i < order.Count; i++) mats[i] = ChunkMaterial(order[i], Chunk, t.SeaLevel);
+            near.sharedMaterials = mats;
+
+            var coarse = TerrainBuilder.Coarse(t, rx, ry, CoarseStep);
+            var far = Child(region, "LOD1", TerrainBuilder.ToMesh(coarse, $"terrain far {rx},{ry}", new List<int> { -1 }), mine);
+            var baked = UI.UiKit.ToTexture(TerrainBuilder.BakeRegion(t, rx, ry, BakeSize, Chunk), true);
+            baked.wrapMode = TextureWrapMode.Clamp;
+            mine.Add(baked);
+            var farMat = Looks.Terrain(baked, t.SeaLevel);
+            mine.Add(farMat);
+            far.sharedMaterial = farMat;
+            far.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+            var lod = region.AddComponent<LODGroup>();
+            lod.SetLODs(new[] { new LOD(0.12f, new Renderer[] { near }), new LOD(0.0f, new Renderer[] { far }) });
+            lod.RecalculateBounds();
+            Regions++;
+            return region;
+        }
+
+        // Rebuilds the regions that cover a rectangle of blocks, after the
+        // ground there was edited: heights, or which picture a block shows.
+        public void Rebuild(RectInt blocks)
+        {
+            if (regions == null) return;
+            var t = backend.Terrain;
+            int rw = regions.GetLength(0), rh = regions.GetLength(1);
+            int x0 = Mathf.Clamp((blocks.xMin - 1) / TerrainBuilder.RegionBlocks, 0, rw - 1);
+            int x1 = Mathf.Clamp(blocks.xMax / TerrainBuilder.RegionBlocks, 0, rw - 1);
+            int y0 = Mathf.Clamp((blocks.yMin - 1) / TerrainBuilder.RegionBlocks, 0, rh - 1);
+            int y1 = Mathf.Clamp(blocks.yMax / TerrainBuilder.RegionBlocks, 0, rh - 1);
+            for (int ry = y0; ry <= y1; ry++)
+                for (int rx = x0; rx <= x1; rx++)
+                {
+                    var old = regions[rx, ry];
+                    if (regionOwned.TryGetValue(old, out var list)) { foreach (var o in list) Looks.Release(o); regionOwned.Remove(old); }
+                    Looks.Release(old);
+                    Regions--;
+                    regions[rx, ry] = BuildRegion(t, rx, ry);
+                }
+            chunkImages.Clear();
+            if (Water != null) RefreshWater(t);
+        }
+
+        Texture2D waterDepth;
+
+        void RefreshWater(MapTerrain t)
+        {
+            var mat = Water.GetComponent<MeshRenderer>().sharedMaterial;
+            if (waterDepth != null) Looks.Release(waterDepth);
+            waterDepth = SeaDepth(t);
+            mat.SetTexture("_DepthTex", waterDepth);
         }
 
         // Land past the map edge, so the world does not stop at a void: a
@@ -163,9 +209,9 @@ namespace OpenKingdomsUnity.Game.World
             return count > 0 ? new Color32((byte)(r / count), (byte)(g / count), (byte)(bl / count), 255) : new Color32(90, 100, 80, 255);
         }
 
-        MeshRenderer Child(GameObject region, string name, Mesh mesh)
+        MeshRenderer Child(GameObject region, string name, Mesh mesh, List<Object> keep)
         {
-            owned.Add(mesh);
+            keep.Add(mesh);
             var go = new GameObject(name);
             go.transform.SetParent(region.transform, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
@@ -248,7 +294,11 @@ namespace OpenKingdomsUnity.Game.World
             if (Water != null) Looks.Release(Water);
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
+            foreach (var list in regionOwned.Values) foreach (var o in list) Looks.Release(o);
+            regionOwned.Clear();
             chunkMats.Clear();
+            regions = null;
+            if (waterDepth != null) Looks.Release(waterDepth);
             Regions = 0;
         }
     }
