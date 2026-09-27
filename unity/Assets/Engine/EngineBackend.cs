@@ -105,9 +105,8 @@ namespace OpenKingdomsUnity.Engine
             status = GameStatus.Loading;
         }
 
-        // Not in IGameBackend yet: saved games. SaveGame writes the running
-        // battle. LoadGame is StartSkirmish for a save: PumpLoading then
-        // brings it up through the same loading screen.
+        // Saved games, through the engine's own writer and the same sliced
+        // loading screen as a new battle.
         public bool SaveGame(string path) => status == GameStatus.Running && OkEngine.okx_save(path) == 0;
 
         public bool LoadGame(string path)

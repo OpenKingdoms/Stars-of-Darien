@@ -31,6 +31,12 @@ namespace OpenKingdomsUnity.Game
         // work, until it reports Done (Status is Running) or Failed.
         void StartSkirmish(SkirmishSetup setup);
         LoadProgress PumpLoading();
+        // Saved games. SaveGame writes the running battle. LoadGame is
+        // StartSkirmish for a save, and PumpLoading then brings it up. A
+        // save that will not read returns false and changes nothing.
+        bool SaveGame(string path);
+        bool LoadGame(string path);
+        bool SaveInfo(string path, out string map, out uint tick, out DateTime savedAt);
         GameStatus Status { get; }
         void EndGame();
 

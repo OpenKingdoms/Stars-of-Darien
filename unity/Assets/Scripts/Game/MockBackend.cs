@@ -657,6 +657,17 @@ namespace OpenKingdomsUnity.Game
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
         public int ReadEffects(EffectState[] into) => 0;
+
+        public bool SaveGame(string path) => false;
+        public bool LoadGame(string path) => false;
+
+        public bool SaveInfo(string path, out string map, out uint tick, out DateTime savedAt)
+        {
+            map = null;
+            tick = 0;
+            savedAt = default;
+            return false;
+        }
         public RgbaImage EffectStrip(int strip) => null;
 
         // ---- HUD helpers ----
