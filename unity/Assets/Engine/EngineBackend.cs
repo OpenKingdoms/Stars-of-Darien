@@ -380,6 +380,11 @@ namespace OpenKingdomsUnity.Engine
                     Model = u.model,
                     Facing = u.facing
                 };
+                if (OkEngine.okx_unit_mana(u.handle, out float mana, out float maxMana) == 0)
+                {
+                    into[i].Mana = Mathf.FloorToInt(mana);
+                    into[i].MaxMana = Mathf.RoundToInt(maxMana);
+                }
                 if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
             }
             return n;
@@ -596,10 +601,140 @@ namespace OpenKingdomsUnity.Engine
 
         public bool CanRotate(int def) => OkEngine.okx_def_can_turn(def) != 0;
 
-        // Spells, abilities and stances wait for the engine's action list.
-        public UnitAction[] SelectionActions() => Array.Empty<UnitAction>();
-        public bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue) => false;
-        public RgbaImage ActionPicture(int picture) => null;
+        // ── The sidebar's buttons ──────────────────────────────────────
+        // The engine lists them from the classic HUD's own table, and a
+        // press goes through the same orders the sidebar sends.
+        readonly OkxHudCommand[] hudBuf = new OkxHudCommand[32];
+        readonly Dictionary<string, RgbaImage> actionArt = new Dictionary<string, RgbaImage>();
+        readonly Dictionary<int, string> artKey = new Dictionary<int, string>();
+
+        static ActionKind KindOf(in OkxHudCommand c)
+        {
+            if (c.weaponSlot >= 0) return ActionKind.Spell;
+            if (c.group == 1) return ActionKind.Stance;
+            switch (c.id)
+            {
+                case 5: case 6: case 7: case 8: case 120: case 121: case 122: case 123: return ActionKind.Ability;
+                default: return ActionKind.Order;
+            }
+        }
+
+        static ActionTarget TargetOf(in OkxHudCommand c)
+        {
+            if (c.weaponSlot >= 0) return ActionTarget.PointOrUnit;
+            switch (c.id)
+            {
+                case 1: case 4: case 6: return ActionTarget.Point;          // move, patrol, unload
+                case 2: case 8: return ActionTarget.PointOrUnit;            // attack, clear
+                case 3: case 7: return ActionTarget.Unit;                   // guard, heal
+                case 5: return ActionTarget.Area;                           // load: a rider or a box
+                default: return ActionTarget.None;
+            }
+        }
+
+        static void CommandOf(in OkxHudCommand c, out CommandKind kind, out int arg)
+        {
+            arg = 0;
+            switch (c.id)
+            {
+                case 1: kind = CommandKind.Move; break;
+                case 2: kind = CommandKind.Attack; break;
+                case 3: kind = CommandKind.Guard; break;
+                case 4: kind = CommandKind.Patrol; break;
+                case 5: kind = CommandKind.Load; break;
+                case 6: kind = CommandKind.Unload; break;
+                case 7: kind = CommandKind.Repair; break;
+                case 8: kind = CommandKind.Reclaim; break;
+                case 100: kind = CommandKind.Stop; break;
+                case 101: kind = CommandKind.SetAggro; arg = 2; break;
+                case 102: kind = CommandKind.SetAggro; arg = 1; break;
+                case 103: kind = CommandKind.SetAggro; arg = 0; break;
+                case 122: kind = CommandKind.Gate; arg = 1; break;
+                case 123: kind = CommandKind.Gate; arg = 0; break;
+                default:
+                    kind = c.weaponSlot >= 0 ? CommandKind.SetWeapon : CommandKind.Stop;
+                    arg = Math.Max(0, c.weaponSlot);
+                    break;
+            }
+        }
+
+        public UnitAction[] SelectionActions()
+        {
+            int n = Math.Min(OkEngine.okx_hud_commands(hudBuf, hudBuf.Length), hudBuf.Length);
+            var list = new UnitAction[Math.Max(0, n)];
+            for (int i = 0; i < list.Length; i++)
+            {
+                var c = hudBuf[i];
+                CommandOf(c, out var kind, out int arg);
+                int state = c.enabled == 0 ? 0 : c.active != 0 ? 1 : 2;
+                int picture = c.id * 4 + state;
+                artKey[picture] = picture + ":" + (c.weapon ?? "");
+                list[i] = new UnitAction
+                {
+                    Id = c.name,
+                    Label = c.weaponSlot >= 0 && !string.IsNullOrEmpty(c.weapon) ? c.weapon : c.label,
+                    Kind = KindOf(c),
+                    Command = kind,
+                    Arg = arg,
+                    Target = TargetOf(c),
+                    ManaCost = c.manaCost,
+                    Enabled = c.enabled != 0,
+                    Why = c.why == OkEngine.WhyMana ? "Not enough mana"
+                        : c.why == OkEngine.WhyUnsupported ? "Not in the engine yet" : "",
+                    Toggled = c.active != 0,
+                    StanceGroup = c.group > 0 ? c.group : -1,
+                    Hotkey = c.hotkey > 0 ? ((char)c.hotkey).ToString() : "",
+                    Picture = picture,
+                };
+            }
+            return list;
+        }
+
+        public bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue)
+        {
+            int n = Math.Min(OkEngine.okx_hud_commands(hudBuf, hudBuf.Length), hudBuf.Length);
+            for (int i = 0; i < n; i++)
+            {
+                var c = hudBuf[i];
+                if (c.name != id) continue;
+                if (c.enabled == 0) return false;
+                bool aimed = unit >= 0 || at != Vector3.zero;
+                if (c.weaponSlot >= 0)
+                {
+                    // Choose the spell, then cast it as an attack where aimed.
+                    if (c.active == 0 && OkEngine.okx_hud_do(c.id) == 0) return false;
+                    if (!aimed) return true;
+                    OkEngine.okx_arm(OkEngine.ArmAttack, -1);
+                    OkEngine.okx_click(at.x / S, -at.z / S, unit, queue ? 1 : 0);
+                    return true;
+                }
+                if (c.kind != OkEngine.CmdTarget) return OkEngine.okx_hud_do(c.id) != 0;
+                // A targeted order: armed, then carried out by the click or
+                // the drag the classic view would send.
+                OkEngine.okx_arm(c.id, -1);
+                if (area.width > 0f && area.height > 0f)
+                {
+                    OkEngine.okx_drag(area.xMin / S, -area.yMin / S, area.xMax / S, -area.yMax / S, queue ? 1 : 0);
+                    return true;
+                }
+                if (aimed) OkEngine.okx_click(at.x / S, -at.z / S, unit, queue ? 1 : 0);
+                return true;
+            }
+            return false;
+        }
+
+        public RgbaImage ActionPicture(int picture)
+        {
+            if (picture < 0) return null;
+            string key = artKey.TryGetValue(picture, out var k) ? k : picture.ToString();
+            if (actionArt.TryGetValue(key, out var img)) return img;
+            int need = OkEngine.okx_hud_command_art(picture / 4, picture % 4, null, 0, out int w, out int h);
+            if (need <= 0 || w <= 0 || h <= 0) { actionArt[key] = null; return null; }
+            img = new RgbaImage(w, h);
+            OkEngine.okx_hud_command_art(picture / 4, picture % 4, img.Pixels, img.Pixels.Length, out w, out h);
+            actionArt[key] = img;
+            return img;
+        }
 
         public bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped)
         {

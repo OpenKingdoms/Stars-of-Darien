@@ -3,6 +3,7 @@
 // game, then a skirmish loaded by pumping, and the snapshots, poses,
 // players, economy and orders of a running battle. Needs okengine and the
 // game files, and is ignored without them.
+using System;
 using NUnit.Framework;
 using OpenKingdomsUnity.Engine;
 using OpenKingdomsUnity.Game;
@@ -144,6 +145,39 @@ namespace OpenKingdomsUnity.Tests
                     if (units[i].Def == hall && units[i].Player == me) facing = units[i].Facing;
             }
             Assert.AreEqual(1, facing);
+        }
+
+        [Test, Order(8)]
+        public void TheSidebarsButtonsListCastAndToggle()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, caster = -1;
+            UnitAction spell = null;
+            for (int i = 0; i < n && caster < 0; i++)
+            {
+                if (units[i].Player != me) continue;
+                backend.Select(new[] { units[i].Handle }, false);
+                foreach (var a in backend.SelectionActions())
+                    if (a.Kind == ActionKind.Spell && a.ManaCost > 0) { spell = a; caster = i; break; }
+            }
+            Assert.IsNotNull(spell, "a caster lists its spell");
+            Assert.Greater(units[caster].MaxMana, 0, "a caster has a mana bar");
+            var actions = backend.SelectionActions();
+            foreach (var a in actions)
+                if (a.Why != "Not in the engine yet")
+                    Assert.IsNotNull(backend.ActionPicture(a.Picture), a.Id + " has the original's picture");
+            var passive = Array.Find(actions, a => a.Id == "Passive");
+            Assert.IsNotNull(passive);
+            Assert.AreEqual(ActionKind.Stance, passive.Kind);
+            Assert.IsTrue(backend.DoAction("Passive", Vector3.zero, -1, default, false));
+            backend.Advance(3);
+            Assert.IsTrue(Array.Find(backend.SelectionActions(), a => a.Id == "Passive").Toggled);
+            Assert.IsTrue(backend.DoAction("Offensive", Vector3.zero, -1, default, false));
+            backend.Advance(3);
+            Assert.IsTrue(Array.Find(backend.SelectionActions(), a => a.Id == "Offensive").Toggled);
+            Assert.AreEqual("A", Array.Find(actions, a => a.Id == "ATTACK").Hotkey);
+            backend.Cancel();
+            backend.Cancel();
         }
 
         [Test, Order(6)]
