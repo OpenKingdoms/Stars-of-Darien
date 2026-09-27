@@ -46,13 +46,13 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
-        void SpawnSpecialists(PlayerInfo p, Vector2 home)
+        void SpawnSpecialists(PlayerInfo p, int pos, Vector2 home)
         {
             foreach (var kv in roles)
             {
                 if (unitDefs[kv.Key].Side != p.Side) continue;
                 int k = (int)kv.Value - (int)Role.Mage;
-                var u = Spawn(kv.Key, p.Index, home + new Vector2(-3 + k * 1.5f, -6));
+                var u = Spawn(kv.Key, pos, home + new Vector2(-3 + k * 1.5f, -6));
                 if (kv.Value == Role.Mage) mana[u.Handle] = MageMana;
             }
         }
@@ -174,7 +174,7 @@ namespace OpenKingdomsUnity.Game
                             float bd = float.MaxValue;
                             foreach (var o in units)
                             {
-                                if (o.Dying || o.Player == LocalPlayer || !area.Contains(new Vector2(o.Pos.x, o.Pos.z))) continue;
+                                if (o.Dying || o.Player == 0 || !area.Contains(new Vector2(o.Pos.x, o.Pos.z))) continue;
                                 float d = (o.Pos - u.Pos).sqrMagnitude;
                                 if (d < bd) { bd = d; best = o.Handle; }
                             }

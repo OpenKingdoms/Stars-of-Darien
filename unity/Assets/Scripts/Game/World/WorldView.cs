@@ -63,13 +63,7 @@ namespace OpenKingdomsUnity.Game.World
             return new Vector3(s.x / 2, 0, -s.y / 2);
         }
 
-        bool Friendly(int player)
-        {
-            var ps = backend.Players;
-            int me = backend.LocalPlayer;
-            if (player == me) return true;
-            return player >= 0 && player < ps.Count && me < ps.Count && ps[player].Team == ps[me].Team;
-        }
+        bool Friendly(int player) => backend.Allied(player, backend.LocalPlayer);
 
         // Builds the models of every unit on the field and of everything the
         // players' units can build, now while the loading screen is up, so a
@@ -83,7 +77,7 @@ namespace OpenKingdomsUnity.Game.World
             {
                 Models.Get(units[i].Model);
                 var def = backend.UnitDefs[units[i].Def];
-                int colour = units[i].Player >= 0 && units[i].Player < backend.Players.Count ? backend.Players[units[i].Player].Colour : 0;
+                int colour = backend.PlayerById(units[i].Player)?.Colour ?? 0;
                 foreach (int o in def.BuildOptions)
                 {
                     if (o < 0 || o >= backend.UnitDefs.Count || !seen.Add((o, colour))) continue;

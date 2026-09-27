@@ -44,7 +44,7 @@ namespace OpenKingdomsUnity.Tests
         }
 
         int Own(MockBackend.Role role) =>
-            Units().First(u => u.Player == 0 && mock.RoleOf(u.Def) == role).Handle;
+            Units().First(u => u.Player == 1 && mock.RoleOf(u.Def) == role).Handle;
 
         // The HUD's button for an action, once the panel has refreshed.
         IEnumerator Button(string id, System.Action<Button> found)
@@ -74,7 +74,7 @@ namespace OpenKingdomsUnity.Tests
             fire.onClick.Invoke();
             Assert.AreEqual("PrimaryWeapon", root.Orders.ArmedAction?.Id, "the spell waits for a target");
 
-            var enemy = Units().First(u => u.Player == 1);
+            var enemy = Units().First(u => u.Player == 2);
             int before = mock.ManaOf(mage);
             Assert.IsTrue(mock.DoAction("PrimaryWeapon", enemy.Position, enemy.Handle, default, false));
             Assert.AreEqual(before - MockBackend.FireballCost, mock.ManaOf(mage), "the cast costs its mana");
@@ -108,9 +108,9 @@ namespace OpenKingdomsUnity.Tests
         public IEnumerator AttackingABoxTakesOnTheEnemiesInIt()
         {
             yield return Begin();
-            var knights = Units().Where(u => u.Player == 0 && mock.RoleOf(u.Def) == MockBackend.Role.Knight).Select(u => u.Handle).ToArray();
+            var knights = Units().Where(u => u.Player == 1 && mock.RoleOf(u.Def) == MockBackend.Role.Knight).Select(u => u.Handle).ToArray();
             mock.Select(knights, false);
-            var enemies = Units().Where(u => u.Player == 1).ToArray();
+            var enemies = Units().Where(u => u.Player == 2).ToArray();
             var c = enemies[0].Position;
             var box = Rect.MinMaxRect(c.x - 6, c.z - 6, c.x + 6, c.z + 6);
             Assert.IsTrue(mock.DoAction("ATTACK", c, -1, box, false), "a box with enemies in it takes the attack");
@@ -123,7 +123,7 @@ namespace OpenKingdomsUnity.Tests
         {
             yield return Begin();
             int wagon = Own(MockBackend.Role.Wagon);
-            var archers = Units().Where(u => u.Player == 0 && mock.RoleOf(u.Def) == MockBackend.Role.Archer).ToArray();
+            var archers = Units().Where(u => u.Player == 1 && mock.RoleOf(u.Def) == MockBackend.Role.Archer).ToArray();
             mock.Select(new[] { wagon }, false);
             var c = archers[0].Position;
             var box = Rect.MinMaxRect(c.x - 5, c.z - 5, c.x + 5, c.z + 5);

@@ -74,7 +74,7 @@ namespace OpenKingdomsUnity.Tests
             // Selecting the monarch fills the command and build buttons.
             var ents = root.World.Entities;
             for (int i = 0; i < ents.UnitCount; i++)
-                if (ents.Units[i].Player == 0 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) mock.Select(new[] { ents.Units[i].Handle }, false);
+                if (ents.Units[i].Player == 1 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) mock.Select(new[] { ents.Units[i].Handle }, false);
             // The panel refreshes ten times a second of real time.
             yield return new WaitForSecondsRealtime(0.4f);
             var commands = GameObject.Find("Commands");
@@ -150,9 +150,9 @@ namespace OpenKingdomsUnity.Tests
                 {
                     int n = mock.ReadUnits(units), enemy = -1;
                     for (int i = 0; i < n && enemy < 0; i++)
-                        if (units[i].Player == 1 && (units[i].Flags & UnitFlags.Dying) == 0) enemy = units[i].Handle;
+                        if (units[i].Player == 2 && (units[i].Flags & UnitFlags.Dying) == 0) enemy = units[i].Handle;
                     for (int i = 0; i < n; i++)
-                        if (units[i].Player == 0 && enemy >= 0)
+                        if (units[i].Player == 1 && enemy >= 0)
                             mock.Command(new GameCommand { Kind = CommandKind.Attack, Unit = units[i].Handle, TargetUnit = enemy, BuildDef = -1 });
                     return root.Flow.State != FlowState.Playing;
                 }, 120f, "the game to end");

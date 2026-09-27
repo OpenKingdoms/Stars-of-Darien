@@ -30,7 +30,7 @@ namespace OpenKingdomsUnity.Tests
                 int n = mock.ReadUnits(units), monarch = -1;
                 Vector3 near = default;
                 for (int i = 0; i < n; i++)
-                    if (units[i].Player == 0 && mock.UnitDefs[units[i].Def].Name.EndsWith("monarch")) { monarch = units[i].Handle; near = units[i].Position; }
+                    if (units[i].Player == 1 && mock.UnitDefs[units[i].Def].Name.EndsWith("monarch")) { monarch = units[i].Handle; near = units[i].Position; }
                 Assert.GreaterOrEqual(monarch, 0);
                 int lodge = -1;
                 foreach (var d in mock.UnitDefs) if (d.Side == "ARAMON" && d.Name.EndsWith("lodge")) lodge = d.Id;

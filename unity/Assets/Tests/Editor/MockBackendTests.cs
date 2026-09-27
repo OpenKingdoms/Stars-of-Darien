@@ -56,7 +56,7 @@ namespace OpenKingdomsUnity.Tests
             int n = b.ReadUnits(units);
             UnitState knight = default;
             for (int i = 0; i < n; i++)
-                if (units[i].Player == 0 && b.UnitDefs[units[i].Def].Name.EndsWith("knight")) { knight = units[i]; break; }
+                if (units[i].Player == 1 && b.UnitDefs[units[i].Def].Name.EndsWith("knight")) { knight = units[i]; break; }
             var goal = knight.Position + new Vector3(3, 0, 0);
             Assert.IsTrue(b.Command(GameCommand.To(CommandKind.Move, knight.Handle, goal)));
             b.Advance(60);
@@ -89,9 +89,9 @@ namespace OpenKingdomsUnity.Tests
             {
                 int n = b.ReadUnits(units), enemy = -1;
                 for (int i = 0; i < n && enemy < 0; i++)
-                    if (units[i].Player == 1 && (units[i].Flags & UnitFlags.Dying) == 0) enemy = units[i].Handle;
+                    if (units[i].Player == 2 && (units[i].Flags & UnitFlags.Dying) == 0) enemy = units[i].Handle;
                 for (int i = 0; i < n; i++)
-                    if (units[i].Player == 0 && enemy >= 0)
+                    if (units[i].Player == 1 && enemy >= 0)
                         b.Command(new GameCommand { Kind = CommandKind.Attack, Unit = units[i].Handle, TargetUnit = enemy, BuildDef = -1 });
                 b.Advance(30);
             }

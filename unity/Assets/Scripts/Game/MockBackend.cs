@@ -29,7 +29,13 @@ namespace OpenKingdomsUnity.Game
         public IReadOnlyList<UnitDef> UnitDefs => unitDefs;
         public IReadOnlyList<FeatureDef> FeatureDefs => featureDefs;
         public GameStatus Status { get; private set; }
-        public int LocalPlayer => 0;
+        // Ids start at 1, as the engine's do. Inside, the mock keeps list
+        // positions and adds one at the contract.
+        public int LocalPlayer => players.Count > 0 ? players[0].Index : 1;
+
+        // The mock's list position for a player id, or -1, and back.
+        int PosOf(int id) => players.FindIndex(pl => pl.Index == id);
+        int IdOf(int pos) => pos >= 0 && pos < players.Count ? players[pos].Index : 0;
         public IReadOnlyList<PlayerInfo> Players => players;
         public int TicksPerSecond => Tps;
         public uint Tick { get; private set; }
@@ -241,14 +247,15 @@ namespace OpenKingdomsUnity.Game
 
         void MakePlayers()
         {
-            int seat = 0;
+            int seat = 0, position = 0;
             foreach (var s in setup.Seats)
             {
+                position++;
                 if (s.Kind == SeatKind.Closed) continue;
                 string side = string.IsNullOrEmpty(s.Side) ? sides[rng.Next(sides.Count)].Id : s.Side;
                 players.Add(new PlayerInfo
                 {
-                    Index = players.Count, Name = seat == 0 ? "You" : "Computer " + seat, Side = side,
+                    Index = position, Name = seat == 0 ? "You" : "Computer " + seat, Side = side,
                     Colour = s.Colour, Tint = Palette[Mathf.Abs(s.Colour) % Palette.Length], Team = s.Team,
                     IsLocal = players.Count == 0, IsComputer = s.Kind == SeatKind.Computer, Alive = true,
                 });
@@ -290,17 +297,18 @@ namespace OpenKingdomsUnity.Game
 
         void SpawnArmies()
         {
-            foreach (var p in players)
+            for (int pos = 0; pos < players.Count; pos++)
             {
-                var home = StartOf(p.Index);
+                var p = players[pos];
+                var home = StartOf(pos);
                 int side = Mathf.Max(0, sides.FindIndex(s => s.Id == p.Side)) * 4;
-                Spawn(side + DefLodge, p.Index, home + new Vector2(-4, 4));
-                Spawn(side + DefBuilder, p.Index, home);
-                for (int i = 0; i < 4; i++) Spawn(side + DefKnight, p.Index, home + new Vector2(3 + i * 1.5f, -2));
-                for (int i = 0; i < 3; i++) Spawn(side + DefArcher, p.Index, home + new Vector2(3 + i * 1.5f, -4));
-                if (Specialists) SpawnSpecialists(p, home);
+                Spawn(side + DefLodge, pos, home + new Vector2(-4, 4));
+                Spawn(side + DefBuilder, pos, home);
+                for (int i = 0; i < 4; i++) Spawn(side + DefKnight, pos, home + new Vector2(3 + i * 1.5f, -2));
+                for (int i = 0; i < 3; i++) Spawn(side + DefArcher, pos, home + new Vector2(3 + i * 1.5f, -4));
+                if (Specialists) SpawnSpecialists(p, pos, home);
                 for (int i = 0; i < ExtraSoldiers; i++)
-                    Spawn(side + (i % 2 == 0 ? DefKnight : DefArcher), p.Index, home + new Vector2(-6 + (i % 12) * 1.3f, -6 - (i / 12) * 1.3f));
+                    Spawn(side + (i % 2 == 0 ? DefKnight : DefArcher), pos, home + new Vector2(-6 + (i % 12) * 1.3f, -6 - (i / 12) * 1.3f));
             }
         }
 
@@ -506,13 +514,14 @@ namespace OpenKingdomsUnity.Game
 
         void CheckOutcome()
         {
-            foreach (var p in players)
+            for (int pos = 0; pos < players.Count; pos++)
             {
+                var p = players[pos];
                 bool any = false;
-                foreach (var u in units) any |= u.Player == p.Index && !u.Dying;
+                foreach (var u in units) any |= u.Player == pos && !u.Dying;
                 p.Alive = any;
             }
-            int myTeam = players[LocalPlayer].Team;
+            int myTeam = players[0].Team;
             bool mine = false, theirs = false;
             foreach (var p in players)
             {
@@ -676,7 +685,7 @@ namespace OpenKingdomsUnity.Game
                 if (u.Attacking) f |= UnitFlags.Attacking;
                 into[n++] = new UnitState
                 {
-                    Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = u.Player, Flags = f,
+                    Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = IdOf(u.Player), Flags = f,
                     Position = u.Pos, Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
                     Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
                     Mana = ManaOf(u.Handle), MaxMana = mana.ContainsKey(u.Handle) ? MageMana : 0,
@@ -708,7 +717,7 @@ namespace OpenKingdomsUnity.Game
             foreach (var a in arrows)
             {
                 if (n >= into.Length) break;
-                into[n++] = new ProjectileState { Id = a.Id, Player = a.Player, Kind = 0, Position = a.Pos, Velocity = a.Vel, Model = -1 };
+                into[n++] = new ProjectileState { Id = a.Id, Player = IdOf(a.Player), Kind = 0, Position = a.Pos, Velocity = a.Vel, Model = -1 };
             }
             return n;
         }
@@ -835,7 +844,7 @@ namespace OpenKingdomsUnity.Game
         public bool SetAudio(float volume, bool music) => false;
         public void SetView(Vector3 centre, float width, float depth) { }
 
-        public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
+        public Economy ReadEconomy(int player) => PosOf(player) is int k && k >= 0 && k < economy.Count ? economy[k] : default;
 
         public int ReadEffects(EffectState[] into) => 0;
 
@@ -861,7 +870,7 @@ namespace OpenKingdomsUnity.Game
             if (!add) mockSelection.Clear();
             if (handles == null) return;
             foreach (int h in handles)
-                if (byHandle.TryGetValue(h, out var u) && !u.Dying && u.Player == LocalPlayer && !mockSelection.Contains(h))
+                if (byHandle.TryGetValue(h, out var u) && !u.Dying && u.Player == 0 && !mockSelection.Contains(h))
                     mockSelection.Add(h);
         }
 
@@ -874,7 +883,7 @@ namespace OpenKingdomsUnity.Game
 
         public void Click(Vector3 at, int unit, bool shift)
         {
-            bool friend = unit >= 0 && byHandle.TryGetValue(unit, out var hit) && hit.Player == LocalPlayer;
+            bool friend = unit >= 0 && byHandle.TryGetValue(unit, out var hit) && hit.Player == 0;
             if (mockIsArmed)
             {
                 mockIsArmed = false;
@@ -908,7 +917,7 @@ namespace OpenKingdomsUnity.Game
                 return GameCursors.For(mockArmed);
             }
             if (unit < 0 || !byHandle.TryGetValue(unit, out var u) || u.Dying) return GameCursor.Normal;
-            return u.Player != LocalPlayer && mockSelection.Count > 0 ? GameCursor.Attack : GameCursor.Select;
+            return u.Player != 0 && mockSelection.Count > 0 ? GameCursor.Attack : GameCursor.Select;
         }
 
         public CursorFrame[] CursorArt(GameCursor cursor) => null;
@@ -1084,7 +1093,7 @@ namespace OpenKingdomsUnity.Game
                 int r = Mathf.CeilToInt(10f / cell);
                 foreach (var u in units)
                 {
-                    if (u.Dying || u.Player != LocalPlayer) continue;
+                    if (u.Dying || u.Player != 0) continue;
                     int cx = Mathf.RoundToInt(u.Pos.x / cell), cy = Mathf.RoundToInt(-u.Pos.z / cell);
                     for (int y = Mathf.Max(0, cy - r); y <= Mathf.Min(height - 1, cy + r); y++)
                         for (int x = Mathf.Max(0, cx - r); x <= Mathf.Min(width - 1, cx + r); x++)

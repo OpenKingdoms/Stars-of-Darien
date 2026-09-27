@@ -169,7 +169,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             var list = new List<(Mesh, int, Material, Matrix4x4)>();
             var def = backend.UnitDefs[g.Def];
-            int id = backend.LoadModel(def.ObjectName, backend.Players.Count > 0 ? backend.Players[backend.LocalPlayer].Colour : 0);
+            int id = backend.LoadModel(def.ObjectName, backend.PlayerById(backend.LocalPlayer)?.Colour ?? 0);
             var model = models.Get(id);
             if (model == null) return list;
             var d = model.Data;

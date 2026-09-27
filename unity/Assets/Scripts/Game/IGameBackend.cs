@@ -40,6 +40,11 @@ namespace OpenKingdomsUnity.Game
         GameStatus Status { get; }
         void EndGame();
 
+        // Player numbers are ids as the backend gives them, not list
+        // positions: UnitState.Player, ProjectileState.Player, LocalPlayer,
+        // PlayerInfo.Index and ReadEconomy's player are the same id. The
+        // engine's ids start at 1 and skip closed seats. Look a player up
+        // with PlayerById(id), never Players[id].
         int LocalPlayer { get; }
         IReadOnlyList<PlayerInfo> Players { get; }
         int TicksPerSecond { get; }
@@ -174,6 +179,25 @@ namespace OpenKingdomsUnity.Game
         // Saves the map being edited as a new map under that name, which
         // then appears in Maps and plays in a skirmish.
         bool SaveMap(string name);
+    }
+
+    public static class GameBackendPlayers
+    {
+        // The player with an id, or null.
+        public static PlayerInfo PlayerById(this IGameBackend b, int id)
+        {
+            var ps = b.Players;
+            for (int i = 0; i < ps.Count; i++) if (ps[i].Index == id) return ps[i];
+            return null;
+        }
+
+        public static bool Allied(this IGameBackend b, int a, int c)
+        {
+            if (a == c) return true;
+            var pa = b.PlayerById(a);
+            var pc = b.PlayerById(c);
+            return pa != null && pc != null && pa.Team == pc.Team;
+        }
     }
 
     public enum GameStatus { Idle, Loading, Running, Victory, Defeat, Failed }

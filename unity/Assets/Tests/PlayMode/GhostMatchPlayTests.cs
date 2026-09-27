@@ -96,7 +96,7 @@ namespace OpenKingdomsUnity.Tests
             yield return Start(mock, "mock_highlands");
             int monarch = Monarch(mock, out var near);
             int lodge = -1;
-            foreach (var d in mock.UnitDefs) if (d.Side == mock.Players[0].Side && d.IsBuilding) lodge = d.Id;
+            foreach (var d in mock.UnitDefs) if (d.Side == mock.PlayerById(mock.LocalPlayer).Side && d.IsBuilding) lodge = d.Id;
             var report = new List<string>();
             yield return BuildAndCompare(monarch, lodge, OpenGround(mock, lodge, near, 0), 0, report);
             yield return BuildAndCompare(monarch, lodge, OpenGround(mock, lodge, near, 1), 1, report);

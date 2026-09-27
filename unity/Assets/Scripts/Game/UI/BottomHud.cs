@@ -121,7 +121,7 @@ namespace OpenKingdomsUnity.Game.UI
             hoverBox.gameObject.SetActive(enemy);
             if (!enemy) return;
             var def = b.UnitDefs[found.Def];
-            string owner = found.Player >= 0 && found.Player < b.Players.Count ? b.Players[found.Player].Name : "";
+            string owner = b.PlayerById(found.Player)?.Name ?? "";
             hover.text = $"{Nice(def)}, {owner}\nHealth {found.Health} of {found.MaxHealth}" + (found.MaxMana > 0 ? $"   Mana {found.Mana}" : "");
             var canvas = hoverBox.GetComponentInParent<Canvas>();
             var parentRt = (RectTransform)hoverBox.parent;
@@ -171,7 +171,8 @@ namespace OpenKingdomsUnity.Game.UI
                 if (root.World.Entities.Hidden != null && root.World.Entities.Hidden(u)) continue;
                 int x = Mathf.FloorToInt(u.Position.x / size.x * dotTex.width);
                 int y = Mathf.FloorToInt((1f + u.Position.z / size.y) * dotTex.height);
-                Color32 c = u.Player >= 0 && u.Player < b.Players.Count ? b.Players[u.Player].Tint : new Color32(200, 200, 200, 255);
+                var owner = b.PlayerById(u.Player);
+                Color32 c = owner != null ? owner.Tint : new Color32(200, 200, 200, 255);
                 if (selected.Contains(u.Handle)) c = new Color32(255, 255, 255, 255);
                 c.a = 255;
                 bool big = b.UnitDefs[u.Def].IsBuilding;
