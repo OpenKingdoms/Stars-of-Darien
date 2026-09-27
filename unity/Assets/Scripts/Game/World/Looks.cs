@@ -2,12 +2,26 @@
 // so a move to another render pipeline changes one file.
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace OpenKingdomsUnity.Game.World
 {
     public static class Looks
     {
         static readonly Dictionary<string, Shader> shaders = new Dictionary<string, Shader>();
+
+        // The project draws with URP when a pipeline asset is set, and the
+        // shaders carry a subshader for it and one for the built-in pipeline.
+        public static UniversalRenderPipelineAsset Urp => GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+
+        // How far the sun's shadows reach, in whichever pipeline runs.
+        public static void ShadowDistance(float d)
+        {
+            var urp = Urp;
+            if (urp != null) urp.shadowDistance = d;
+            else QualitySettings.shadowDistance = d;
+        }
 
         public static Shader Find(string name, string fallback)
         {

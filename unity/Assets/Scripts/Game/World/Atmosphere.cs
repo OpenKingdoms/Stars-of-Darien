@@ -2,6 +2,8 @@
 // particles (rain, snow, drifting fog) that follow the camera, pushed by
 // one wind. Set up once per game from the map's climate and the options.
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 
 namespace OpenKingdomsUnity.Game.World
 {
@@ -13,6 +15,8 @@ namespace OpenKingdomsUnity.Game.World
         GameObject root;
         ParticleSystem particles;
         Material skybox, particleMat;
+        Volume post;
+        VolumeProfile profile;
         Texture2D dot;
 
         public void Build(Transform parent, string climate, WeatherChoice weather, bool shadows, float mapSize)
@@ -29,8 +33,8 @@ namespace OpenKingdomsUnity.Game.World
             Sun.shadows = shadows ? LightShadows.Soft : LightShadows.None;
             Sun.shadowStrength = 0.8f;
             RenderSettings.sun = Sun;
-            QualitySettings.shadows = ShadowQuality.All;
-            QualitySettings.shadowResolution = ShadowResolution.VeryHigh;
+            QualitySettings.shadows = UnityEngine.ShadowQuality.All;
+            QualitySettings.shadowResolution = UnityEngine.ShadowResolution.VeryHigh;
             QualitySettings.shadowProjection = ShadowProjection.StableFit;
             QualitySettings.shadowCascades = 4;
             QualitySettings.shadowCascade4Split = new Vector3(0.08f, 0.22f, 0.5f);
@@ -60,6 +64,46 @@ namespace OpenKingdomsUnity.Game.World
             DynamicGI.UpdateEnvironment();
 
             SetWeather(GameOptions.Resolve(weather, climate));
+            BuildPost(climate);
+        }
+
+        // Bloom, colour grading, tonemapping and a soft vignette, under URP.
+        // Ambient occlusion is a renderer feature on the pipeline asset.
+        void BuildPost(string climate)
+        {
+            if (Looks.Urp == null) return;
+            profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            profile.hideFlags = HideFlags.DontSave;
+            var bloom = profile.Add<Bloom>(true);
+            bloom.threshold.Override(1.0f);
+            bloom.intensity.Override(0.35f);
+            bloom.scatter.Override(0.6f);
+            var tone = profile.Add<Tonemapping>(true);
+            tone.mode.Override(TonemappingMode.Neutral);
+            var grade = profile.Add<ColorAdjustments>(true);
+            grade.contrast.Override(10f);
+            grade.saturation.Override(climate == "snow" ? 0f : 8f);
+            grade.postExposure.Override(0.1f);
+            var balance = profile.Add<WhiteBalance>(true);
+            balance.temperature.Override(climate == "snow" ? -8f : climate == "desert" ? 10f : 4f);
+            var vignette = profile.Add<Vignette>(true);
+            vignette.intensity.Override(0.18f);
+            vignette.smoothness.Override(0.5f);
+            post = new GameObject("Post Effects").AddComponent<Volume>();
+            post.transform.SetParent(root.transform, false);
+            post.isGlobal = true;
+            post.sharedProfile = profile;
+        }
+
+        public void SetPostEffects(bool on, Camera cam)
+        {
+            if (post != null) post.enabled = on;
+            if (cam != null && Looks.Urp != null)
+            {
+                var data = cam.GetUniversalAdditionalCameraData();
+                data.renderPostProcessing = on;
+                data.antialiasing = on ? AntialiasingMode.SubpixelMorphologicalAntiAliasing : AntialiasingMode.None;
+            }
         }
 
         public void SetWeather(WeatherChoice w)
@@ -95,8 +139,9 @@ namespace OpenKingdomsUnity.Game.World
             if (particleMat == null)
             {
                 dot = UI.UiKit.Glow.texture;
-                var shader = Shader.Find("Legacy Shaders/Particles/Alpha Blended") ?? Shader.Find("Particles/Standard Unlit");
-                particleMat = new Material(shader) { hideFlags = HideFlags.DontSave, mainTexture = dot };
+                // The effect shader is unlit, alpha blended and takes the
+                // particles' colours, in either pipeline.
+                particleMat = new Material(Looks.Find("OkuEffect", "Sprites/Default")) { hideFlags = HideFlags.DontSave, mainTexture = dot };
             }
             r.sharedMaterial = particleMat;
 
@@ -159,6 +204,7 @@ namespace OpenKingdomsUnity.Game.World
             if (root != null) Looks.Release(root);
             if (skybox != null) Looks.Release(skybox);
             if (particleMat != null) Looks.Release(particleMat);
+            if (profile != null) Looks.Release(profile);
             RenderSettings.fog = false;
         }
     }

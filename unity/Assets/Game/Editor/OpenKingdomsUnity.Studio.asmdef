@@ -3,7 +3,9 @@
     "rootNamespace": "OpenKingdomsUnity.Studio",
     "references": [
         "OpenKingdomsUnity",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "includePlatforms": [
         "Editor"

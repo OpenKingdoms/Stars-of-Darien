@@ -44,6 +44,7 @@ namespace OpenKingdomsUnity.Game.World
             Camera.enabled = true;
             Camera.ground = backend.GroundHeight;
             Camera.Frame(new Vector2(0, -size.y), new Vector2(size.x, 0), StartFocus());
+            Atmosphere.SetPostEffects(options.PostEffects, cam);
         }
 
         // Over the local player's first unit, or the map centre.
@@ -63,7 +64,7 @@ namespace OpenKingdomsUnity.Game.World
             var cam = Camera.GetComponent<UnityEngine.Camera>();
             // Shadows reach a little past what the camera frames, so the
             // cascades spend their texels where the eye is.
-            QualitySettings.shadowDistance = Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f);
+            Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
             Entities.Render(cam);
             Effects.Render(cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);

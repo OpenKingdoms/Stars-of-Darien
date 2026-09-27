@@ -313,7 +313,11 @@ namespace OpenKingdomsUnity.Game.UI
                 o.Shadows = i == 0;
                 if (root.World?.Atmosphere.Sun != null) root.World.Atmosphere.Sun.shadows = o.Shadows ? LightShadows.Soft : LightShadows.None;
             });
-            OptionRow(rows, "Post effects", new[] { "On", "Off" }, o.PostEffects ? 0 : 1, i => o.PostEffects = i == 0);
+            OptionRow(rows, "Post effects", new[] { "On", "Off" }, o.PostEffects ? 0 : 1, i =>
+            {
+                o.PostEffects = i == 0;
+                if (root.World != null) root.World.Atmosphere.SetPostEffects(o.PostEffects, root.World.Camera != null ? root.World.Camera.GetComponent<Camera>() : null);
+            });
             OptionRow(rows, "Game speed", new[] { "Normal", "Fast" }, o.GameSpeed - 1, i => o.GameSpeed = i + 1);
             var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
             int vi = 0;

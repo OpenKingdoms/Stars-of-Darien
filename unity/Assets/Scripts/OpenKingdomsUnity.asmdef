@@ -2,7 +2,9 @@
     "name": "OpenKingdomsUnity",
     "rootNamespace": "OpenKingdomsUnity",
     "references": [
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.Universal.Runtime"
     ],
     "allowUnsafeCode": false,
     "autoReferenced": true
