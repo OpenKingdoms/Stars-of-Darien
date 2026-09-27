@@ -67,7 +67,7 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 300; i++) yield return null;
             Assert.GreaterOrEqual(root.FramesPlayed, 300);
             Assert.Greater(mock.Tick, startTick, "the simulation advanced");
-            Assert.AreEqual(24, root.World.Entities.UnitCount);
+            Assert.AreEqual(26, root.World.Entities.UnitCount);
             // Nine own units of seven pieces each at least, whatever the fog hides.
             Assert.Greater(root.World.Entities.Drawn, 60, "unit pieces, trees and sprites were drawn");
 
@@ -125,7 +125,7 @@ namespace OpenKingdomsUnity.Tests
                 root.LoadSave(mine);
                 yield return Until(() => root.Flow.State == FlowState.Playing, 30f, "the save to load");
                 Assert.AreEqual("mock_highlands", root.CurrentMap().Id);
-                Assert.AreEqual(24, root.World.Entities.UnitCount);
+                Assert.AreEqual(26, root.World.Entities.UnitCount);
             }
             finally { System.IO.File.Delete(path); }
         }

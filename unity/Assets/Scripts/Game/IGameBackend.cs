@@ -267,7 +267,9 @@ namespace OpenKingdomsUnity.Game
     }
 
     [Flags]
-    public enum UnitFlags { None = 0, Active = 1, Dying = 2, Building = 4, Moving = 8, Attacking = 16 }
+    // Airborne is the engine's flying state, from takeoff until landing
+    // starts. A hover-only flyer is never airborne.
+    public enum UnitFlags { None = 0, Active = 1, Dying = 2, Building = 4, Moving = 8, Attacking = 16, Airborne = 32 }
 
     public sealed class RgbaImage
     {
@@ -316,6 +318,11 @@ namespace OpenKingdomsUnity.Game
         public Vector2Int Footprint;
         public string[] Animations = Array.Empty<string>();
         public int[] BuildOptions = Array.Empty<int>();
+        // Flight, from the unit's type. Hovers is a flyer that never takes
+        // off or lands. 0 where the backend does not know.
+        public bool CanFly, Hovers;
+        public float CruiseAltitude;    // world units above the ground
+        public float MaxSpeed;          // world units per second
     }
 
     public sealed class FeatureDef
@@ -422,6 +429,8 @@ namespace OpenKingdomsUnity.Game
         public int Model;
         public int Facing;          // a building's quarter turns, 0 to 3; Heading carries it too
         public int Mana, MaxMana;   // the unit's own mana, for casters, else 0
+        public float Altitude;      // world units above the ground under it, 0 on the ground
+        public float Speed;         // world units per second over the ground
     }
 
     public enum ActionKind { Order, Spell, Ability, Stance }

@@ -36,6 +36,32 @@ Plain lit materials work best: a base colour texture, no emission. Transparent p
 
 `.glb` files are read by the game's own loader (`GlbLoader`), in the editor and in a built game alike, with no extra package. `.fbx` and `.prefab` files load through Unity's asset database, so they work in the editor only for now. The engine has its own loader for shipped or modded builds, which reads `.glb` files from `unity/Assets/StreamingAssets/Overrides/` under the same names. Use the `Overrides` folders above while you iterate in the editor.
 
+## Flight
+
+Winged flyers flap and glide by a small animator rather than by the script's coin toss. The engine still decides where a flyer is, how high it flies and whether it is in the air. On top of that height the animator draws the flyer a little higher or lower, inside a band a fraction of a cell deep. While the wings beat, the flyer rises through the band at its climb rate. At the top the wings settle into a glide pose and it sinks at its sink rate, which stands for wing loading. At the bottom it beats again. Takeoff, climbing over rising ground, hovering and flying slower than a stall speed keep the wings beating, and landing hands the pieces back to the script's own landing. A heavy flyer such as the pegasus sinks fast, so it beats in a steady rhythm most of the time. A light one such as the spyhawk sinks slowly and glides most of the time. Nothing here reaches the game, so every player may see a flyer at a different point of its beat.
+
+The numbers live in `unity/Assets/Overrides/Units/flight.json`. An entry is found by unit name, then by model name, in any case. Values come from `defaults`, then the entry's `class` (heavy, medium or light), then the entry's own keys, so any of them can be set for one unit.
+
+| Key | Meaning |
+| --- | --- |
+| `period` | Seconds for one wingbeat at cruise |
+| `downstroke` | The share of the beat spent going down, from the top of the stroke |
+| `amplitude`, `forcedAmplitude` | Stroke size, 1 being the full sweep from the down pose to the up pose, and the size while the beat is forced |
+| `forcedPeriod` | The period's multiplier while the beat is forced, below 1 for a harder beat |
+| `climb` | Cells a second the flyer rises while beating |
+| `sink` | Cells a second it sinks while gliding at top speed |
+| `sinkSlow` | How much faster it sinks at stall speed |
+| `lower`, `upper` | The band, in cells below and above the engine's height |
+| `stall` | Stall speed as a share of the unit's top speed |
+| `climbForce` | Cells a second of climbing over rising ground that force a beat |
+| `ease`, `blend` | Seconds to ease between the beat and the glide, and between the script and the animator |
+| `jitter` | How much each unit's beat differs, so a flock drifts apart |
+| `wobbleHz` | How often the small corrections of a glide come |
+
+Each entry lists the pieces it drives. `down`, `up` and `glide` are the piece's turns at the bottom of the stroke, the top and in a glide, in degrees, written exactly as a unit script writes `turn piece to x-axis`. A missing glide is halfway between down and up. `mirror` names the right-side piece, which takes the same poses reflected. `downMove`, `upMove` and `glideMove` move a piece in engine pixels, as a script's `move` reads in a disassembly. `lag` is the share of a beat a piece trails the stroke, which gives the outer wing its fold, and `wobble` is how many degrees the piece rocks while gliding. Pieces not listed keep the script's pose, and the children of a listed piece follow it, so a drop-in model whose nodes are named after the wing pieces flaps with them.
+
+To tune, edit the file and pick OpenKingdoms, then Studio, then Reload Flight Table. It works during Play.
+
 ## Studio windows
 
 All three live under OpenKingdoms, then Studio. They share one backend in edit mode, the engine when it and your game files are present and the mock otherwise. The Use mock button in their toolbar switches. The backend is let go before Play, since the engine runs one game at a time, and comes back afterwards.

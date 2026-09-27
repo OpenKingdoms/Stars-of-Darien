@@ -193,7 +193,7 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Dying) != 0) continue;
                     if (!world.Entities.IsDrawn(units[i].Handle)) continue;
-                    var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
+                    var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * (0.6f + world.Entities.VisualLift(units[i].Handle)));
                     if (s.z > 0 && box.Contains(s)) inBox.Add(units[i].Handle);
                 }
                 if (Classic) { backend.Select(inBox.ToArray(), Shift); PullSelection(); }
@@ -405,7 +405,8 @@ namespace OpenKingdomsUnity.Game.World
                 if ((units[i].Flags & UnitFlags.Dying) != 0) continue;
                 if (own != null && (units[i].Player == me) != own.Value) continue;
                 if (!drawn.TryGetValue(units[i].Handle, out var size)) continue;
-                if (!OnScreen(cam, units[i].Position, size.x, size.y, out var box, out float depth)) continue;
+                var feet = units[i].Position + Vector3.up * world.Entities.VisualLift(units[i].Handle);
+                if (!OnScreen(cam, feet, size.x, size.y, out var box, out float depth)) continue;
                 if (!box.Contains(m) || depth >= bestDepth) continue;
                 bestDepth = depth;
                 best = units[i].Handle;

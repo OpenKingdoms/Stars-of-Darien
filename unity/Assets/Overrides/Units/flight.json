@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "defaults": { "amplitude": 1.0, "forcedAmplitude": 1.1, "forcedPeriod": 0.85, "climbForce": 0.3, "ease": 0.35, "blend": 0.3, "jitter": 0.05, "wobbleHz": 0.4, "lag": 0.0 },
+  "classes": {
+    "heavy": { "climb": 0.15, "sink": 0.45, "sinkSlow": 1.6, "lower": -0.3, "upper": 0.5, "stall": 0.45 },
+    "medium": { "climb": 0.2, "sink": 0.25, "sinkSlow": 1.5, "lower": -0.4, "upper": 0.4, "stall": 0.4 },
+    "light": { "climb": 0.3, "sink": 0.12, "sinkSlow": 1.4, "lower": -0.5, "upper": 0.5, "stall": 0.3 }
+  },
+  "units": {
+    "aradrag": {
+      "class": "heavy", "period": 1.57, "downstroke": 0.42,
+      "pieces": [
+        { "piece": "hip", "down": [9.8, 0.0, -0.7], "up": [-0.4, 0.0, -1.8], "glide": [10.5, 0.0, 5.4], "downMove": [0.0, 9.16, 0.0], "upMove": [0.0, 5.56, 0.0], "glideMove": [0.0, 2.5, 0.0] },
+        { "piece": "torso", "down": [23.9, 0.0, 3.7], "up": [-12.2, 0.0, -2.9], "glide": [5.3, 0.0, 0.0] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [-27.6, 12.1, 39.2], "up": [18.8, -19.3, -43.4], "glide": [-11.6, -13.7, -14.2], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [15.2, 18.1, 16.0], "up": [0.0, 12.1, -3.8], "glide": [1.3, 21.4, 20.7] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [0.9, -38.4, 6.2], "up": [0.0, -30.4, 0.0], "glide": [3.6, -32.2, 0.4] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [2.5, 15.6, 3.3], "up": [0.0, 0.0, 0.0], "glide": [11.6, 10.2, 15.2] }
+      ]
+    },
+    "arafast": {
+      "class": "light", "period": 1.179, "downstroke": 0.72,
+      "pieces": [
+        { "piece": "body", "down": [-3.2, 0.0, 0.0], "up": [-6.6, 0.0, 0.0], "glide": [-2.0, 0.0, -0.3], "downMove": [0.0, -6.38, 0.0], "upMove": [0.0, -8.8, 0.0], "glideMove": [0.0, -9.13, 0.0] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [2.0, -10.8, 23.2], "up": [7.4, -22.5, -60.7], "glide": [15.0, -0.5, -20.1], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [0.0, 5.9, 0.0], "up": [0.0, -17.4, 0.0], "glide": [0.0, -1.0, 7.9] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [-2.5, 20.7, 24.6], "up": [-7.8, 8.6, 17.0], "glide": [8.1, -0.5, 6.5] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [0.4, 20.1, 1.2], "up": [-11.2, -31.2, 0.4], "glide": [0.0, -23.7, 0.0] },
+        { "piece": "wingl4a", "mirror": "wingr4a", "down": [0.0, 21.4, 0.0], "up": [0.0, 42.9, 0.0], "glide": [0.0, 34.1, 0.0] },
+        { "piece": "wingl4b", "mirror": "wingr4b", "down": [0.0, 25.7, 0.0], "up": [0.0, 38.3, 0.0], "glide": [0.0, 37.3, 0.0] }
+      ]
+    },
+    "arafly": {
+      "class": "heavy", "period": 1.624, "downstroke": 0.75,
+      "pieces": [
+        { "piece": "body", "down": [0.5, 0.0, 0.0], "up": [-2.0, 0.0, 0.0], "glide": [-2.0, 0.0, -0.3] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [2.0, -10.7, 23.0], "up": [7.4, -22.5, -60.7], "glide": [15.0, -0.5, -20.1], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [0.0, 5.9, 0.0], "up": [0.0, -17.3, 0.0], "glide": [0.0, -1.0, 7.9] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [-2.5, 20.7, 24.5], "up": [-7.8, 8.6, 17.0], "glide": [8.1, -0.5, 6.5] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [0.0, 20.1, 1.2], "up": [-11.2, -31.2, 0.4], "glide": [0.0, -23.7, 0.0] },
+        { "piece": "wingl4a", "mirror": "wingr4a", "down": [0.0, 21.4, 0.0], "up": [0.0, 42.9, 0.0], "glide": [0.0, 34.1, 0.0] },
+        { "piece": "wingl4b", "mirror": "wingr4b", "down": [0.0, 25.7, 0.0], "up": [0.0, 38.3, 0.0], "glide": [0.0, 37.3, 0.0] }
+      ]
+    },
+    "crebarn": {
+      "class": "medium", "period": 1.2, "downstroke": 0.38,
+      "pieces": [
+        { "piece": "HandleL", "mirror": "HandleR", "down": [0.0, 32.3, 4.9], "up": [0.0, 40.7, -1.8], "glide": [0.0, 30.0, 0.0] },
+        { "piece": "JointL", "mirror": "JointR", "down": [0.0, 15.0, 0.0], "up": [0.0, -5.0, 0.0], "glide": [0.0, 1.0, 0.0], "wobble": 3 },
+        { "piece": "Wing1L", "mirror": "Wing1R", "down": [8.0, 0.0, 15.0], "up": [0.0, -30.0, -15.0], "glide": [0.0, -9.5, -1.2] },
+        { "piece": "Wing2L", "mirror": "Wing2R", "down": [0.0, 5.0, 0.0], "up": [0.0, -5.0, 0.0], "glide": [0.0, 18.8, 0.0] },
+        { "piece": "Wing3L", "mirror": "Wing3R", "down": [0.0, -1.3, 0.0], "up": [0.0, 3.4, 0.0], "glide": [0.0, -15.3, 0.0] },
+        { "piece": "frame", "down": [-1.5, 0.0, 0.0], "up": [2.5, 0.0, 0.0], "downMove": [0.0, -6.5, 0.0], "upMove": [0.0, -9.0, 0.0], "glideMove": [0.0, -8.75, 0.0] }
+      ]
+    },
+    "credrag": {
+      "class": "heavy", "period": 1.15, "downstroke": 0.6,
+      "pieces": [
+        { "piece": "BraceL", "mirror": "BraceR", "down": [0.0, -3.8, -2.8], "up": [0.0, 1.9, -12.2], "glide": [0.0, -0.4, 0.0] },
+        { "piece": "ShoulderL", "mirror": "ShoulderR", "down": [10.0, -4.5, 30.0], "up": [-3.7, 5.0, -12.5], "glide": [0.0, -0.2, -2.5], "wobble": 3 },
+        { "piece": "WingL1", "mirror": "WingR1", "down": [15.0, -2.5, -2.5], "up": [-2.5, 2.0, -12.5], "glide": [0.0, -0.1, -1.2] },
+        { "piece": "WingL2", "mirror": "WingR2", "down": [0.0, -2.0, 17.5], "up": [0.0, 12.0, -15.0], "glide": [0.0, -0.1, 3.0], "downMove": [0.0, 0.0, -0.0], "upMove": [0.0, 0.0, -0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "WingL2a", "mirror": "WingR2a", "down": [0.0, -6.0, -14.0], "up": [0.0, -9.2, 0.0], "glide": [0.0, 0.0, -3.0] },
+        { "piece": "WingL3a", "mirror": "WingR3a", "down": [0.0, -25.0, 0.0], "up": [0.0, 8.5, -5.0], "glide": [0.0, -0.4, -2.8] },
+        { "piece": "WingL3b", "mirror": "WingR3b", "down": [0.0, 32.1, 0.0], "up": [0.0, 21.0, 0.0], "glide": [0.0, 23.2, 0.0] },
+        { "piece": "WingL3c", "mirror": "WingR3c", "down": [0.0, 30.0, 0.0], "up": [0.0, 20.5, 0.0], "glide": [0.0, 23.0, 0.0] },
+        { "piece": "body", "down": [-8.0, 0.0, 0.0], "up": [5.0, 0.0, 0.0], "downMove": [0.0, -15.5, 0.0], "upMove": [0.0, -16.75, 0.0], "glideMove": [0.0, -15.62, 0.0] }
+      ]
+    },
+    "lifbird": {
+      "class": "light", "period": 1.166, "downstroke": 0.51,
+      "pieces": [
+        { "piece": "WingL1", "mirror": "WingR1", "down": [0.0, 0.0, 51.1], "up": [0.0, 0.0, -68.1], "wobble": 3 },
+        { "piece": "WingL2", "mirror": "Wingr2", "down": [0.0, -15.0, 5.5], "up": [0.0, -14.7, -12.2] },
+        { "piece": "WingL3", "mirror": "Wingr3", "down": [0.0, -15.0, 21.9], "up": [0.0, -5.0, -19.5] }
+      ]
+    },
+    "tarang": {
+      "class": "medium", "period": 1.329, "downstroke": 0.65,
+      "pieces": [
+        { "piece": "hip", "down": [6.2, 0.0, 0.0], "up": [15.2, 0.0, 0.0], "downMove": [0.0, 3.25, 3.87], "upMove": [0.0, 0.72, 0.78] },
+        { "piece": "torso", "down": [-1.9, 0.0, 0.0], "up": [-6.2, 0.0, 0.0] },
+        { "piece": "wingL1", "mirror": "wingR1", "down": [46.9, -21.3, 83.4], "up": [27.9, 25.2, -37.4], "wobble": 3 },
+        { "piece": "wingL2", "mirror": "wingR2", "down": [0.0, -8.0, 54.5], "up": [0.0, 28.4, 0.9] },
+        { "piece": "wingtipL3", "mirror": "wingtipR3", "down": [0.0, -21.8, 41.2], "up": [0.0, -5.4, 19.9] },
+        { "piece": "wingtipL4", "mirror": "wingtipR4", "down": [0.0, -38.8, -4.3], "up": [0.0, -9.7, -15.6] },
+        { "piece": "wintipL1", "mirror": "wintipR1", "down": [0.0, -22.7, 93.3], "up": [0.0, -5.7, 88.6] },
+        { "piece": "wintipL2", "mirror": "wintipR2", "down": [0.0, -23.7, 71.5], "up": [0.0, -5.9, 55.9] }
+      ]
+    },
+    "tarbeak": {
+      "class": "medium", "period": 1.036, "downstroke": 0.51,
+      "pieces": [
+        { "piece": "body", "down": [0.9, 0.0, 0.0], "up": [-11.6, 0.0, 0.0] },
+        { "piece": "leftshoulder", "mirror": "rightshoulder", "down": [0.0, 1.4, 2.1], "up": [0.0, 2.8, -68.0], "glide": [0.0, 1.1, -17.1], "wobble": 3 },
+        { "piece": "lwing1", "mirror": "rwing1", "down": [33.8, 37.7, 13.3], "up": [0.0, -23.6, -13.0], "glide": [7.1, 11.5, 6.3] },
+        { "piece": "lwing2", "mirror": "rwing2", "down": [4.4, -15.3, 34.0], "up": [-27.4, 9.5, 7.6], "glide": [0.0, -7.0, 22.3] },
+        { "piece": "lwingtip1", "mirror": "rwingtip1", "down": [0.0, 9.1, 0.0], "up": [6.6, -30.8, 0.0], "glide": [0.0, 3.9, 0.0] },
+        { "piece": "lwingtip2", "mirror": "rwingtip2", "down": [0.0, 9.5, 0.0], "up": [-20.4, -16.6, 0.0], "glide": [0.0, -1.3, 0.0] },
+        { "piece": "lwingtip3", "mirror": "rwingtip3", "down": [0.0, -1.4, 0.0], "up": [-40.5, -18.5, 0.0], "glide": [0.0, -14.8, 0.0] },
+        { "piece": "lwingtip4", "mirror": "rwingtip4", "down": [0.0, -7.8, 0.0], "up": [-46.4, -18.9, 0.0], "glide": [0.0, -20.3, 0.0] }
+      ]
+    },
+    "tardrag": {
+      "class": "heavy", "period": 1.797, "downstroke": 0.29,
+      "pieces": [
+        { "piece": "blkbody", "down": [21.0, 0.0, 0.0], "up": [-1.0, 0.0, 0.0], "glide": [18.4, 0.0, -2.4] },
+        { "piece": "blkwingl1", "mirror": "blkwingr1", "down": [-12.1, -5.4, 44.1], "up": [-12.1, -18.4, -51.3], "glide": [-27.5, -3.9, -8.9], "wobble": 3 },
+        { "piece": "blkwingl2", "mirror": "blkwingr2", "down": [1.3, -41.4, 9.4], "up": [4.5, -23.4, 0.4], "glide": [-9.6, -31.5, 17.7] },
+        { "piece": "blkwingl3", "mirror": "blkwingr3", "down": [8.1, 12.6, 33.8], "up": [-0.0, 1.6, -17.1], "glide": [0.0, 40.3, 0.0] },
+        { "piece": "blkwingl4", "mirror": "blkwingr4", "down": [0.3, -26.1, 0.6], "up": [0.3, -38.2, 0.6], "glide": [0.0, -6.5, 0.3] }
+      ]
+    },
+    "targarg": {
+      "class": "medium", "period": 1.211, "downstroke": 0.59,
+      "pieces": [
+        { "piece": "Wingl1", "mirror": "Wingr1", "down": [-22.3, 2.8, 29.1], "up": [-17.5, -10.7, -61.2], "glide": [-11.6, -13.8, -13.1], "wobble": 3 },
+        { "piece": "Wingl2", "mirror": "Wingr2", "down": [0.8, 1.4, 17.5], "up": [-7.3, 0.2, 39.1], "glide": [1.3, -4.5, 20.7], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "hip", "down": [8.9, 0.0, 1.3], "up": [17.4, 0.0, -6.5], "glide": [10.4, 0.0, 5.4] }
+      ]
+    },
+    "tarknigh": {
+      "class": "heavy", "period": 1.641, "downstroke": 0.59,
+      "pieces": [
+        { "piece": "body", "down": [7.7, 0.0, 0.0], "up": [-9.3, 0.0, 0.0], "glide": [-2.1, 0.0, 0.0] },
+        { "piece": "lwingbase", "mirror": "rwingbase", "down": [17.6, 7.7, 34.8], "up": [17.6, 6.8, -52.4], "glide": [8.4, 22.8, -22.1], "wobble": 3 },
+        { "piece": "lwingmid", "mirror": "rwingmid", "down": [25.0, -42.4, -25.0], "up": [-32.5, -0.1, 40.0], "glide": [-22.3, -19.9, 18.6], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "lwingtip", "mirror": "rwingtip", "down": [0.0, -28.1, 20.0], "up": [0.0, -0.2, 20.0], "glide": [0.0, -9.7, 9.3], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] }
+      ]
+    },
+    "verdrag": {
+      "class": "heavy", "period": 1.427, "downstroke": 0.41,
+      "pieces": [
+        { "piece": "body", "down": [13.6, 0.0, -0.7], "up": [-25.3, 0.0, 6.6], "glide": [-15.4, 0.0, 7.1] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [4.8, 4.7, 24.2], "up": [17.6, -48.7, -27.2], "glide": [14.4, -6.4, -26.0], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [-16.2, -34.5, 23.1], "up": [6.9, -38.1, -9.9], "glide": [0.2, -25.7, 2.4] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [0.0, 0.0, 20.4], "up": [0.0, 0.0, 16.9], "glide": [0.0, 4.9, 7.3] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [0.0, 17.2, 0.0], "up": [0.0, 3.4, 0.0], "glide": [1.7, 8.2, 2.1] }
+      ]
+    },
+    "verpar": {
+      "class": "light", "period": 1.034, "downstroke": 0.68,
+      "pieces": [
+        { "piece": "body", "down": [-3.2, 0.0, 0.0], "up": [-6.6, 0.0, 0.0], "glide": [-2.0, 0.0, -0.3] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [2.0, -10.8, 23.2], "up": [7.4, -22.5, -60.7], "glide": [15.0, -0.5, -20.1], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [0.0, 5.9, 0.0], "up": [0.0, -17.4, 0.0], "glide": [0.0, -1.0, 7.9] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [-2.5, 20.7, 24.6], "up": [-7.8, 15.3, 17.0], "glide": [8.1, -0.5, 6.5] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [1.0, 20.1, 1.2], "up": [-11.2, -24.2, 0.4], "glide": [0.0, -23.7, 0.0] },
+        { "piece": "wingl4a", "mirror": "wingr4a", "down": [0.0, 21.4, 0.0], "up": [0.0, 42.9, 0.0], "glide": [0.0, 34.1, 0.0] },
+        { "piece": "wingl4b", "mirror": "wingr4b", "down": [6.3, 25.7, 0.0], "up": [6.3, 38.3, 0.0], "glide": [0.0, 37.3, 0.0] }
+      ]
+    },
+    "zonbat": {
+      "class": "light", "period": 0.738, "downstroke": 0.65,
+      "pieces": [
+        { "piece": "body", "down": [5.4, 0.0, 0.0], "up": [12.2, 0.0, 0.0], "glide": [-2.0, -0.4, -0.3], "downMove": [0.0, 1.78, 0.0], "upMove": [0.0, 0.43, 0.0], "glideMove": [0.0, 3.38, 1.82] },
+        { "piece": "lwingbase", "mirror": "rwingbase", "down": [-2.9, 33.1, 36.3], "up": [0.0, -20.4, -44.0], "glide": [15.0, -0.5, -20.1], "wobble": 3 },
+        { "piece": "lwingmid", "mirror": "rwingmid", "down": [-16.7, 10.6, 15.9], "up": [-10.3, -7.2, 15.7] },
+        { "piece": "lwingtip", "mirror": "rwingtip", "down": [-2.6, 29.1, 7.4], "up": [1.8, -13.0, 3.9], "glide": [8.1, -2.5, 6.5] }
+      ]
+    },
+    "zondrag": {
+      "class": "heavy", "period": 1.494, "downstroke": 0.43,
+      "pieces": [
+        { "piece": "torso", "down": [-4.0, 0.0, 0.0], "up": [-5.6, 0.0, 0.0], "glide": [-21.2, 0.0, -0.6] },
+        { "piece": "wing2a", "mirror": "wing1a", "down": [5.8, 2.3, 41.0], "up": [-13.1, -11.7, -41.7], "glide": [0.0, 15.1, 3.8], "wobble": 3 },
+        { "piece": "wing2b", "mirror": "wing1b", "down": [0.4, -1.1, 16.5], "up": [2.0, -2.6, 33.9], "glide": [0.0, -11.9, -9.9] },
+        { "piece": "wing2c", "mirror": "wing1c", "down": [0.0, -22.3, 0.0], "up": [0.0, -47.3, 0.0], "glide": [0.0, -64.1, -19.9] }
+      ]
+    },
+    "zondrake": {
+      "class": "light", "period": 1.39, "downstroke": 0.51,
+      "pieces": [
+        { "piece": "L_wing1", "mirror": "R_wing1", "down": [18.0, 37.6, 4.2], "up": [20.1, -4.4, -57.7], "glide": [25.1, 13.8, -27.6], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0], "wobble": 3 },
+        { "piece": "L_wing2", "mirror": "R_wing2", "down": [-2.6, 9.0, 45.5], "up": [-1.7, -1.3, 6.5], "glide": [0.0, -7.4, 3.7], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "L_wing3", "mirror": "R_wing3", "down": [15.2, 18.1, 5.0], "up": [8.7, 11.4, 7.6], "glide": [-4.6, -2.7, -3.8], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "torso", "down": [1.1, 0.0, 0.0], "up": [-1.6, 0.2, 0.2], "glide": [-5.1, 0.0, 0.6], "downMove": [0.0, 4.14, 3.12], "upMove": [0.0, 2.95, 2.08], "glideMove": [0.0, 4.3, 3.33] }
+      ]
+    },
+    "zongod": {
+      "class": "heavy", "period": 1.344, "downstroke": 0.36,
+      "pieces": [
+        { "piece": "body", "down": [23.4, 0.0, 0.0], "up": [0.0, 0.0, 0.0], "glide": [10.1, 0.0, 0.0], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "hip", "down": [29.0, 0.0, 0.0], "up": [57.6, 0.0, 0.0], "glide": [51.3, 0.0, 0.0], "downMove": [0.0, -47.5, 0.0], "upMove": [0.0, -47.5, 0.0], "glideMove": [0.0, -47.5, 0.0] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [6.7, -38.2, 33.7], "up": [-13.5, 60.7, -31.0], "glide": [22.4, 14.6, 12.5], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [0.0, 0.0, -7.2], "up": [0.0, 0.0, 36.4], "glide": [-3.8, 0.0, -14.7] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [0.0, -31.5, 0.0], "up": [0.0, 23.4, 0.0], "glide": [0.0, -45.1, 0.0], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "wingl4", "mirror": "wingr4", "down": [0.0, 0.0, -18.9], "up": [0.0, 0.0, -22.9], "glide": [2.9, 0.0, -3.9] },
+        { "piece": "wingl5", "mirror": "wingr5", "down": [0.0, 0.0, -20.2], "up": [0.0, 0.0, -28.8], "glide": [0.0, 0.0, -24.5] }
+      ]
+    },
+    "zongryp": {
+      "class": "heavy", "period": 1.457, "downstroke": 0.4,
+      "pieces": [
+        { "piece": "grywingl1", "mirror": "grywingr1", "down": [10.8, 18.0, 31.5], "up": [2.2, 3.1, -51.3], "glide": [16.4, 20.9, -29.5], "wobble": 3 },
+        { "piece": "grywingl2", "mirror": "grywingr2", "down": [19.3, 32.4, 45.0], "up": [-3.6, 3.6, -12.1], "glide": [3.4, 4.0, 36.7] },
+        { "piece": "grywingl3", "mirror": "grywingr3", "down": [0.0, -19.8, -7.2], "up": [0.0, -42.7, 7.2], "glide": [0.0, 2.6, 0.0] },
+        { "piece": "grywingl3a", "mirror": "grywingr3a", "down": [0.0, 11.7, 0.0], "up": [0.0, 23.8, 0.0], "glide": [0.0, 10.8, 0.0] },
+        { "piece": "grywingl3b", "mirror": "grywingr3b", "down": [0.0, 27.0, 0.0], "up": [0.0, 41.8, 0.0], "glide": [0.0, 23.4, 0.5] },
+        { "piece": "zongryph2", "down": [6.7, 0.0, 0.0], "up": [-9.0, 0.0, 0.0], "glide": [-12.6, 0.0, -0.3] }
+      ]
+    },
+    "zonharp": {
+      "class": "medium", "period": 1.032, "downstroke": 0.31,
+      "pieces": [
+        { "piece": "harwingl1", "mirror": "harwingr1", "down": [11.0, -37.8, 26.0], "up": [30.6, 39.8, -47.5], "glide": [40.9, -3.0, -1.9], "downMove": [-0.2, -0.91, 0.11], "upMove": [-0.2, -0.91, 0.11], "wobble": 3 },
+        { "piece": "harwingl2", "mirror": "harwingr2", "down": [-12.5, -19.2, -29.4], "up": [8.5, -1.3, -14.8], "glide": [0.0, 0.0, -0.8], "downMove": [-0.73, -0.17, 0.0], "upMove": [-0.73, -0.17, 0.0] },
+        { "piece": "harwingl3", "mirror": "harwingr3", "down": [0.0, -20.7, -12.1], "up": [-5.8, -12.6, 5.8], "glide": [0.0, 0.0, -4.0], "downMove": [-0.99, 0.05, -0.0], "upMove": [-0.99, 0.05, -0.0] },
+        { "piece": "harwingl3a", "mirror": "harwingr3a", "down": [3.1, 16.2, -28.3], "up": [-2.7, 0.0, -38.2], "glide": [0.0, 0.0, -20.2], "downMove": [-0.02, -0.01, 0.0], "upMove": [-0.02, -0.01, 0.0] },
+        { "piece": "hip", "down": [67.8, 0.0, 0.0], "up": [42.5, 0.0, 0.0], "glide": [62.4, 0.0, 0.0], "downMove": [0.0, 5.39, 0.09], "upMove": [0.0, -9.55, 0.09] },
+        { "piece": "torso", "down": [34.5, 3.4, -1.0], "up": [-4.5, 0.6, -0.2], "glide": [-9.6, 0.0, 0.0], "downMove": [-0.0, -0.19, 0.07], "upMove": [-0.0, -0.19, 0.07] }
+      ]
+    },
+    "zonhunt": {
+      "class": "medium", "period": 1.604, "downstroke": 0.7,
+      "pieces": [
+        { "piece": "torso", "down": [18.0, 0.0, 0.0], "up": [-12.5, 0.0, 0.0], "glide": [0.2, -0.3, 0.0], "downMove": [0.0, -0.23, -0.05], "upMove": [0.0, -0.23, -0.05] },
+        { "piece": "wing1_L", "mirror": "wing1_R", "down": [22.0, 34.0, 54.0], "up": [13.8, 80.7, -3.2], "glide": [29.6, 57.2, 12.2], "downMove": [0.0, 0.01, 0.59], "upMove": [0.0, 0.01, 0.59] },
+        { "piece": "wing2_L", "mirror": "wing2_R", "down": [0.0, -23.1, 31.7], "up": [0.0, 11.6, 5.7], "glide": [0.0, -13.5, 17.2] },
+        { "piece": "wing3_L", "mirror": "wing3_R", "down": [-4.6, -0.4, -31.2], "up": [-18.5, 0.0, -56.9], "glide": [-13.8, -0.2, -57.0], "downMove": [-0.01, 0.0, 0.0], "upMove": [-0.01, 0.0, 0.0] },
+        { "piece": "winganchor_L", "mirror": "winganchor_R", "down": [-3.9, -45.1, 0.0], "up": [16.2, -40.7, 0.0], "glide": [10.8, -41.6, 0.0], "downMove": [0.17, -0.91, -0.13], "upMove": [0.17, -0.91, -0.13], "glideMove": [0.0, 0.0, 0.0], "wobble": 3 }
+      ]
+    },
+    "zonroc": {
+      "class": "heavy", "period": 1.862, "downstroke": 0.5,
+      "pieces": [
+        { "piece": "body", "down": [12.1, 0.0, 0.0], "up": [4.9, 0.0, 0.0], "glide": [2.5, 0.0, 0.0], "downMove": [0.0, 17.75, 0.0], "upMove": [0.0, -1.09, 0.0], "glideMove": [0.0, 9.62, 0.0] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [-6.5, 16.2, 35.1], "up": [-0.3, -5.8, -72.8], "glide": [-5.8, 0.6, -22.3], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [5.8, -20.0, 0.0], "up": [5.8, -12.6, 0.0], "glide": [0.0, -4.0, 0.1] },
+        { "piece": "wingl3", "mirror": "wingr3", "down": [0.0, 0.0, 39.1], "up": [0.0, -0.2, -3.5], "glide": [0.0, 0.0, 22.1], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
+        { "piece": "wingl3a", "mirror": "wingr3a", "down": [-9.0, -4.7, 17.5], "up": [0.0, -23.8, 2.8], "glide": [9.7, -1.3, 19.6] },
+        { "piece": "wingl3b", "mirror": "wingr3b", "down": [-9.9, 32.4, 0.0], "up": [-7.4, 35.2, 0.0], "glide": [-9.5, 28.1, 0.0] },
+        { "piece": "wingl3c", "mirror": "wingr3c", "down": [0.0, 33.3, 0.0], "up": [0.0, 33.9, 0.0], "glide": [-9.7, 27.6, 0.0] }
+      ]
+    },
+    "mockflyer": {
+      "class": "medium", "period": 0.9, "downstroke": 0.45,
+      "pieces": [
+        { "piece": "body", "down": [4.0, 0, 0], "up": [-3.0, 0, 0], "glide": [0, 0, 0], "downMove": [0, 1.2, 0], "upMove": [0, -1.2, 0], "glideMove": [0, 0, 0] },
+        { "piece": "wingl1", "mirror": "wingr1", "down": [0, 0, 35.0], "up": [0, 0, -45.0], "glide": [0, 0, -6.0], "wobble": 3 },
+        { "piece": "wingl2", "mirror": "wingr2", "down": [0, 0, 20.0], "up": [0, 0, -15.0], "glide": [0, 0, -3.0], "lag": 0.08 }
+      ]
+    }
+  }
+}

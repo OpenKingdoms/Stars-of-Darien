@@ -12,6 +12,8 @@ namespace OpenKingdomsUnity.Game
     public sealed partial class MockBackend : IGameBackend
     {
         public const int Tps = 30;
+        // The mock flyer's cruise height and top speed, in world units.
+        public const float FlyerCruise = 6f, FlyerSpeed = 4f;
 
         // Seconds each loading stage lasts at least, so a person sees the
         // loading screen. Tests set 0.
@@ -103,6 +105,8 @@ namespace OpenKingdomsUnity.Game
             public int Model;
             public int Facing, BuildFacing;
             public Vector3? BuildAt;
+            public float Alt, Speed, FlyTime;
+            public bool Flying;
         }
 
         sealed class Feature
@@ -354,6 +358,8 @@ namespace OpenKingdomsUnity.Game
                 if (u.Dying)
                 {
                     u.DyingFor += dt;
+                    // A flyer falls.
+                    if (u.Alt > 0f) { u.Alt = Mathf.Max(0f, u.Alt - 8f * dt); u.Pos.y = Terrain.Sample(u.Pos.x, u.Pos.z) + u.Alt; }
                     if (u.DyingFor > 1.5f) { units.RemoveAt(i); byHandle.Remove(u.Handle); }
                     continue;
                 }
@@ -426,13 +432,14 @@ namespace OpenKingdomsUnity.Game
             }
             else if (u.Goal == null && rng.NextDouble() < 0.01)
             {
-                u.Goal = u.Home + new Vector2((float)rng.NextDouble() * 8 - 4, (float)rng.NextDouble() * 8 - 4);
+                float r = d.CanFly ? 12f : 4f;
+                u.Goal = u.Home + new Vector2((float)rng.NextDouble() * 2 * r - r, (float)rng.NextDouble() * 2 * r - r);
             }
 
             if (moveTo is Vector2 goal)
             {
                 var to = goal - pos;
-                float speed = RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? 3.2f : 2.4f;
+                float speed = d.CanFly ? d.MaxSpeed : RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? 3.2f : 2.4f;
                 if (to.magnitude < 0.3f) { if (u.Goal != null && (u.Goal.Value - pos).magnitude < 0.3f) u.Goal = null; }
                 else
                 {
@@ -442,15 +449,27 @@ namespace OpenKingdomsUnity.Game
                     var sz = Terrain.Size;
                     next.x = Mathf.Clamp(next.x, 1, sz.x - 1);
                     next.y = Mathf.Clamp(next.y, -sz.y + 1, -1);
-                    if (Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f) u.Goal = null;
+                    if (!d.CanFly && Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f) u.Goal = null;
                     else
                     {
-                        u.Pos = new Vector3(next.x, Terrain.Sample(next.x, next.y), next.y);
+                        u.Pos = new Vector3(next.x, Terrain.Sample(next.x, next.y) + u.Alt, next.y);
                         u.Moving = true;
                         u.WalkPhase += dt * speed * 2.5f;
                     }
                 }
             }
+            u.Speed = (new Vector2(u.Pos.x, u.Pos.z) - pos).magnitude / dt;
+            if (d.CanFly) TickFlight(u, d, dt);
+        }
+
+        // A flyer is in the air while it has somewhere to go or someone to
+        // fight, as the engine's flyers are, and climbs and lands at top speed.
+        void TickFlight(Unit u, UnitDef d, float dt)
+        {
+            u.Flying = u.Goal != null || u.Target >= 0;
+            u.Alt = Mathf.MoveTowards(u.Alt, u.Flying ? d.CruiseAltitude : 0f, d.MaxSpeed * dt);
+            u.Pos.y = Terrain.Sample(u.Pos.x, u.Pos.z) + u.Alt;
+            if (u.Alt > 0f) u.FlyTime += dt;
         }
 
         void TickBuild(Unit u, float dt)
@@ -683,12 +702,14 @@ namespace OpenKingdomsUnity.Game
                 if (u.Built < 1f) f |= UnitFlags.Building;
                 if (u.Moving) f |= UnitFlags.Moving;
                 if (u.Attacking) f |= UnitFlags.Attacking;
+                if (u.Flying && !u.Dying) f |= UnitFlags.Airborne;
                 into[n++] = new UnitState
                 {
                     Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = IdOf(u.Player), Flags = f,
                     Position = u.Pos, Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
                     Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
                     Mana = ManaOf(u.Handle), MaxMana = mana.ContainsKey(u.Handle) ? MageMana : 0,
+                    Altitude = u.Alt, Speed = u.Dying ? 0f : u.Speed,
                 };
             }
             return n;
@@ -726,8 +747,8 @@ namespace OpenKingdomsUnity.Game
         {
             if (!byHandle.TryGetValue(handle, out var u)) return 0;
             var world = Matrix4x4.TRS(u.Pos, Quaternion.Euler(0, u.Heading, u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0), Vector3.one);
-            string anim = u.Attacking ? "attack" : u.Moving ? "walk" : "idle";
-            float t = u.Attacking ? u.AttackPhase : u.WalkPhase;
+            string anim = u.Alt > 0f ? "fly" : u.Attacking ? "attack" : u.Moving ? "walk" : "idle";
+            float t = u.Alt > 0f ? u.FlyTime : u.Attacking ? u.AttackPhase : u.WalkPhase;
             int n = PoseModel(u.Model, anim, t, into);
             for (int i = 0; i < n; i++) into[i].Matrix = world * into[i].Matrix;
             return n;
@@ -851,6 +872,7 @@ namespace OpenKingdomsUnity.Game
         public string UnitAnimation(int handle)
         {
             if (!byHandle.TryGetValue(handle, out var u) || u.Dying) return "";
+            if (u.Alt > 0f) return u.Flying ? "fly" : "land";
             if (u.Attacking) return "attack";
             if (u.Moving) return "walk";
             return "";
@@ -1044,7 +1066,7 @@ namespace OpenKingdomsUnity.Game
                 {
                     if (FootprintAt(unitDefs[u.Def].Footprint, u.Facing, u.Pos).Overlaps(rect)) return false;
                 }
-                else if (rect.Contains(new Vector2Int(Mathf.FloorToInt(u.Pos.x), Mathf.FloorToInt(-u.Pos.z)))) return false;
+                else if (u.Alt <= 0f && rect.Contains(new Vector2Int(Mathf.FloorToInt(u.Pos.x), Mathf.FloorToInt(-u.Pos.z)))) return false;
             }
             return true;
         }

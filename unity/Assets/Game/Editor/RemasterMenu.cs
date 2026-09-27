@@ -20,6 +20,10 @@ namespace OpenKingdomsUnity.Studio
             EditorApplication.isPlaying = true;
         }
 
+        // Reads Overrides/Units/flight.json again, in Play too, for tuning.
+        [MenuItem("OpenKingdoms/Studio/Reload Flight Table", priority = 24)]
+        public static void ReloadFlightTable() => OpenKingdomsUnity.Game.World.FlightTable.Forget();
+
         [MenuItem("OpenKingdoms/Create Remaster Scene", priority = 1)]
         public static void CreateScene()
         {

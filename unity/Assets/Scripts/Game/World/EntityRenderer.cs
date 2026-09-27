@@ -31,6 +31,36 @@ namespace OpenKingdomsUnity.Game.World
         public readonly HashSet<int> Selected = new HashSet<int>();
         public int Drawn => solid.Count + billboards.Count;
 
+        // Winged flyers' animators by StableId, and how far each flyer is
+        // drawn above its engine position this frame, by handle.
+        struct FlightEntry { public Flyer F; public float Seen; }
+        readonly Dictionary<uint, FlightEntry> flyers = new Dictionary<uint, FlightEntry>();
+        readonly Dictionary<int, float> lifts = new Dictionary<int, float>();
+        readonly List<uint> stale = new List<uint>();
+        FlightType[] flightTypes;
+        bool[] flightKnown;
+        int flightVersion = -1;
+        float nextSweep;
+        // The simulation's clock in seconds, set before each Render so wings
+        // stop when the game pauses and follow its speed. NaN falls back to
+        // the tick count.
+        public double SimSeconds = double.NaN;
+        double lastSim = double.NaN;
+        float simDt, simNow;
+        // A unit whose drawn piece matrices are kept each frame, for tests.
+        public int Watch = -1;
+        public readonly Matrix4x4[] Watched = new Matrix4x4[MaxPieces];
+        public int WatchedCount { get; private set; }
+
+        public float VisualLift(int handle) => lifts.TryGetValue(handle, out var v) ? v : 0f;
+
+        public bool TryFlight(uint stableId, out Flyer f)
+        {
+            bool ok = flyers.TryGetValue(stableId, out var e);
+            f = e.F;
+            return ok;
+        }
+
         readonly Mesh quad, ring, shaft, barQuad;
         readonly Material ringMat, barBack, barGood, barMid, barLow, shaftMat;
         // Features never move in the mock and rarely in a game, so their
@@ -282,9 +312,16 @@ namespace OpenKingdomsUnity.Game.World
             overlay.Clear();
             billboards.Clear();
 
+            double now = double.IsNaN(SimSeconds) ? backend.Tick / (double)Mathf.Max(1, backend.TicksPerSecond) : SimSeconds;
+            simDt = double.IsNaN(lastSim) ? 0f : (float)(now - lastSim);
+            lastSim = now;
+            simNow = (float)now;
+            lifts.Clear();
+
             UnitCount = backend.ReadUnits(Units);
             DrawnSize.Clear();
             for (int i = 0; i < UnitCount; i++) AddUnit(ref Units[i], cam);
+            SweepFlyers();
 
             AddFeatures(cam);
 
@@ -320,18 +357,15 @@ namespace OpenKingdomsUnity.Game.World
             if ((u.Flags & UnitFlags.Building) != 0 && u.MaxHealth > 0 && u.Health * 2 < u.MaxHealth) return;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
-            float height = 1.5f, radius = 0.6f;
+            float height = 1.5f, radius = 0.6f, air = 0f;
             if (model != null && model.Override != null)
             {
-                int n = backend.ReadUnitPose(u.Handle, poses);
+                int n = Pose(u, def, model, out air);
                 AddOverride(model, n);
             }
             else if (model != null)
             {
-                int n = Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length);
-                // A building on a site with a plinth stands on the plinth.
-                var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
-                for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
+                int n = Pose(u, def, model, out air);
                 // A unit that is mostly a painted card draws its 3D model in
                 // place of the card, facing with the unit, on any plinth.
                 var card = def != null ? CardOverride.For(def.ObjectName) : null;
@@ -341,10 +375,6 @@ namespace OpenKingdomsUnity.Game.World
                         Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
                     foreach (var part in card.Model.Parts) solid.Add(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
                 }
-                // Nudges from the animation editor, for every animation and
-                // for the script function driving the unit now.
-                var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
-                nudges?.Apply(model.Data.Pieces, posed, n, backend.UnitAnimation(u.Handle));
                 for (int p = 0; p < n; p++)
                 {
                     var mesh = model.Pieces[p];
@@ -368,7 +398,7 @@ namespace OpenKingdomsUnity.Game.World
             {
                 float f = u.MaxHealth > 0 ? Mathf.Clamp01((float)u.Health / u.MaxHealth) : 1f;
                 var face = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
-                var top = u.Position + Vector3.up * height;
+                var top = u.Position + Vector3.up * (height + air);
                 const float w = 1.2f, h = 0.14f;
                 var left = top - cam.transform.right * (w * 0.5f);
                 overlay.Add(barQuad, 0, barBack, Matrix4x4.TRS(left, face, new Vector3(w, h, 1)));
@@ -385,27 +415,92 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
+        // The unit's pieces in posed[], piece space to world: the script's
+        // pose, any plinth, a flyer's wings and the animation nudges.
+        // Returns the piece count and how far a flyer is drawn lifted.
+        int Pose(in UnitState u, UnitDef def, PresentedModel model, out float air)
+        {
+            int n = Mathf.Min(Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length), MaxPieces);
+            // A building on a site with a plinth stands on the plinth.
+            var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
+            for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
+            air = Fly(u, def, model.Data, n);
+            // Nudges from the animation editor, for every animation and
+            // for the script function driving the unit now.
+            var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
+            nudges?.Apply(model.Data.Pieces, posed, n, backend.UnitAnimation(u.Handle));
+            if (u.Handle == Watch) { System.Array.Copy(posed, Watched, n); WatchedCount = n; }
+            return n;
+        }
+
         // A drop-in model: parts named like a piece follow that piece, the
         // rest ride the root. Overrides are in cells, so the model's own
         // unit scale comes off first.
-        void AddOverride(PresentedModel model, int posed)
+        void AddOverride(PresentedModel model, int n)
         {
             var d = model.Data;
             int root = 0;
             for (int i = 0; i < d.Pieces.Length; i++) if (d.Pieces[i].Parent < 0) { root = i; break; }
-            if (posed <= root) return;
-            var basis = poses[root].Matrix * model.Unscale * model.RestInverse[root];
+            if (n <= root) return;
+            var basis = posed[root] * model.RestInverse[root];
             foreach (var part in model.Override.Parts)
             {
                 Matrix4x4 m;
-                if (part.Piece >= 0 && part.Piece < posed)
+                if (part.Piece >= 0 && part.Piece < n)
                 {
                     if (poses[part.Piece].Hidden) continue;
-                    m = poses[part.Piece].Matrix * model.Unscale * model.RestInverse[part.Piece] * part.NodeToRoot;
+                    m = posed[part.Piece] * model.RestInverse[part.Piece] * part.NodeToRoot;
                 }
                 else m = basis * part.NodeToRoot;
                 solid.Add(part.Mesh, part.Submesh, part.Material, m);
             }
+        }
+
+        // Steps a winged flyer's animator and poses its wings in posed[].
+        // Returns how far the flyer is drawn above its engine position.
+        float Fly(in UnitState u, UnitDef def, ModelData data, int n)
+        {
+            var type = FlightTypeOf(u.Def, def);
+            if (type == null) return 0f;
+            var input = FlightInput.Of(u, def);
+            if (!flyers.TryGetValue(u.StableId, out var e)) e.F = FlightAnimator.Start(u.StableId, type, input);
+            FlightAnimator.Step(ref e.F, input, type, simDt);
+            e.Seen = Time.unscaledTime;
+            flyers[u.StableId] = e;
+            float offset = FlightAnimator.VisualOffset(e.F, input);
+            FlightPose.Apply(e.F, type, data, posed, n, offset, simNow);
+            if (offset != 0f) lifts[u.Handle] = offset;
+            return offset;
+        }
+
+        // The flight table's entry for a def, looked up once per def.
+        FlightType FlightTypeOf(int index, UnitDef def)
+        {
+            if (def == null || index < 0) return null;
+            if (flightTypes == null || flightVersion != FlightTable.Version || flightTypes.Length != backend.UnitDefs.Count)
+            {
+                flightTypes = new FlightType[backend.UnitDefs.Count];
+                flightKnown = new bool[flightTypes.Length];
+                flightVersion = FlightTable.Version;
+            }
+            if (index >= flightTypes.Length) return null;
+            if (!flightKnown[index])
+            {
+                flightTypes[index] = FlightTable.Load().Find(def.Name, def.ObjectName);
+                flightKnown[index] = true;
+            }
+            return flightTypes[index];
+        }
+
+        // Forgets flyers not drawn for two seconds, checked once a second.
+        void SweepFlyers()
+        {
+            float t = Time.unscaledTime;
+            if (flyers.Count == 0 || t < nextSweep) return;
+            nextSweep = t + 1f;
+            stale.Clear();
+            foreach (var kv in flyers) if (t - kv.Value.Seen > 2f) stale.Add(kv.Key);
+            foreach (var id in stale) flyers.Remove(id);
         }
 
         void AddFeatures(Camera cam)
@@ -610,6 +705,8 @@ namespace OpenKingdomsUnity.Game.World
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
             spriteMats.Clear();
+            flyers.Clear();
+            FlightPose.Forget();
         }
     }
 }
