@@ -124,8 +124,9 @@ namespace OpenKingdomsUnity.Game
         // What a unit is doing now.
         UnitOrder ReadOrder(int handle);
         // The local player's fog, one byte per height sample (HeightsW by
-        // HeightsH, row 0 on the north edge): 0 never seen, 1 seen before,
-        // 2 in sight now. Returns the byte count, and with into null or
+        // HeightsH, row 0 on the north edge), as the classic overlay draws
+        // it: 0 black, 1 dimmed (seen before, only with line of sight on),
+        // 2 clear (in sight, or seen before with line of sight off). Returns the byte count, and with into null or
         // too small only reports the size. Read it a few times a second.
         int ReadFog(byte[] into, out int width, out int height);
 
