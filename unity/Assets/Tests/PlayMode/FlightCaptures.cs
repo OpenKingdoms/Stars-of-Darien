@@ -1,8 +1,9 @@
 // FlightCaptures.cs - pictures of flyers in the air, for judging the wings:
 // a takeoff, a few frames of flapping and a glide, with the camera kept on
 // the flyer. Runs only with OKU_CAPTURE_DIR and OKU_CAPTURE_FLIGHT=1, on the
-// engine with OKU_CAPTURE_BACKEND=engine, where the local player is Zhon so
-// the monarch flies. Files are flight-<unit>-*.png and flight.txt.
+// engine with OKU_CAPTURE_BACKEND=engine. The local player is Zhon, whose
+// monarch flies and whose beast handler raises bats. Files are
+// flight-<unit>-*.png and flight.txt.
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -54,49 +55,130 @@ namespace OpenKingdomsUnity.Tests
             var ents = root.World.Entities;
             var b = root.Backend;
             var table = FlightTable.Load();
-            int handle = -1;
-            UnitDef def = null;
-            for (int i = 0; i < ents.UnitCount && handle < 0; i++)
+            var log = new List<string> { $"{b.Name} on {root.Setup.MapId}" };
+            int monarch = -1;
+            for (int i = 0; i < ents.UnitCount && monarch < 0; i++)
             {
                 var d = b.UnitDefs[ents.Units[i].Def];
-                if (ents.Units[i].Player == b.LocalPlayer && table.Find(d.Name, d.ObjectName) != null) { handle = ents.Units[i].Handle; def = d; }
+                if (ents.Units[i].Player == b.LocalPlayer && d.BuildOptions.Length > 0 && !d.IsBuilding) monarch = ents.Units[i].Handle;
             }
-            if (handle < 0) { Object.Destroy(root.gameObject); Assert.Ignore("the local player has no winged flyer"); }
-            string name = def.Name.ToLowerInvariant();
-            var log = new List<string> { $"{b.Name} {name} ({def.ObjectName}) on {root.Setup.MapId}, can fly {def.CanFly}, hovers {def.Hovers}" };
+            yield return Raise(root, table, monarch, log);
 
-            UnitState Now()
+            // One of each kind of winged flyer the player has.
+            var flyers = new List<int>();
+            var kinds = new HashSet<int>();
+            for (int i = 0; i < ents.UnitCount; i++)
             {
-                for (int i = 0; i < ents.UnitCount; i++) if (ents.Units[i].Handle == handle) return ents.Units[i];
-                return default;
+                var u = ents.Units[i];
+                var d = b.UnitDefs[u.Def];
+                if (u.Player == b.LocalPlayer && (u.Flags & UnitFlags.Building) == 0 && table.Find(d.Name, d.ObjectName) != null && kinds.Add(u.Def))
+                    flyers.Add(u.Handle);
             }
-            var home = Now().Position;
+            if (flyers.Count == 0) { Object.Destroy(root.gameObject); Assert.Ignore("the local player has no winged flyer"); }
+            var took = new List<bool>();
+            foreach (int h in flyers) yield return Capture(root, cam, canvas, dir, h, log, took);
+            File.WriteAllLines(Path.Combine(dir, "flight.txt"), log);
+            FogView.Disabled = false;
+            Object.Destroy(root.gameObject);
+            Assert.IsTrue(took.Contains(true), string.Join("\n", log));
+        }
+
+        static int Finished(GameRoot root, int def)
+        {
+            var e = root.World.Entities;
+            for (int i = 0; i < e.UnitCount; i++)
+            {
+                var u = e.Units[i];
+                if (u.Def == def && u.Player == root.Backend.LocalPlayer && u.Flags == UnitFlags.Active && u.BuildProgress >= 1f) return u.Handle;
+            }
+            return -1;
+        }
+
+        static UnitState Find(GameRoot root, int handle)
+        {
+            var e = root.World.Entities;
+            for (int i = 0; i < e.UnitCount; i++) if (e.Units[i].Handle == handle) return e.Units[i];
+            return default;
+        }
+
+        static bool Site(IGameBackend b, int def, Vector3 near, out Vector3 site)
+        {
+            for (int r = 4; r < 40; r += 2)
+                for (int a = 0; a < 16; a++)
+                    if (b.CanBuildAt(def, near + Quaternion.Euler(0, a * 22.5f, 0) * Vector3.forward * r, 0, out site)) return true;
+            site = default;
+            return false;
+        }
+
+        // Where the monarch's line leads to a winged flyer, raises one: the
+        // maker first, then the flyer from it, with the game sped up.
+        static IEnumerator Raise(GameRoot root, FlightTable table, int monarch, List<string> log)
+        {
+            var b = root.Backend;
+            if (monarch < 0) yield break;
+            var mdef = b.UnitDefs[Find(root, monarch).Def];
+            int maker = -1, flyer = -1;
+            foreach (int o in mdef.BuildOptions)
+                foreach (int f in b.UnitDefs[o].BuildOptions)
+                    if (maker < 0 && table.Find(b.UnitDefs[f].Name, b.UnitDefs[f].ObjectName) != null) { maker = o; flyer = f; }
+            if (maker < 0) { log.Add("no maker of flyers"); yield break; }
+            if (!Site(b, maker, Find(root, monarch).Position, out var site)) { log.Add("no site for " + b.UnitDefs[maker].Name); yield break; }
+            b.Command(new GameCommand { Kind = CommandKind.Build, Unit = monarch, Target = site, TargetUnit = -1, BuildDef = maker });
+            Time.timeScale = 20f;
+            try
+            {
+                int made = -1;
+                float deadline = Time.realtimeSinceStartup + 60f;
+                while ((made = Finished(root, maker)) < 0 && Time.realtimeSinceStartup < deadline) yield return null;
+                if (made < 0) { log.Add(b.UnitDefs[maker].Name + " was not finished"); yield break; }
+                if (b.UnitDefs[maker].IsBuilding)
+                    b.Command(new GameCommand { Kind = CommandKind.FactoryEnqueue, Unit = made, TargetUnit = -1, BuildDef = flyer });
+                else if (Site(b, flyer, Find(root, made).Position, out var spot))
+                    b.Command(new GameCommand { Kind = CommandKind.Build, Unit = made, Target = spot, TargetUnit = -1, BuildDef = flyer });
+                deadline = Time.realtimeSinceStartup + 60f;
+                while (Finished(root, flyer) < 0 && Time.realtimeSinceStartup < deadline) yield return null;
+                log.Add($"raised {b.UnitDefs[maker].Name}, then {b.UnitDefs[flyer].Name}: {(Finished(root, flyer) >= 0 ? "done" : "not finished")}");
+            }
+            finally { Time.timeScale = 1f; }
+        }
+
+        // Flies one flyer back and forth with the camera on it, and takes a
+        // takeoff, three flaps and a glide.
+        static IEnumerator Capture(GameRoot root, Camera cam, Canvas canvas, string dir, int handle, List<string> log, List<bool> took)
+        {
+            var b = root.Backend;
+            var ents = root.World.Entities;
+            var def = b.UnitDefs[Find(root, handle).Def];
+            string name = def.Name.ToLowerInvariant();
+            log.Add($"{name} ({def.ObjectName}): can fly {def.CanFly}, hovers {def.Hovers}");
+            var home = Find(root, handle).Position;
             var size = b.Terrain.Size;
             var away = new Vector3(Mathf.Clamp(home.x + (home.x < size.x / 2 ? 40 : -40), 4, size.x - 4), 0, home.z);
             var ends = new[] { away, home };
             int leg = 0;
             b.Command(GameCommand.To(CommandKind.Move, handle, ends[leg]));
             var cam3 = root.World.Camera;
-            cam3.pitch = 28f;
-            cam3.Zoom(20f);
+            cam3.pitch = 45f;
+            cam3.yaw = 0f;
 
             int flaps = 0;
             bool tookOff = false, glided = false;
-            float nextFlap = 0f;
-            deadline = Time.realtimeSinceStartup + 90f;
+            float nextFlap = 0f, deadline = Time.realtimeSinceStartup + 60f;
             while (Time.realtimeSinceStartup < deadline && (!glided || flaps < 3))
             {
                 yield return null;
-                var u = Now();
+                var u = Find(root, handle);
+                if (u.Handle != handle) break;
                 if (new Vector2(u.Position.x - ends[leg].x, u.Position.z - ends[leg].z).magnitude < 4f)
                 {
                     leg = 1 - leg;
                     b.Command(GameCommand.To(CommandKind.Move, handle, ends[leg]));
                 }
-                // Look at the flyer, not the ground under it.
-                var fwd = cam.transform.forward;
-                var flat = new Vector3(fwd.x, 0, fwd.z).normalized;
-                cam3.focus = new Vector3(u.Position.x, cam3.focus.y, u.Position.z) + flat * (u.Altitude / Mathf.Tan(cam3.pitch * Mathf.Deg2Rad));
+                // The view's centre line runs through the flyer, twelve cells off.
+                float p = cam3.pitch * Mathf.Deg2Rad;
+                var flat = Quaternion.Euler(0, cam3.yaw, 0) * Vector3.forward;
+                cam3.focus = new Vector3(u.Position.x, cam3.focus.y, u.Position.z) + flat * (u.Altitude / Mathf.Tan(p));
+                cam3.Zoom(u.Altitude / Mathf.Sin(p) + 12f);
                 if (!ents.TryFlight(u.StableId, out var f)) continue;
                 string state = $"mode {f.Mode} phase {f.Phase:0.00} glide {f.Glide:0.00} weight {f.Weight:0.00} offset {f.Offset:0.00} forced {f.Forced} altitude {u.Altitude:0.00} speed {u.Speed:0.00} airborne {(u.Flags & UnitFlags.Airborne) != 0}";
                 string shot = null;
@@ -109,12 +191,10 @@ namespace OpenKingdomsUnity.Tests
                 else if (!glided && f.Mode == FlightMode.Glide && f.Glide > 0.95f) { glided = true; shot = "glide"; }
                 if (shot == null) continue;
                 yield return ScreenCaptures.Shoot(cam, canvas, Path.Combine(dir, $"flight-{name}-{shot}.png"));
-                log.Add($"{shot}: {state}");
+                log.Add($"  {shot}: {state}");
             }
-            File.WriteAllLines(Path.Combine(dir, "flight.txt"), log);
-            FogView.Disabled = false;
-            Object.Destroy(root.gameObject);
-            Assert.IsTrue(tookOff, string.Join("\n", log));
+            b.Command(GameCommand.To(CommandKind.Stop, handle, default));
+            took.Add(tookOff);
         }
     }
 }
