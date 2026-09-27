@@ -7,9 +7,9 @@ Shader "OpenKingdoms/Presentation/Water"
 {
     Properties
     {
-        _Shallow ("Shallow", Color) = (0.1, 0.36, 0.4, 0.55)
-        _Deep ("Deep", Color) = (0.01, 0.07, 0.13, 0.94)
-        _Sky ("Sky", Color) = (0.62, 0.74, 0.86, 1)
+        _Shallow ("Shallow", Color) = (0.15, 0.5, 0.52, 0.6)
+        _Deep ("Deep", Color) = (0.04, 0.22, 0.32, 0.93)
+        _Sky ("Sky", Color) = (0.36, 0.46, 0.56, 1)
         _Foam ("Foam", Color) = (0.95, 0.97, 1, 1)
         _DepthScale ("Depth to deep", Float) = 3
         _FoamWidth ("Foam width", Float) = 0.45
@@ -83,10 +83,10 @@ Shader "OpenKingdoms/Presentation/Water"
                 float3 n = normalize(i.normal);
                 half4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
                 float fresnel = pow(1 - saturate(dot(n, view)), 4);
-                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.6);
+                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);
                 Light sun = GetMainLight(TransformWorldToShadowCoord(i.world));
                 float3 h = normalize(sun.direction + view);
-                float spec = pow(saturate(dot(n, h)), 160) * 1.2 * sun.shadowAttenuation;
+                float spec = pow(saturate(dot(n, h)), 200) * 0.8 * sun.shadowAttenuation;
                 water.rgb *= 0.55 + 0.45 * saturate(dot(n, sun.direction)) * sun.color * lerp(0.6, 1, sun.shadowAttenuation);
                 water.rgb += spec * sun.color;
                 float band = 1 - saturate(vdepth / _FoamWidth);
@@ -174,7 +174,7 @@ Shader "OpenKingdoms/Presentation/Water"
                 float3 n = normalize(i.normal);
                 fixed4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
                 float fresnel = pow(1 - saturate(dot(n, view)), 4);
-                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.6);
+                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);
                 float3 l = normalize(_WorldSpaceLightPos0.xyz);
                 float3 h = normalize(l + view);
                 float spec = pow(saturate(dot(n, h)), 160) * 1.2;

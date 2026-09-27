@@ -152,8 +152,8 @@ namespace OpenKingdomsUnity.Game.UI
             var list = UiKit.Panel(s, "Maps", false).Place(0, 0, 0, 1, 60, 130, -440, 150);
             var listTitle = UiKit.Label(list, "Maps", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
             listTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
-            var items = UiKit.Rect(list, "Items").Place(0, 0, 1, 1, 24, 24, 24, 80);
-            UiKit.Column(items, 10);
+            var items = UiKit.ScrollList(list, "Items", 10);
+            ((RectTransform)items.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 80);
             foreach (var m in root.Backend.Maps)
             {
                 var id = m.Id;

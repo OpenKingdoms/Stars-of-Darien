@@ -285,6 +285,33 @@ namespace OpenKingdomsUnity.Game.UI
             return v;
         }
 
+        // A column that scrolls with the wheel or a drag, clipped to its
+        // box. Returns the content to put rows in, and the caller places
+        // the box (content.parent.parent).
+        public static RectTransform ScrollList(Transform parent, string name, float spacing)
+        {
+            var box = Rect(parent, name);
+            var scroll = box.gameObject.AddComponent<ScrollRect>();
+            var hit = box.gameObject.AddComponent<Image>();
+            hit.color = Color.clear;
+            var view = Rect(box, "Viewport").Fill();
+            view.gameObject.AddComponent<RectMask2D>();
+            var content = Rect(view, "Content");
+            content.anchorMin = new Vector2(0, 1);
+            content.anchorMax = new Vector2(1, 1);
+            content.pivot = new Vector2(0.5f, 1);
+            content.offsetMin = content.offsetMax = Vector2.zero;
+            Column(content, spacing);
+            var fit = content.gameObject.AddComponent<ContentSizeFitter>();
+            fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            scroll.viewport = view;
+            scroll.content = content;
+            scroll.horizontal = false;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 40f;
+            return content;
+        }
+
         public static HorizontalLayoutGroup Row(RectTransform rt, float spacing, int pad = 0)
         {
             var h = rt.gameObject.AddComponent<HorizontalLayoutGroup>();
