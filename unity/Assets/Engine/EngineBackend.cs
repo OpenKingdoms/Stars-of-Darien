@@ -42,9 +42,22 @@ namespace OpenKingdomsUnity.Engine
             OkEngine.PreloadDependencies(EngineSettings.PluginDir);
             if (OkEngine.okx_api_version() != OkEngine.ApiVersion)
                 throw new InvalidOperationException($"okengine API {OkEngine.okx_api_version()}, this binding expects {OkEngine.ApiVersion}");
+            OkEngine.okx_set_user_dir(EngineSettings.UserDir.Replace('\\', '/'));
             if (OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir) != 0)
                 throw new InvalidOperationException("okx_init: " + OkEngine.LastError);
             OkEngine.okx_set_override_dir(EngineSettings.OverrideDir.Replace('\\', '/'));
+            ReadMaps();
+            string[,] kingdoms =
+            {
+                { "ARAMON", "Aramon" }, { "VERUNA", "Veruna" }, { "TAROS", "Taros" },
+                { "ZHON", "Zhon" }, { "CREON", "Creon" }
+            };
+            for (int i = 0; i < kingdoms.GetLength(0); i++)
+                sides.Add(new SideInfo { Id = kingdoms[i, 0], Name = kingdoms[i, 1], Description = "" });
+        }
+
+        void ReadMaps()
+        {
             int mapCount = OkEngine.okx_map_count();
             for (int i = 0; i < mapCount; i++)
             {
@@ -57,13 +70,6 @@ namespace OpenKingdomsUnity.Engine
                 });
                 mapIndex[mi.name] = i;
             }
-            string[,] kingdoms =
-            {
-                { "ARAMON", "Aramon" }, { "VERUNA", "Veruna" }, { "TAROS", "Taros" },
-                { "ZHON", "Zhon" }, { "CREON", "Creon" }
-            };
-            for (int i = 0; i < kingdoms.GetLength(0); i++)
-                sides.Add(new SideInfo { Id = kingdoms[i, 0], Name = kingdoms[i, 1], Description = "" });
         }
 
         public IReadOnlyList<MapInfo> Maps => maps;
@@ -556,9 +562,9 @@ namespace OpenKingdomsUnity.Engine
 
         public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
 
-        // Not in IGameBackend yet: the game's own controls. The engine keeps
-        // the selection, and Click is the original's left click, so the
-        // game decides what it means and the units answer in their voices.
+        // The game's own controls. The engine keeps the selection, and Click
+        // is the original's left click, so the game decides what it means
+        // and the units answer in their voices.
         readonly int[] selectionBuf = new int[128];
 
         public void Select(int[] handles, bool add) => OkEngine.okx_select(handles, handles?.Length ?? 0, add ? 1 : 0);
@@ -668,6 +674,49 @@ namespace OpenKingdomsUnity.Engine
             var img = new RgbaImage(w, h);
             OkEngine.okx_effect_strip(strip, img.Pixels, need, out w, out h);
             return img;
+        }
+
+        // Not in IGameBackend yet: the map editor. Heights are the map's own
+        // bytes, one a cell. Blocks take a chunk id from the library and a
+        // sub square. A map saves under a new name in the player's folder.
+        public int ReadCells(byte[] into, out int width, out int height) => OkEngine.okx_map_cells(into, into?.Length ?? 0, out width, out height);
+
+        public bool EditCells(int x0, int z0, int w, int h, byte[] values) => OkEngine.okx_edit_cells(x0, z0, w, h, values) == 0;
+
+        public uint[] ChunkLibrary()
+        {
+            int n = OkEngine.okx_chunk_library(null, 0);
+            var ids = new uint[Math.Max(0, n)];
+            if (n > 0) OkEngine.okx_chunk_library(ids, n);
+            return ids;
+        }
+
+        public RgbaImage ChunkPicture(uint id)
+        {
+            int need = OkEngine.okx_chunk_picture(id, null, 0, out int w, out int h);
+            if (need <= 0) return null;
+            var img = new RgbaImage(w, h);
+            OkEngine.okx_chunk_picture(id, img.Pixels, need, out w, out h);
+            return img;
+        }
+
+        public bool PaintBlocks(int bx, int by, int w, int h, uint[] chunkIds, byte[] texX, byte[] texY)
+        {
+            if (OkEngine.okx_edit_blocks(bx, by, w, h, chunkIds, texX, texY) != 0) return false;
+            ReadTerrain();
+            return true;
+        }
+
+        public int PlaceFeature(int def, int cx, int cz) => OkEngine.okx_feature_place(def, cx, cz);
+        public bool RemoveFeature(int index) => OkEngine.okx_feature_remove(index) == 0;
+
+        public bool SaveMap(string name)
+        {
+            if (OkEngine.okx_map_save(name) != 0) return false;
+            maps.Clear();
+            mapIndex.Clear();
+            ReadMaps();
+            return true;
         }
 
         public Economy ReadEconomy(int player)

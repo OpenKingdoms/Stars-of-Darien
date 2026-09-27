@@ -658,6 +658,86 @@ namespace OpenKingdomsUnity.Game
 
         public int ReadEffects(EffectState[] into) => 0;
 
+        // ---- The game's own controls, simply ----
+
+        readonly List<int> mockSelection = new List<int>();
+        readonly Dictionary<int, List<int>> mockGroups = new Dictionary<int, List<int>>();
+        CommandKind mockArmed;
+        int mockArmedDef = -1;
+        bool mockIsArmed;
+
+        public void Select(int[] handles, bool add)
+        {
+            if (!add) mockSelection.Clear();
+            if (handles == null) return;
+            foreach (int h in handles)
+                if (byHandle.TryGetValue(h, out var u) && !u.Dying && u.Player == LocalPlayer && !mockSelection.Contains(h))
+                    mockSelection.Add(h);
+        }
+
+        public int ReadSelection(int[] into)
+        {
+            mockSelection.RemoveAll(h => !byHandle.TryGetValue(h, out var u) || u.Dying);
+            for (int i = 0; into != null && i < mockSelection.Count && i < into.Length; i++) into[i] = mockSelection[i];
+            return mockSelection.Count;
+        }
+
+        public void Click(Vector3 at, int unit, bool shift)
+        {
+            bool friend = unit >= 0 && byHandle.TryGetValue(unit, out var hit) && hit.Player == LocalPlayer;
+            if (mockIsArmed)
+            {
+                mockIsArmed = false;
+                foreach (int h in mockSelection.ToArray())
+                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef });
+                return;
+            }
+            if (friend)
+            {
+                if (!shift) mockSelection.Clear();
+                if (shift && mockSelection.Contains(unit)) mockSelection.Remove(unit);
+                else if (!mockSelection.Contains(unit)) mockSelection.Add(unit);
+                return;
+            }
+            foreach (int h in mockSelection.ToArray())
+            {
+                if (unit >= 0) Command(new GameCommand { Kind = CommandKind.Attack, Unit = h, TargetUnit = unit, BuildDef = -1 });
+                else Command(GameCommand.To(CommandKind.Move, h, at));
+            }
+        }
+
+        public void Cancel()
+        {
+            if (mockIsArmed) mockIsArmed = false;
+            else mockSelection.Clear();
+        }
+
+        public void Arm(CommandKind kind, int buildDef = -1)
+        {
+            mockArmed = kind;
+            mockArmedDef = buildDef;
+            mockIsArmed = true;
+        }
+
+        public bool OrderSelection(CommandKind kind, int arg = 0)
+        {
+            bool any = false;
+            foreach (int h in mockSelection.ToArray())
+                any |= Command(new GameCommand { Kind = kind, Unit = h, TargetUnit = -1, BuildDef = -1, Arg = arg });
+            return any;
+        }
+
+        public void AssignGroup(int group) => mockGroups[group] = new List<int>(mockSelection);
+
+        public int RecallGroup(int group)
+        {
+            mockSelection.Clear();
+            if (mockGroups.TryGetValue(group, out var g))
+                foreach (int h in g)
+                    if (byHandle.TryGetValue(h, out var u) && !u.Dying) mockSelection.Add(h);
+            return mockSelection.Count;
+        }
+
         public bool SaveGame(string path) => false;
         public bool LoadGame(string path) => false;
 

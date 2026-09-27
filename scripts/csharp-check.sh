@@ -17,9 +17,13 @@ nunit="$data/Resources/PackageManager/BuiltInPackages/com.unity.ext.nunit/net40/
 
 engine=()
 for f in "$data"/Managed/UnityEngine/UnityEngine*.dll; do engine+=("-r:$(w "$f")"); done
-# Package runtimes such as uGUI, once the editor has built them.
-for f in "$root"/unity/Library/ScriptAssemblies/UnityEngine.UI.dll "$root"/unity/Library/ScriptAssemblies/Unity.TextMeshPro.dll; do
-    [ -f "$f" ] && engine+=("-r:$(w "$f")")
+# Package runtimes (uGUI, URP and the rest), once the editor has built
+# them. Editor-only and test assemblies, and the project's own, stay out.
+for f in "$root"/unity/Library/ScriptAssemblies/*.dll; do
+    case "$(basename "$f")" in
+        OpenKingdomsUnity*|*Editor*|*editor*|*Tests*|*TestRunner*|*nunit*) ;;
+        *) engine+=("-r:$(w "$f")") ;;
+    esac
 done
 scripts=()
 while IFS= read -r f; do scripts+=("$(w "$f")"); done < <(find "$root/unity/Assets/Scripts" "$root/unity/Assets/Engine" -name "*.cs" -not -path "*/Editor/*")

@@ -55,6 +55,7 @@ namespace OpenKingdomsUnity.Engine
                 OkEngine.PreloadDependencies(EngineSettings.PluginDir);
                 if (OkEngine.okx_api_version() != OkEngine.ApiVersion)
                     throw new InvalidOperationException($"okengine API {OkEngine.okx_api_version()}, this binding expects {OkEngine.ApiVersion}");
+                OkEngine.okx_set_user_dir(EngineSettings.UserDir.Replace('\\', '/'));
                 if (OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir) != 0)
                     throw new InvalidOperationException("okx_init: " + OkEngine.LastError);
                 OkEngine.okx_set_override_dir(EngineSettings.OverrideDir.Replace('\\', '/'));

@@ -26,6 +26,9 @@ namespace OpenKingdomsUnity.Engine
 
         public static string PluginDir => Path.Combine(Application.dataPath, "Plugins", "x86_64");
         public static string OverrideDir => Path.Combine(Application.streamingAssetsPath, "Overrides");
+        // The player's own folder: saved maps (under maps/) and anything
+        // else the player adds, mounted over the game's files.
+        public static string UserDir => Path.Combine(Application.persistentDataPath, "User");
 
         // The engine can run when its library and the game files are here.
         public static bool EngineAvailable =>

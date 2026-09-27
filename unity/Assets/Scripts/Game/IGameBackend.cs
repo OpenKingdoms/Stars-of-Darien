@@ -88,6 +88,26 @@ namespace OpenKingdomsUnity.Game
         // in view in world units, once a frame, so sounds pan and fade.
         void SetView(Vector3 centre, float width, float depth);
 
+        // The game's own controls. The backend keeps the selection, and Click
+        // is the original's left click: with the selection and any armed
+        // command it selects, moves, attacks, repairs or carries out the
+        // armed command, as the game decides. `unit` is what the pointer is
+        // over, or -1 for ground. Cancel is the right click and Escape: it
+        // disarms an armed command, or else deselects.
+        void Select(int[] handles, bool add);
+        int ReadSelection(int[] into);
+        void Click(Vector3 at, int unit, bool shift);
+        void Cancel();
+        // Arm a command button so the next Click carries it out: Move,
+        // Attack, Guard, Patrol, Load, Unload, Repair, Reclaim, or Build with
+        // the building's def.
+        void Arm(CommandKind kind, int buildDef = -1);
+        // An order for everything selected that needs no point: Stop,
+        // SetAggro and SetWeapon with arg, Gate.
+        bool OrderSelection(CommandKind kind, int arg = 0);
+        void AssignGroup(int group);
+        int RecallGroup(int group);
+
         // Orders, for one unit at a time. False when the engine refuses it.
         bool Command(in GameCommand command);
         Economy ReadEconomy(int player);

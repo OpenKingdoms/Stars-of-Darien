@@ -169,7 +169,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 10;
+        public const int ApiVersion = 12;
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
             ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
         public const int EffectImpact = 0, EffectProjectile = 1;
@@ -181,6 +181,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern void okx_shutdown();
         [DllImport(Lib)] static extern IntPtr okx_last_error();
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern void okx_set_override_dir(string dir);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern void okx_set_user_dir(string dir);
 
         [DllImport(Lib)] public static extern int okx_map_count();
         [DllImport(Lib)] static extern int okx_map_name(int index, [Out] byte[] outName, int cap);
@@ -233,6 +234,15 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_terrain_blocks([Out] int[] blocks, int cap);
         [DllImport(Lib)] public static extern int okx_terrain_chunk(int chunk, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern float okx_ground_height(float x, float z);
+        [DllImport(Lib)] public static extern int okx_map_cells([Out] byte[] cells, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_edit_cells(int x0, int z0, int w, int h, byte[] values);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_map_save(string name);
+        [DllImport(Lib)] public static extern int okx_chunk_library([Out] uint[] ids, int cap);
+        [DllImport(Lib)] public static extern int okx_chunk_picture(uint id, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern uint okx_terrain_chunk_id(int chunk);
+        [DllImport(Lib)] public static extern int okx_edit_blocks(int bx, int by, int w, int h, uint[] chunkIds, byte[] texX, byte[] texY);
+        [DllImport(Lib)] public static extern int okx_feature_place(int def, int cx, int cz);
+        [DllImport(Lib)] public static extern int okx_feature_remove(int index);
 
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_model_load(string objectName, int color);
         [DllImport(Lib)] public static extern int okx_model_info(int model, out OkxModelInfo info);
