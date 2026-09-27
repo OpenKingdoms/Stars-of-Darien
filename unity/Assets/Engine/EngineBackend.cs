@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using OpenKingdomsUnity.Game;
 using UnityEngine;
-using TerrainData = OpenKingdomsUnity.Game.TerrainData;
 
 namespace OpenKingdomsUnity.Engine
 {
@@ -29,7 +28,7 @@ namespace OpenKingdomsUnity.Engine
         readonly byte[] hidden = new byte[128];
         SkirmishSetup pending;
         GameStatus status = GameStatus.Idle;
-        TerrainData terrain;
+        MapTerrain terrain;
 
         public string Name => "OpenKingdoms";
 
@@ -184,7 +183,7 @@ namespace OpenKingdomsUnity.Engine
                 blocks[3 * b + 1] *= t.subPx;
                 blocks[3 * b + 2] *= t.subPx;
             }
-            terrain = new TerrainData
+            terrain = new MapTerrain
             {
                 HeightsW = t.heightsW, HeightsH = t.heightsH, CellSize = t.tilePx * S, Heights = heights,
                 SeaLevel = t.waterHeight > 0 ? t.waterHeight * S : -1f,
@@ -254,7 +253,7 @@ namespace OpenKingdomsUnity.Engine
 
         // ── The ground ─────────────────────────────────────────────────
 
-        public TerrainData Terrain => terrain;
+        public MapTerrain Terrain => terrain;
 
         public float GroundHeight(float x, float z) => OkEngine.okx_ground_height(x / S, -z / S) * S;
 
