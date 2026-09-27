@@ -1,0 +1,7 @@
+{
+    "name": "OpenKingdomsUnity",
+    "rootNamespace": "OpenKingdomsUnity",
+    "references": [],
+    "allowUnsafeCode": false,
+    "autoReferenced": true
+}
