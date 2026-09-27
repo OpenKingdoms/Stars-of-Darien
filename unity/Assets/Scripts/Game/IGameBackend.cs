@@ -71,6 +71,21 @@ namespace OpenKingdomsUnity.Game
         // Orders, for one unit at a time. False when the engine refuses it.
         bool Command(in GameCommand command);
         Economy ReadEconomy(int player);
+
+        // For the HUD. Where a building of def would stand for a site at
+        // `at`, snapped to the cell grid as the game places it, and whether
+        // it can be built there.
+        bool CanBuildAt(int def, Vector3 at, out Vector3 snapped);
+        // How many of def a factory has queued or in progress, or all of
+        // them for def -1.
+        int QueuedCount(int factory, int def);
+        // What a unit is doing now.
+        UnitOrder ReadOrder(int handle);
+        // The local player's fog, one byte per height sample (HeightsW by
+        // HeightsH, row 0 on the north edge): 0 never seen, 1 seen before,
+        // 2 in sight now. Returns the byte count, and with into null or
+        // too small only reports the size. Read it a few times a second.
+        int ReadFog(byte[] into, out int width, out int height);
     }
 
     public enum GameStatus { Idle, Loading, Running, Victory, Defeat, Failed }
@@ -83,7 +98,23 @@ namespace OpenKingdomsUnity.Game
     public enum CommandKind
     {
         Move = 1, Attack, Build, Stop, Patrol, Guard, Repair, Reclaim, Capture,
-        Load, Unload, Wait, SetAggro, SetWeapon
+        Load, Unload, Wait, SetAggro, SetWeapon,
+        FactoryEnqueue, FactoryDequeue, FactoryCancel, Rally, Gate, AttackGround,
+        SpecialWeapon, ReclaimFeature, ResurrectFeature
+    }
+
+    public enum OrderKind
+    {
+        None, Move, Attack, Build, Patrol, Guard, Repair, Reclaim, Load, Unload,
+        AttackGround, Resurrect, Board
+    }
+
+    public struct UnitOrder
+    {
+        public OrderKind Kind;
+        public int TargetUnit;      // handle, or -1
+        public Vector3 Target;      // world point
+        public int Building;        // the building a builder works on, or -1
     }
 
     [Flags]

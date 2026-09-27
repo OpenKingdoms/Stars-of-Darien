@@ -471,6 +471,48 @@ namespace OpenKingdomsUnity.Engine
             return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, c.Arg) == 0;
         }
 
+        public bool CanBuildAt(int def, Vector3 at, out Vector3 snapped)
+        {
+            int ok = OkEngine.okx_build_site(def, (int)(at.x / S), (int)(-at.z / S), out int sx, out int sy);
+            snapped = new Vector3(sx * S, 0f, -sy * S);
+            snapped.y = GroundHeight(snapped.x, snapped.z);
+            return ok != 0;
+        }
+
+        public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
+
+        public UnitOrder ReadOrder(int handle)
+        {
+            if (OkEngine.okx_unit_order(handle, out var o) != 0)
+                return new UnitOrder { Kind = OrderKind.None, TargetUnit = -1, Building = -1 };
+            var at = new Vector3(o.x * S, 0f, -o.y * S);
+            at.y = GroundHeight(at.x, at.z);
+            return new UnitOrder { Kind = (OrderKind)o.kind, TargetUnit = o.target, Target = at, Building = o.building };
+        }
+
+        byte[] fogCells = Array.Empty<byte>();
+
+        // The engine keeps one byte a cell. A height grid has one more
+        // sample each way, so the last row and column repeat.
+        public int ReadFog(byte[] into, out int width, out int height)
+        {
+            width = terrain != null ? terrain.HeightsW : 0;
+            height = terrain != null ? terrain.HeightsH : 0;
+            int need = width * height;
+            if (into == null || into.Length < need || need == 0) return need;
+            int cells = OkEngine.okx_fog(null, 0, out int cw, out int ch);
+            if (cells <= 0) return need;
+            if (fogCells.Length < cells) fogCells = new byte[cells];
+            OkEngine.okx_fog(fogCells, cells, out cw, out ch);
+            for (int y = 0; y < height; y++)
+            {
+                int sy = Mathf.Min(y, ch - 1);
+                for (int x = 0; x < width; x++)
+                    into[y * width + x] = fogCells[sy * cw + Mathf.Min(x, cw - 1)];
+            }
+            return need;
+        }
+
         public Economy ReadEconomy(int player)
         {
             if (OkEngine.okx_economy(player, out var e) != 0) return default;

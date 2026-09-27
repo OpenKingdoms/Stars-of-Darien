@@ -27,6 +27,14 @@ foreach ($platform in "EditMode", "PlayMode") {
         -testResults $results -logFile $log | Out-Null
     $exit = $LASTEXITCODE
     if ($exit -ne 0) { $code = $exit }
+    # With a compile error Unity runs the last good assemblies and can
+    # report a clean pass, so the log decides.
+    if ((Test-Path $log) -and (Select-String -Path $log -Pattern "Scripts have compiler errors" -Quiet)) {
+        "Unity ${platform}: scripts have compiler errors, see $log"
+        Select-String -Path $log -Pattern "error CS" | Select-Object -First 5 | ForEach-Object { "  " + $_.Line }
+        $code = 1
+        continue
+    }
     if (Test-Path $results) {
         [xml]$x = Get-Content $results
         $r = $x.'test-run'

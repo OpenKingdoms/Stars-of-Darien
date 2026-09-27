@@ -652,6 +652,72 @@ namespace OpenKingdomsUnity.Game
 
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
+        // ---- HUD helpers ----
+
+        public bool CanBuildAt(int def, Vector3 at, out Vector3 snapped)
+        {
+            snapped = new Vector3(Mathf.Floor(at.x) + 0.5f, 0f, Mathf.Floor(at.z) + 0.5f);
+            if (Terrain == null) return false;
+            snapped.y = Terrain.Sample(snapped.x, snapped.z);
+            if (Terrain.SeaLevel > 0 && snapped.y < Terrain.SeaLevel + 0.2f) return false;
+            foreach (var u in units)
+                if (!u.Dying && new Vector2(u.Pos.x - snapped.x, u.Pos.z - snapped.z).magnitude < 1.5f) return false;
+            return true;
+        }
+
+        public int QueuedCount(int factory, int def)
+        {
+            if (!byHandle.TryGetValue(factory, out var u) || u.BuildDef < 0) return 0;
+            return def < 0 || u.BuildDef == def ? 1 : 0;
+        }
+
+        public UnitOrder ReadOrder(int handle)
+        {
+            var none = new UnitOrder { Kind = OrderKind.None, TargetUnit = -1, Building = -1 };
+            if (!byHandle.TryGetValue(handle, out var u) || u.Dying) return none;
+            if (u.BuildDef >= 0) return new UnitOrder { Kind = OrderKind.Build, TargetUnit = -1, Target = u.Pos, Building = -1 };
+            if (u.Target >= 0 && byHandle.TryGetValue(u.Target, out var t))
+                return new UnitOrder { Kind = OrderKind.Attack, TargetUnit = u.Target, Target = t.Pos, Building = -1 };
+            if (u.Goal != null)
+            {
+                var g = new Vector3(u.Goal.Value.x, 0f, u.Goal.Value.y);
+                if (Terrain != null) g.y = Terrain.Sample(g.x, g.z);
+                return new UnitOrder { Kind = OrderKind.Move, TargetUnit = -1, Target = g, Building = -1 };
+            }
+            return none;
+        }
+
+        byte[] fogSeen = Array.Empty<byte>();
+
+        public int ReadFog(byte[] into, out int width, out int height)
+        {
+            width = Terrain != null ? Terrain.HeightsW : 0;
+            height = Terrain != null ? Terrain.HeightsH : 0;
+            int need = width * height;
+            if (into == null || into.Length < need || need == 0) return need;
+            if (fogSeen.Length != need) fogSeen = new byte[need];
+            bool revealed = setup != null && setup.MapRevealed;
+            float cell = Terrain.CellSize;
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    int i = y * width + x;
+                    bool inSight = revealed;
+                    if (!inSight)
+                    {
+                        var p = new Vector2(x * cell, -y * cell);
+                        foreach (var u in units)
+                        {
+                            if (u.Dying || u.Player != LocalPlayer) continue;
+                            if ((new Vector2(u.Pos.x, u.Pos.z) - p).sqrMagnitude < 100f) { inSight = true; break; }
+                        }
+                    }
+                    if (inSight) fogSeen[i] = 1;
+                    into[i] = inSight ? (byte)2 : fogSeen[i];
+                }
+            return need;
+        }
+
         // ---- Pictures ----
 
         internal static void Put(RgbaImage img, int x, int y, Color32 c)

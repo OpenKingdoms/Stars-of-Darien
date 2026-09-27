@@ -97,6 +97,37 @@ namespace OpenKingdomsUnity.Tests
 
             var target = u.Position + new Vector3(30f, 0f, 0f);
             Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, u.Handle, target)));
+            backend.Advance(2);
+            var order = backend.ReadOrder(u.Handle);
+            Assert.AreEqual(OrderKind.Move, order.Kind);
+            Assert.AreEqual(target.x, order.Target.x, 2f);
+
+            // A placement ghost: somewhere near the monarch can take its first building.
+            int building = -1;
+            foreach (int opt in def.BuildOptions) if (backend.UnitDefs[opt].IsBuilding) { building = opt; break; }
+            Assert.GreaterOrEqual(building, 0);
+            bool placed = false;
+            for (int r = 6; r <= 40 && !placed; r += 2)
+                for (int k = 0; k < 8 && !placed; k++)
+                {
+                    var at = u.Position + Quaternion.Euler(0, k * 45f, 0) * new Vector3(r, 0, 0);
+                    if (backend.CanBuildAt(building, at, out var snapped))
+                    {
+                        placed = true;
+                        Assert.AreEqual(at.x, snapped.x, 2f);
+                        Assert.AreEqual(backend.GroundHeight(snapped.x, snapped.z), snapped.y, 0.01f);
+                    }
+                }
+            Assert.IsTrue(placed, "some ground near the monarch takes a building");
+            Assert.GreaterOrEqual(backend.QueuedCount(u.Handle, -1), 0);
+
+            int need = backend.ReadFog(null, out int fw, out int fh);
+            Assert.AreEqual(backend.Terrain.HeightsW * backend.Terrain.HeightsH, need);
+            var fog = new byte[need];
+            backend.ReadFog(fog, out fw, out fh);
+            int inSight = 0;
+            foreach (var f in fog) if (f == 2) inSight++;
+            Assert.Greater(inSight, 0);
             Assert.AreEqual(120, backend.Advance(120));
             n = backend.ReadUnits(units);
             float x = u.Position.x;
