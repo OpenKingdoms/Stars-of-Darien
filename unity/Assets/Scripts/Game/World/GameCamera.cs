@@ -35,7 +35,9 @@ namespace OpenKingdomsUnity.Game.World
             boundsMin = min;
             boundsMax = max;
             focus = at;
+            focus.y = SmoothGround(at);
             targetDistance = distance;
+            lift = 0;
             Apply(1f);
         }
 
@@ -119,39 +121,6 @@ namespace OpenKingdomsUnity.Game.World
             Apply(dt);
         }
 
-        // Tilts the view up (toward straight down) and then pulls it in until
-        // all four corners of the screen land on ground inside the land past
-        // the edge, so neither the void nor the horizon shows.
-        void KeepOnLand()
-        {
-            var cam = GetComponent<Camera>();
-            if (cam == null) return;
-            for (int guard = 0; guard < 80 && !CornersOnLand(cam); guard++)
-            {
-                if (pitch < maxPitch - 0.5f) pitch = Mathf.Min(maxPitch, pitch + 1.5f);
-                else distance = targetDistance = Mathf.Max(minDistance, distance * 0.96f);
-            }
-        }
-
-        public bool CornersOnLand(Camera cam)
-        {
-            var rot = Quaternion.Euler(pitch, yaw, 0);
-            var pos = focus - rot * Vector3.forward * distance;
-            float tanV = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad), tanH = tanV * cam.aspect;
-            float floor = focus.y - 4f;
-            var lo = new Vector2(boundsMin.x - landPastEdge, boundsMin.y - landPastEdge);
-            var hi = new Vector2(boundsMax.x + landPastEdge, boundsMax.y + landPastEdge);
-            for (int i = 0; i < 4; i++)
-            {
-                var dir = rot * new Vector3((i & 1) == 0 ? -tanH : tanH, (i & 2) == 0 ? -tanV : tanV, 1f);
-                if (dir.y >= -1e-3f) return false;
-                float t = (floor - pos.y) / dir.y;
-                var hit = pos + dir * t;
-                if (hit.x < lo.x || hit.x > hi.x || hit.z < lo.y || hit.z > hi.y) return false;
-            }
-            return true;
-        }
-
         bool PointerGround(Ray ray, out Vector3 at)
         {
             at = default;
@@ -170,14 +139,41 @@ namespace OpenKingdomsUnity.Game.World
             distance = Mathf.Lerp(distance, targetDistance, 1f - Mathf.Exp(-12f * dt));
             focus.x = Mathf.Clamp(focus.x, boundsMin.x - focusMargin, boundsMax.x + focusMargin);
             focus.z = Mathf.Clamp(focus.z, boundsMin.y - focusMargin, boundsMax.y + focusMargin);
-            float g = ground != null ? ground(focus.x, focus.z) : 0f;
-            focus.y = Mathf.Lerp(focus.y, g, 1f - Mathf.Exp(-6f * dt));
-            KeepOnLand();
+            // The camera rides the ground averaged over a wide patch round
+            // the focus, eased over most of a second, so a cliff, a ramp or a
+            // tall prop passing underneath does not lift or drop the view.
+            focus.y = Mathf.Lerp(focus.y, SmoothGround(focus), 1f - Mathf.Exp(-dt / HeightEase));
             transform.rotation = Quaternion.Euler(pitch, yaw, 0);
             var pos = focus - transform.forward * distance;
-            // Never dip under the ground below the camera.
-            if (ground != null) pos.y = Mathf.Max(pos.y, ground(pos.x, pos.z) + 2f);
+            // A soft floor: only if the camera would really go underground
+            // does it ease up, never snapping from one frame to the next.
+            float need = ground != null ? Mathf.Max(0f, ground(pos.x, pos.z) + Clearance - pos.y) : 0f;
+            lift = Mathf.Lerp(lift, need, 1f - Mathf.Exp(-dt / 0.8f));
+            pos.y += lift;
             transform.position = pos;
+        }
+
+        public const float HeightEase = 0.9f, SmoothRadius = 16f, Clearance = 1.5f;
+        float lift;
+
+        // The mean ground height over a disc round a point, from a 7 by 7
+        // grid of samples.
+        public float SmoothGround(Vector3 at)
+        {
+            if (ground == null) return 0f;
+            float sum = 0;
+            int n = 0;
+            for (int j = -3; j <= 3; j++)
+                for (int i = -3; i <= 3; i++)
+                {
+                    if (i * i + j * j > 10) continue;
+                    float x = at.x + i * SmoothRadius / 3f, z = at.z + j * SmoothRadius / 3f;
+                    x = Mathf.Clamp(x, boundsMin.x, boundsMax.x);
+                    z = Mathf.Clamp(z, boundsMin.y, boundsMax.y);
+                    sum += ground(x, z);
+                    n++;
+                }
+            return sum / n;
         }
     }
 }

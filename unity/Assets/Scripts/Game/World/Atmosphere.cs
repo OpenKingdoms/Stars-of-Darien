@@ -195,13 +195,14 @@ namespace OpenKingdomsUnity.Game.World
                 Shader.SetGlobalVector("_OkuSunColor", Sun.color * Sun.intensity);
                 Shader.SetGlobalVector("_OkuAmbient", RenderSettings.ambientSkyColor * 0.55f);
             }
-            // Fog thickens past what the camera frames, however far out it is.
-            if (RenderSettings.fog)
-            {
-                bool fog = Weather == WeatherChoice.Fog;
-                RenderSettings.fogStartDistance = cameraDistance * (fog ? 0.8f : 1.4f);
-                RenderSettings.fogEndDistance = cameraDistance * (fog ? 3.2f : 6f) + 40f;
-            }
+            // Haze thickens past what the camera frames, however far out it
+            // is, and in clear weather only far off, so the land past the
+            // edge melts into it and the sky meets it at the horizon.
+            bool fog = Weather == WeatherChoice.Fog, clear = Weather == WeatherChoice.Off || Weather == WeatherChoice.ByMap;
+            RenderSettings.fog = true;
+            RenderSettings.fogStartDistance = cameraDistance * (fog ? 0.8f : clear ? 2.2f : 1.4f);
+            RenderSettings.fogEndDistance = cameraDistance * (fog ? 3.2f : clear ? 9f : 6f) + 60f;
+            Shader.SetGlobalColor("_OkuHaze", RenderSettings.fogColor);
             if (particles == null) return;
             float lift = Weather == WeatherChoice.Fog ? 2f : Mathf.Min(cameraHeight, 30f) + 4f;
             particles.transform.position = new Vector3(focus.x, focus.y + lift, focus.z);

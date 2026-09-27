@@ -7,7 +7,6 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
     Properties
     {
         _MainTex ("Map picture", 2D) = "white" {}
-        _Haze ("Haze", Color) = (0.32, 0.34, 0.36, 1)
         _Width ("Ring width, cells", Float) = 32
     }
     SubShader
@@ -22,7 +21,7 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
             #include "UnityCG.cginc"
             #include "../../Shaders/OkuFog.hlsl"
             sampler2D _MainTex;
-            fixed4 _Haze;
+            float4 _OkuHaze;    // the climate's haze, set with the fog
             float _Width;
             float4 _OkuSunDir, _OkuSunColor, _OkuAmbient;
             struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; float2 dist : TEXCOORD1; };
@@ -50,7 +49,7 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
                 float f = saturate(i.dist / _Width);
                 fixed grey = dot(c, fixed3(0.3, 0.59, 0.11));
                 c = lerp(c, grey.xxx, f * 0.7);
-                c = lerp(c, _Haze.rgb, smoothstep(0, 1, f) * 0.85);
+                c = lerp(c, _OkuHaze.rgb, smoothstep(0, 1, f));
                 fixed4 col = fixed4(c, 1);
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

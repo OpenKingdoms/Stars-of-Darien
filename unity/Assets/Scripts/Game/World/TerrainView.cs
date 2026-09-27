@@ -128,7 +128,6 @@ namespace OpenKingdomsUnity.Game.World
             picture.wrapMode = TextureWrapMode.Clamp;
             owned.Add(picture);
             var mat = new Material(Looks.Find("OkuRing", "Unlit/Texture")) { hideFlags = HideFlags.DontSave, mainTexture = picture };
-            mat.SetColor("_Haze", RenderSettings.fogColor);
             mat.SetFloat("_Width", EdgeRing.Width);
             owned.Add(mat);
             var go = new GameObject("Edge ring");
@@ -138,6 +137,27 @@ namespace OpenKingdomsUnity.Game.World
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
+
+            // Past the ring, a plain of haze at the ring's far height out to
+            // the far clip, so no gap can ever show between land and sky.
+            float shelf = EdgeRing.Shelf(t) - 0.05f;
+            var c = new Vector3(t.Size.x / 2, shelf, -t.Size.y / 2);
+            const float far = 4000f;
+            var plain = new Mesh { name = "haze plain", hideFlags = HideFlags.DontSave };
+            plain.vertices = new[] { c + new Vector3(-far, 0, far), c + new Vector3(far, 0, far), c + new Vector3(far, 0, -far), c + new Vector3(-far, 0, -far) };
+            plain.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+            plain.uv = new Vector2[4];
+            plain.uv2 = new[] { Vector2.one * 999, Vector2.one * 999, Vector2.one * 999, Vector2.one * 999 };
+            plain.triangles = new[] { 0, 1, 2, 0, 2, 3 };
+            plain.bounds = new Bounds(c, new Vector3(2 * far, 1, 2 * far));
+            owned.Add(plain);
+            var pg = new GameObject("Haze plain");
+            pg.transform.SetParent(go.transform, false);
+            pg.AddComponent<MeshFilter>().sharedMesh = plain;
+            var pr = pg.AddComponent<MeshRenderer>();
+            pr.sharedMaterial = mat;
+            pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            pr.receiveShadows = false;
             return go;
         }
 
