@@ -19,6 +19,9 @@ namespace OpenKingdomsUnity.Engine
         readonly List<UnitDef> unitDefs = new List<UnitDef>();
         readonly List<FeatureDef> featureDefs = new List<FeatureDef>();
         readonly List<PlayerInfo> players = new List<PlayerInfo>();
+        readonly Dictionary<string, int> mapIndex = new Dictionary<string, int>();
+        OkxProjectile[] projBuf = new OkxProjectile[256];
+        readonly int[] buildBuf = new int[256];
         readonly Dictionary<int, ModelData> modelCache = new Dictionary<int, ModelData>();
         OkxUnit[] unitBuf = new OkxUnit[1024];
         OkxFeature[] featureBuf = new OkxFeature[1024];
@@ -38,8 +41,18 @@ namespace OpenKingdomsUnity.Engine
             if (OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir) != 0)
                 throw new InvalidOperationException("okx_init: " + OkEngine.LastError);
             OkEngine.okx_set_override_dir(EngineSettings.OverrideDir.Replace('\\', '/'));
-            foreach (var name in OkEngine.Maps())
-                maps.Add(new MapInfo { Id = name, Name = name, Description = "", MaxPlayers = 2 });
+            int mapCount = OkEngine.okx_map_count();
+            for (int i = 0; i < mapCount; i++)
+            {
+                if (OkEngine.okx_map_info(i, out var mi) != 0) continue;
+                maps.Add(new MapInfo
+                {
+                    Id = mi.name, Name = mi.name, Description = mi.description ?? "",
+                    MaxPlayers = Mathf.Max(2, mi.maxPlayers),
+                    Size = new Vector2(mi.sizeX, mi.sizeY), Climate = Climate(mi.kingdom)
+                });
+                mapIndex[mi.name] = i;
+            }
             string[,] kingdoms =
             {
                 { "ARAMON", "Aramon" }, { "VERUNA", "Veruna" }, { "TAROS", "Taros" },
@@ -53,7 +66,29 @@ namespace OpenKingdomsUnity.Engine
         public IReadOnlyList<SideInfo> Sides => sides;
         public IReadOnlyList<UnitDef> UnitDefs => unitDefs;
         public IReadOnlyList<FeatureDef> FeatureDefs => featureDefs;
-        public RgbaImage MapPreview(string mapId, int maxSize) => null;
+        // The land's look by the map's kingdom, for sky, weather and water.
+        static string Climate(string kingdom)
+        {
+            switch ((kingdom ?? "").ToLowerInvariant())
+            {
+                case "aramon": return "grass";
+                case "veruna": return "grass";
+                case "taros": return "volcanic";
+                case "zhon": return "swamp";
+                case "creon": return "desert";
+                default: return "";
+            }
+        }
+
+        public RgbaImage MapPreview(string mapId, int maxSize)
+        {
+            if (mapId == null || !mapIndex.TryGetValue(mapId, out int i)) return null;
+            int need = OkEngine.okx_map_preview(i, null, 0, out int w, out int h);
+            if (need <= 0) return null;
+            var img = new RgbaImage(w, h);
+            OkEngine.okx_map_preview(i, img.Pixels, need, out w, out h);
+            return img;
+        }
 
         // ── A game ─────────────────────────────────────────────────────
 
@@ -107,7 +142,8 @@ namespace OpenKingdomsUnity.Engine
                 {
                     Id = i, Name = d.name, ObjectName = d.obj, Side = d.side, Category = d.category,
                     Description = d.description, MaxHealth = d.maxHealth, IsBuilding = d.isBuilding != 0,
-                    Footprint = new Vector2Int(d.footprintX, d.footprintZ)
+                    Footprint = new Vector2Int(d.footprintX, d.footprintZ), ManaCost = d.buildCost,
+                    BuildOptions = Buildables(i)
                 });
             }
             featureDefs.Clear();
@@ -123,6 +159,15 @@ namespace OpenKingdomsUnity.Engine
                     Height = f.height * S
                 });
             }
+        }
+
+        int[] Buildables(int def)
+        {
+            int n = OkEngine.okx_def_buildables(def, buildBuf, buildBuf.Length);
+            if (n <= 0) return Array.Empty<int>();
+            var r = new int[Mathf.Min(n, buildBuf.Length)];
+            Array.Copy(buildBuf, r, r.Length);
+            return r;
         }
 
         void ReadTerrain()
@@ -148,22 +193,23 @@ namespace OpenKingdomsUnity.Engine
             };
         }
 
+        static readonly string[] SideIds = { "ARAMON", "TAROS", "VERUNA", "ZHON", "", "", "", "CREON" };
+
         void ReadPlayers(SkirmishSetup setup)
         {
             players.Clear();
             int me = OkEngine.okx_local_player();
-            int engineIndex = 1;
-            for (int i = 0; i < setup.Seats.Count; i++)
+            var seats = new OkxPlayer[8];
+            int n = Mathf.Min(OkEngine.okx_players(seats, seats.Length), seats.Length);
+            for (int i = 0; i < n; i++)
             {
-                var seat = setup.Seats[i];
-                if (seat.Kind == SeatKind.Closed) continue;
-                if (i > 0 && seat.Kind != SeatKind.Computer) continue;
-                int idx = engineIndex++;
+                var s = seats[i];
                 players.Add(new PlayerInfo
                 {
-                    Index = idx, Name = i == 0 ? "Player" : $"Computer {idx - 1}", Side = seat.Side,
-                    Colour = idx - 1, Team = idx, IsLocal = idx == me, IsComputer = i > 0, Alive = true,
-                    Tint = TeamTint(idx - 1)
+                    Index = s.index, Name = s.name,
+                    Side = s.side >= 0 && s.side < SideIds.Length ? SideIds[s.side] : "",
+                    Colour = s.color, Team = s.team, IsLocal = s.index == me, IsComputer = s.kind == 2,
+                    Alive = s.alive != 0, Tint = TeamTint(s.color)
                 });
             }
         }
@@ -276,7 +322,25 @@ namespace OpenKingdomsUnity.Engine
             return n;
         }
 
-        public int ReadProjectiles(ProjectileState[] into) => 0;
+        public int ReadProjectiles(ProjectileState[] into)
+        {
+            int n = OkEngine.okx_projectiles(null, 0);
+            if (projBuf.Length < n) projBuf = new OkxProjectile[Mathf.NextPowerOfTwo(n)];
+            n = Mathf.Min(OkEngine.okx_projectiles(projBuf, projBuf.Length), projBuf.Length);
+            int count = Mathf.Min(n, into?.Length ?? 0);
+            for (int i = 0; i < count; i++)
+            {
+                var p = projBuf[i];
+                into[i] = new ProjectileState
+                {
+                    Id = p.id, Player = p.player, Kind = p.kind, Model = p.model,
+                    Position = EngineSettings.ToUnity(p.x, p.y, p.z),
+                    // Pixels a tick to units a second.
+                    Velocity = new Vector3(p.vx, p.vy, -p.vz) * (S * OkEngine.okx_tick_rate())
+                };
+            }
+            return n;
+        }
 
         int WritePose(int nodes, PiecePose[] into, bool withHidden)
         {
@@ -384,7 +448,11 @@ namespace OpenKingdomsUnity.Engine
             return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, c.Arg) == 0;
         }
 
-        public Economy ReadEconomy(int player) => default;
+        public Economy ReadEconomy(int player)
+        {
+            if (OkEngine.okx_economy(player, out var e) != 0) return default;
+            return new Economy { Mana = e.mana, Storage = e.maxMana, Income = e.income, Expense = e.spentLastSec };
+        }
 
         public void Dispose()
         {

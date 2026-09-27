@@ -16,7 +16,42 @@ namespace OpenKingdomsUnity.Engine
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string side;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string category;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string description;
-        public int maxHealth, isBuilding, footprintX, footprintZ;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string displayName;
+        public int maxHealth, isBuilding, footprintX, footprintZ, buildCost;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxMapInfo
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 96)] public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string description;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string kingdom;
+        public int sizeX, sizeY, maxPlayers;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public int[] playerCounts;
+        public int playerCountN;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxPlayer
+    {
+        public int index, kind, side, team, color, alive;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxEconomy
+    {
+        public float mana;
+        public int maxMana;
+        public float income;
+        public int earnedLastSec, spentLastSec;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxProjectile
+    {
+        public int id, player, color, kind, model;
+        public float x, y, z, vx, vy, vz, heading, pitch, roll, fromX, fromY, fromZ;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -97,7 +132,8 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 1;
+        public const int ApiVersion = 2;
+        public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
         [DllImport(Lib)] public static extern int okx_api_version();
@@ -110,6 +146,13 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] static extern int okx_map_name(int index, [Out] byte[] outName, int cap);
         [DllImport(Lib)] public static extern int okx_def_count();
         [DllImport(Lib)] public static extern int okx_def_info(int def, out OkxDefInfo info);
+        [DllImport(Lib)] public static extern int okx_def_buildables(int def, [Out] int[] defs, int cap);
+        [DllImport(Lib)] public static extern int okx_map_info(int index, out OkxMapInfo info);
+        [DllImport(Lib)] public static extern int okx_map_preview(int index, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_players([Out] OkxPlayer[] players, int cap);
+        [DllImport(Lib)] public static extern int okx_economy(int player, out OkxEconomy economy);
+        [DllImport(Lib)] public static extern int okx_projectiles([Out] OkxProjectile[] projectiles, int cap);
+        [DllImport(Lib)] public static extern int okx_projectile_pose(int id, [Out] float[] matrices, int cap);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
         [DllImport(Lib)] public static extern void okx_end_game();
