@@ -23,6 +23,10 @@ namespace OpenKingdomsUnity.Game.UI
         readonly RectTransform view;
         readonly Text title, detail, order;
         readonly Image healthFill;
+        Image manaFill;
+        RectTransform manaBar;
+        Text hover;
+        RectTransform hoverBox;
         readonly RectTransform healthBar, grid;
         readonly List<(Button button, Text badge, int def, int factory)> buildButtons = new List<(Button, Text, int, int)>();
         string gridKey = "", minimapFor;
@@ -61,6 +65,20 @@ namespace OpenKingdomsUnity.Game.UI
             title.rectTransform.Place(0, 1, 1, 1, 22, -60, 22, 14);
             healthBar = UiKit.Bar(info, "Health", out healthFill).rectTransform;
             healthBar.Place(0, 1, 1, 1, 22, -92, 22, 70);
+            // A caster's own mana, in blue under its health.
+            manaBar = UiKit.Bar(info, "Mana", out manaFill).rectTransform;
+            manaBar.Place(0, 1, 1, 1, 22, -112, 22, 96);
+            manaFill.color = new Color(0.45f, 0.65f, 1.3f);
+            manaBar.gameObject.SetActive(false);
+            // What an enemy under the pointer is, beside the pointer.
+            hoverBox = UiKit.Picture(parent, "Hover", UiKit.White, new Color(0.08f, 0.06f, 0.04f, 0.9f)).rectTransform;
+            hoverBox.GetComponent<Image>().raycastTarget = false;
+            hoverBox.anchorMin = hoverBox.anchorMax = Vector2.zero;
+            hoverBox.pivot = new Vector2(0, 1);
+            hoverBox.sizeDelta = new Vector2(300, 70);
+            hover = UiKit.Label(hoverBox, "", 21, UiKit.Pale, TextAnchor.MiddleLeft);
+            hover.rectTransform.Fill(8);
+            hoverBox.gameObject.SetActive(false);
             detail = UiKit.Label(info, "", 24, UiKit.Ink, TextAnchor.UpperLeft);
             detail.GetComponent<Shadow>().enabled = false;
             detail.rectTransform.Place(0, 0, 1, 1, 22, 40, 22, 104);
@@ -86,6 +104,30 @@ namespace OpenKingdomsUnity.Game.UI
             UpdateView(world);
             if (Time.unscaledTime >= nextDots) { nextDots = Time.unscaledTime + 0.2f; UpdateDots(); }
             if (Time.unscaledTime >= nextPanel) { nextPanel = Time.unscaledTime + 0.1f; UpdatePanel(world); }
+            UpdateHover(world);
+        }
+
+        // An enemy under the pointer: its name, health and mana, by the pointer.
+        void UpdateHover(WorldView world)
+        {
+            var orders = root.Orders;
+            int unit = orders != null && !orders.PointerOverUi ? orders.PointerUnit : -1;
+            var b = root.Backend;
+            UnitState found = default;
+            bool enemy = false;
+            if (unit >= 0)
+                for (int i = 0; i < world.Entities.UnitCount; i++)
+                    if (world.Entities.Units[i].Handle == unit) { found = world.Entities.Units[i]; enemy = found.Player != b.LocalPlayer; break; }
+            hoverBox.gameObject.SetActive(enemy);
+            if (!enemy) return;
+            var def = b.UnitDefs[found.Def];
+            string owner = found.Player >= 0 && found.Player < b.Players.Count ? b.Players[found.Player].Name : "";
+            hover.text = $"{Nice(def)}, {owner}\nHealth {found.Health} of {found.MaxHealth}" + (found.MaxMana > 0 ? $"   Mana {found.Mana}" : "");
+            var canvas = hoverBox.GetComponentInParent<Canvas>();
+            var parentRt = (RectTransform)hoverBox.parent;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRt, Input.mousePosition,
+                canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : canvas.worldCamera, out var local))
+                hoverBox.anchoredPosition = local - parentRt.rect.min + new Vector2(24, -12);
         }
 
         void LoadMinimap()
@@ -180,6 +222,7 @@ namespace OpenKingdomsUnity.Game.UI
 
             if (chosen.Count == 0)
             {
+                manaBar.gameObject.SetActive(false);
                 title.text = "";
                 detail.text = "Drag a box or click a unit to select it.";
                 order.text = "";
@@ -193,12 +236,16 @@ namespace OpenKingdomsUnity.Game.UI
                 healthBar.gameObject.SetActive(true);
                 UiKit.SetBar(healthFill, u.MaxHealth > 0 ? (float)u.Health / u.MaxHealth : 1);
                 string built = u.BuildProgress < 1f ? $"   Being built, {u.BuildProgress * 100:0}%" : "";
-                detail.text = $"Health {u.Health} of {u.MaxHealth}{built}\n{def.Category}";
+                string manaLine = u.MaxMana > 0 ? $"   Mana {u.Mana} of {u.MaxMana}" : "";
+                detail.text = $"Health {u.Health} of {u.MaxHealth}{manaLine}{built}\n{def.Category}";
+                manaBar.gameObject.SetActive(u.MaxMana > 0);
+                if (u.MaxMana > 0) UiKit.SetBar(manaFill, (float)u.Mana / u.MaxMana);
                 var o = b.ReadOrder(u.Handle);
                 order.text = OrderText(o, b);
             }
             else
             {
+                manaBar.gameObject.SetActive(false);
                 title.text = chosen.Count + " units";
                 healthBar.gameObject.SetActive(true);
                 float hp = 0, max = 0;
@@ -252,7 +299,10 @@ namespace OpenKingdomsUnity.Game.UI
             var b = root.Backend;
             var defs = chosen.Select(u => u.Def).Distinct().OrderBy(d => d).ToList();
             bool mine = chosen.Count > 0 && chosen.All(u => u.Player == b.LocalPlayer);
-            string key = mine ? string.Join(",", defs) : "";
+            actions = mine ? b.SelectionActions() : System.Array.Empty<UnitAction>();
+            if (root.Orders != null) root.Orders.Actions = actions;
+            string armedId = root.Orders?.ArmedAction?.Id ?? "";
+            string key = mine ? string.Join(",", defs) + "|" + string.Join(",", actions.Select(a => a.Id + (a.Enabled ? "1" : "0") + (a.Toggled ? "1" : "0"))) + "|" + buildPage + "|" + armedId : "";
             if (key != gridKey)
             {
                 gridKey = key;
@@ -268,58 +318,157 @@ namespace OpenKingdomsUnity.Game.UI
             }
         }
 
+        UnitAction[] actions = System.Array.Empty<UnitAction>();
+        int buildPage;
+        int lastDefsKey;
+
+        // The original's order: the orders, the abilities, the stances and
+        // the spells, then whatever the selection builds, a page at a time.
         void BuildGrid(List<UnitState> chosen, List<int> defs)
         {
             var b = root.Backend;
-            bool mobile = chosen.Any(u => !b.UnitDefs[u.Def].IsBuilding);
-            if (mobile)
+            int defsKey = string.Join(",", defs).GetHashCode();
+            if (defsKey != lastDefsKey) { lastDefsKey = defsKey; buildPage = 0; }
+            int used = 0;
+            if (actions.Length > 0)
+            {
+                foreach (var a in actions) { ActionButton(a); used++; }
+            }
+            else if (chosen.Any(u => !b.UnitDefs[u.Def].IsBuilding))
             {
                 Command("Move", "M", () => root.Orders?.Arm(CommandKind.Move));
                 Command("Attack", "Ctrl A", () => root.Orders?.Arm(CommandKind.Attack));
                 Command("Stop", "Ctrl S", () => root.Orders?.Stop());
                 Command("Patrol", "P", () => root.Orders?.Arm(CommandKind.Patrol));
                 Command("Guard", "G", () => root.Orders?.Arm(CommandKind.Guard));
+                used = 5;
             }
             // Build options when everything selected is one kind that builds.
             if (defs.Count != 1) return;
             var def = b.UnitDefs[defs[0]];
+            var options = def.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count).ToList();
+            if (options.Count == 0) return;
+            int cols = Mathf.Max(1, Mathf.FloorToInt((grid.rect.width + 8) / 158f));
+            int room = Mathf.Max(1, cols * 3 - used);
+            int per = options.Count > room ? Mathf.Max(1, room - 2) : room;
+            int pages = (options.Count + per - 1) / per;
+            buildPage = Mathf.Clamp(buildPage, 0, pages - 1);
             int factory = def.IsBuilding ? chosen[0].Handle : -1;
-            foreach (int option in def.BuildOptions)
+            foreach (int option in options.Skip(buildPage * per).Take(per))
+                BuildButton(chosen, option, factory);
+            if (pages > 1)
             {
-                if (option < 0 || option >= b.UnitDefs.Count) continue;
-                var od = b.UnitDefs[option];
-                int id = option;
-                var pic = Picture(id);
-                var btn = UiKit.MakeButton(grid, pic != null ? "" : $"{Nice(od)}\n{od.ManaCost}", null, 19);
-                var text = btn.GetComponentInChildren<Text>();
-                text.lineSpacing = 0.85f;
-                if (pic != null)
-                {
-                    // The game's own build picture, with the cost on it.
-                    var img = UiKit.Rect(btn.transform, "Picture").Place(0, 0, 1, 1, 4, 26, 4, 4).gameObject.AddComponent<RawImage>();
-                    img.texture = pic;
-                    img.raycastTarget = false;
-                    var fit = img.gameObject.AddComponent<AspectRatioFitter>();
-                    fit.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-                    fit.aspectRatio = (float)pic.width / pic.height;
-                    // The cost on a dark strip across the bottom.
-                    var strip = UiKit.Picture(btn.transform, "Cost", UiKit.White, new Color(0, 0, 0, 0.65f));
-                    strip.raycastTarget = false;
-                    strip.rectTransform.Place(0, 0, 1, 0, 4, 3, 4, -26);
-                    var cost = UiKit.Label(strip.transform, od.ManaCost.ToString(), 22, UiKit.GoldBright, TextAnchor.MiddleCenter, true);
-                    cost.rectTransform.Fill();
-                }
-                Text badge = null;
-                if (factory >= 0)
-                {
-                    badge = UiKit.Label(btn.transform, "", 24, UiKit.GoldBright, TextAnchor.UpperRight, true);
-                    badge.rectTransform.Fill(6);
-                    btn.onClick.AddListener(() => Enqueue(chosen, id, CommandKind.FactoryEnqueue));
-                    btn.gameObject.AddComponent<RightClick>().Clicked = () => Enqueue(chosen, id, CommandKind.FactoryDequeue);
-                }
-                else btn.onClick.AddListener(() => root.Orders?.Arm(CommandKind.Build, id));
-                buildButtons.Add((btn, badge, id, factory));
+                Command($"Page {buildPage + 1} of {pages}", "<", () => { buildPage = (buildPage + pages - 1) % pages; gridKey = null; }, "Previous page");
+                Command("More", ">", () => { buildPage = (buildPage + 1) % pages; gridKey = null; }, "Next page");
             }
+        }
+
+        readonly Dictionary<int, Texture2D> actionPictures = new Dictionary<int, Texture2D>();
+
+        void ActionButton(UnitAction a)
+        {
+            var pic = a.Picture >= 0 ? ActionPictureFor(a.Picture) : null;
+            var btn = UiKit.MakeButton(grid, pic != null ? "" : a.Label, () => Pressed(a), a.Label.Length > 9 ? 19 : 22);
+            btn.name = "Action " + a.Id;
+            if (pic != null)
+            {
+                var img = UiKit.Rect(btn.transform, "Picture").Fill(4).gameObject.AddComponent<RawImage>();
+                img.texture = pic;
+                img.raycastTarget = false;
+            }
+            var face = btn.GetComponent<Image>();
+            bool armed = root.Orders?.ArmedAction?.Id == a.Id;
+            if (a.Toggled || armed) face.color = new Color(1.35f, 1.15f, 0.6f);
+            btn.interactable = a.Enabled;
+            if (!string.IsNullOrEmpty(a.Hotkey))
+            {
+                string key = "WASD".Contains(a.Hotkey.ToUpperInvariant()) ? "Ctrl " + a.Hotkey : a.Hotkey;
+                var hint = UiKit.Label(btn.transform, key, 17, UiKit.Dim, TextAnchor.LowerRight);
+                hint.rectTransform.Fill(6);
+            }
+            if (a.ManaCost > 0)
+            {
+                var cost = UiKit.Label(btn.transform, a.ManaCost.ToString(), 18, new Color(0.55f, 0.75f, 1f), TextAnchor.UpperLeft, true);
+                cost.rectTransform.Fill(6);
+            }
+            string tip = a.Label + (a.ManaCost > 0 ? $", {a.ManaCost} mana" : "") + (!a.Enabled && !string.IsNullOrEmpty(a.Why) ? $". {a.Why}" : "");
+            btn.gameObject.AddComponent<HoverHint>().Show = on => ShowHint(on ? tip : null);
+        }
+
+        Texture2D ActionPictureFor(int picture)
+        {
+            if (actionPictures.TryGetValue(picture, out var t)) return t;
+            t = UiKit.ToTexture(root.Backend.ActionPicture(picture), true);
+            actionPictures[picture] = t;
+            return t;
+        }
+
+        // A button with nothing to aim at acts at once; the rest wait for
+        // a click (or a drag) in the world. A spell is chosen at once too.
+        void Pressed(UnitAction a)
+        {
+            var orders = root.Orders;
+            bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            if (a.Target == ActionTarget.None) { root.Backend.DoAction(a.Id, Vector3.zero, -1, default, shift); gridKey = null; return; }
+            if (a.Kind == ActionKind.Spell) root.Backend.DoAction(a.Id, Vector3.zero, -1, default, false);
+            orders?.ArmAction(a);
+            gridKey = null;
+        }
+
+        Text hintText;
+
+        void ShowHint(string text)
+        {
+            // Nothing to hide yet, and nothing may be made while the panel
+            // itself is being switched off.
+            if (text == null && hintText == null) return;
+            if (hintText == null)
+            {
+                var back = UiKit.Picture(panel, "Hint", UiKit.White, new Color(0.08f, 0.06f, 0.04f, 0.92f));
+                back.raycastTarget = false;
+                back.rectTransform.Place(0.5f, 1, 1, 1, 24, 2, 16, -40);
+                hintText = UiKit.Label(back.transform, "", 22, UiKit.Pale, TextAnchor.MiddleLeft);
+                hintText.rectTransform.Fill(8);
+            }
+            hintText.transform.parent.gameObject.SetActive(text != null);
+            if (text != null) hintText.text = text;
+        }
+
+        void BuildButton(List<UnitState> chosen, int option, int factory)
+        {
+            var b = root.Backend;
+            var od = b.UnitDefs[option];
+            int id = option;
+            var pic = Picture(id);
+            var btn = UiKit.MakeButton(grid, pic != null ? "" : $"{Nice(od)}\n{od.ManaCost}", null, 19);
+            var text = btn.GetComponentInChildren<Text>();
+            text.lineSpacing = 0.85f;
+            if (pic != null)
+            {
+                // The game's own build picture, with the cost on it.
+                var img = UiKit.Rect(btn.transform, "Picture").Place(0, 0, 1, 1, 4, 26, 4, 4).gameObject.AddComponent<RawImage>();
+                img.texture = pic;
+                img.raycastTarget = false;
+                var fit = img.gameObject.AddComponent<AspectRatioFitter>();
+                fit.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+                fit.aspectRatio = (float)pic.width / pic.height;
+                var strip = UiKit.Picture(btn.transform, "Cost", UiKit.White, new Color(0, 0, 0, 0.65f));
+                strip.raycastTarget = false;
+                strip.rectTransform.Place(0, 0, 1, 0, 4, 3, 4, -26);
+                var cost = UiKit.Label(strip.transform, od.ManaCost.ToString(), 22, UiKit.GoldBright, TextAnchor.MiddleCenter, true);
+                cost.rectTransform.Fill();
+            }
+            btn.gameObject.AddComponent<HoverHint>().Show = on => ShowHint(on ? $"{Nice(od)}, {od.ManaCost} mana" : null);
+            Text badge = null;
+            if (factory >= 0)
+            {
+                badge = UiKit.Label(btn.transform, "", 24, UiKit.GoldBright, TextAnchor.UpperRight, true);
+                badge.rectTransform.Fill(6);
+                btn.onClick.AddListener(() => Enqueue(chosen, id, CommandKind.FactoryEnqueue));
+                btn.gameObject.AddComponent<RightClick>().Clicked = () => Enqueue(chosen, id, CommandKind.FactoryDequeue);
+            }
+            else btn.onClick.AddListener(() => root.Orders?.Arm(CommandKind.Build, id));
+            buildButtons.Add((btn, badge, id, factory));
         }
 
         void Enqueue(List<UnitState> factories, int def, CommandKind kind)
@@ -328,11 +477,12 @@ namespace OpenKingdomsUnity.Game.UI
                 root.Backend.Command(new GameCommand { Kind = kind, Unit = f.Handle, TargetUnit = -1, BuildDef = def });
         }
 
-        void Command(string label, string key, System.Action act)
+        void Command(string label, string key, System.Action act, string tip = null)
         {
-            var btn = UiKit.MakeButton(grid, label, () => act(), 24);
+            var btn = UiKit.MakeButton(grid, label, () => act(), label.Length > 9 ? 19 : 24);
             var hint = UiKit.Label(btn.transform, key, 18, UiKit.Dim, TextAnchor.LowerRight);
             hint.rectTransform.Fill(8);
+            if (tip != null) btn.gameObject.AddComponent<HoverHint>().Show = on => ShowHint(on ? tip : null);
         }
 
         public void Dispose()
@@ -358,6 +508,14 @@ namespace OpenKingdomsUnity.Game.UI
             var uv = new Vector2((local.x - r.xMin) / r.width, (local.y - r.yMin) / r.height);
             Clicked?.Invoke(new Vector2(Mathf.Clamp01(uv.x), Mathf.Clamp01(uv.y)), e.button);
         }
+    }
+
+    public sealed class HoverHint : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        public System.Action<bool> Show;
+        public void OnPointerEnter(PointerEventData e) => Show?.Invoke(true);
+        public void OnPointerExit(PointerEventData e) => Show?.Invoke(false);
+        void OnDisable() => Show?.Invoke(false);
     }
 
     public sealed class RightClick : MonoBehaviour, IPointerClickHandler

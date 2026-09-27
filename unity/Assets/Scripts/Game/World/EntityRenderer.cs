@@ -78,7 +78,7 @@ namespace OpenKingdomsUnity.Game.World
         // Units not to draw, such as enemies out of sight.
         public System.Func<UnitState, bool> Hidden;
         Mesh flat;
-        Material ghostGood, ghostBad;
+        Material ghostGood, ghostBad, barMana;
 
         // Lines from selected units to where their orders take them.
         Material lineMove, lineAttack, lineBuild, linePatrol;
@@ -174,10 +174,14 @@ namespace OpenKingdomsUnity.Game.World
             if (model == null) return list;
             var d = model.Data;
             var at = Matrix4x4.TRS(g.At + Vector3.up * SiteLift(g.At), Quaternion.Euler(0, angle, 0), Vector3.one);
+            var card = CardOverride.For(def.ObjectName);
+            if (card != null)
+                foreach (var part in card.Model.Parts) list.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot));
             for (int p = 0; p < model.Pieces.Length; p++)
             {
                 string name = d.Pieces[p].Name ?? "";
                 if (name.EndsWith("_off") || name.EndsWith("_dead") || model.Pieces[p] == null) continue;
+                if (card != null && card.Hides(name)) continue;
                 var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
                 for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
                 for (int s = 0; s < model.Materials[p].Length; s++) list.Add((model.Pieces[p], s, model.Materials[p][s], at * r));
@@ -198,10 +202,18 @@ namespace OpenKingdomsUnity.Game.World
                 var model = models.Get(Units[i].Model);
                 if (model == null) break;
                 int n = Mathf.Min(backend.ReadUnitPose(handle, poses), model.Pieces.Length);
-                float lift = backend.UnitDefs[Units[i].Def].IsBuilding ? SiteLift(Units[i].Position) : 0f;
+                var def = backend.UnitDefs[Units[i].Def];
+                float lift = def.IsBuilding ? SiteLift(Units[i].Position) : 0f;
+                var card = CardOverride.For(def.ObjectName);
                 for (int p = 0; p < n; p++)
-                    if (model.Pieces[p] != null && !poses[p].Hidden)
+                    if (model.Pieces[p] != null && !poses[p].Hidden && (card == null || !card.Hides(model.Data.Pieces[p].Name)))
                         list.Add((model.Pieces[p], 0, null, Matrix4x4.Translate(Vector3.up * lift) * poses[p].Matrix * model.Unscale));
+                if (card != null)
+                {
+                    var u = Units[i];
+                    var at = Matrix4x4.TRS(u.Position + Vector3.up * lift, Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
+                    foreach (var part in card.Model.Parts) list.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot));
+                }
             }
             return BoundsOf(list);
         }
@@ -251,6 +263,7 @@ namespace OpenKingdomsUnity.Game.World
             barLow = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 1f)));
             flat = Keep(FlatQuad());
             ghostGood = Keep(Looks.Overlay(new Color(0.3f, 1f, 0.35f, 0.35f)));
+            barMana = Keep(Looks.Overlay(new Color(0.35f, 0.6f, 1f, 1f)));
             ghostBad = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 0.4f)));
             brushMat = Keep(Looks.Overlay(new Color(1f, 0.9f, 0.5f, 0.45f)));
             lineMove = Keep(Looks.Overlay(new Color(0.4f, 1f, 0.4f, 0.55f)));
@@ -312,6 +325,15 @@ namespace OpenKingdomsUnity.Game.World
                 // A building on a site with a plinth stands on the plinth.
                 var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
                 for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
+                // A unit that is mostly a painted card draws its 3D model in
+                // place of the card, facing with the unit, on any plinth.
+                var card = def != null ? CardOverride.For(def.ObjectName) : null;
+                if (card != null)
+                {
+                    var at = Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f),
+                        Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
+                    foreach (var part in card.Model.Parts) solid.Add(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
+                }
                 // Nudges from the animation editor, for every animation and
                 // for the script function driving the unit now.
                 var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
@@ -320,6 +342,7 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     var mesh = model.Pieces[p];
                     if (mesh == null || poses[p].Hidden) continue;
+                    if (card != null && card.Hides(model.Data.Pieces[p].Name)) continue;
                     var mats = model.Materials[p];
                     for (int s = 0; s < mats.Length; s++) solid.Add(mesh, s, mats[s], posed[p]);
                 }
@@ -343,6 +366,14 @@ namespace OpenKingdomsUnity.Game.World
                 overlay.Add(barQuad, 0, barBack, Matrix4x4.TRS(left, face, new Vector3(w, h, 1)));
                 var fill = f > 0.6f ? barGood : f > 0.3f ? barMid : barLow;
                 overlay.Add(barQuad, 0, fill, Matrix4x4.TRS(left - cam.transform.forward * 0.01f, face, new Vector3(w * f, h, 1)));
+                if (u.MaxMana > 0)
+                {
+                    // A caster's own mana, in blue under its health.
+                    float mf = Mathf.Clamp01((float)u.Mana / u.MaxMana);
+                    var below = left - cam.transform.up * (h * 1.3f);
+                    overlay.Add(barQuad, 0, barBack, Matrix4x4.TRS(below, face, new Vector3(w, h * 0.8f, 1)));
+                    overlay.Add(barQuad, 0, barMana, Matrix4x4.TRS(below - cam.transform.forward * 0.01f, face, new Vector3(w * mf, h * 0.8f, 1)));
+                }
             }
         }
 

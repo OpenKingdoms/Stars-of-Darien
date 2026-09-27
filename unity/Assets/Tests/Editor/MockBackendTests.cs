@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(30u, b.Tick);
             var units = new UnitState[256];
             int n = b.ReadUnits(units);
-            Assert.AreEqual(18, n, "each side starts with a lodge, a monarch and seven soldiers");
+            Assert.AreEqual(24, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer and a wagon");
         }
 
         [Test]

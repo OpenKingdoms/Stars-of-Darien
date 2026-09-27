@@ -134,6 +134,15 @@ namespace OpenKingdomsUnity.Game
         // False for a building the engine will not turn, such as a
         // lodestone, whose yard must cover its site. It is placed at 0.
         bool CanRotate(int def);
+
+        // The commands the whole selection shares beyond the basic orders,
+        // in the original's order: spells, abilities and stance toggles.
+        UnitAction[] SelectionActions();
+        // Carries one out for the selection: at a point, on a unit (or -1),
+        // or over an area (a world x/z rectangle, for area attacks and load).
+        bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue);
+        // The original's picture for an action's button, or null.
+        RgbaImage ActionPicture(int picture);
         // How many of def a factory has queued or in progress, or all of
         // them for def -1.
         int QueuedCount(int factory, int def);
@@ -388,6 +397,28 @@ namespace OpenKingdomsUnity.Game
         public float BuildProgress; // 1 when finished
         public int Model;
         public int Facing;          // a building's quarter turns, 0 to 3; Heading carries it too
+        public int Mana, MaxMana;   // the unit's own mana, for casters, else 0
+    }
+
+    public enum ActionKind { Order, Spell, Ability, Stance }
+
+    public enum ActionTarget { None, Point, Unit, PointOrUnit, Area }
+
+    public sealed class UnitAction
+    {
+        public string Id;           // stable, for DoAction
+        public string Label;
+        public ActionKind Kind;
+        public CommandKind Command; // what it is to the engine
+        public int Arg;
+        public ActionTarget Target;
+        public int ManaCost;
+        public bool Enabled = true;
+        public string Why = "";     // why it is disabled
+        public bool Toggled;        // a stance that is on
+        public int StanceGroup = -1;
+        public string Hotkey = "";
+        public int Picture = -1;    // for ActionPicture
     }
 
     public struct FeatureState

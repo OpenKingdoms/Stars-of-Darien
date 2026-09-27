@@ -67,7 +67,7 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 300; i++) yield return null;
             Assert.GreaterOrEqual(root.FramesPlayed, 300);
             Assert.Greater(mock.Tick, startTick, "the simulation advanced");
-            Assert.AreEqual(18, root.World.Entities.UnitCount);
+            Assert.AreEqual(24, root.World.Entities.UnitCount);
             // Nine own units of seven pieces each at least, whatever the fog hides.
             Assert.Greater(root.World.Entities.Drawn, 60, "unit pieces, trees and sprites were drawn");
 
@@ -79,7 +79,7 @@ namespace OpenKingdomsUnity.Tests
             yield return new WaitForSecondsRealtime(0.4f);
             var commands = GameObject.Find("Commands");
             Assert.IsNotNull(commands, "the bottom panel has a command grid");
-            Assert.AreEqual(5 + 3, commands.transform.childCount, "five commands and three things to build");
+            Assert.AreEqual(mock.SelectionActions().Length + 3, commands.transform.childCount, "the monarch's orders, abilities and stances, and three things to build");
             root.Orders.Arm(CommandKind.Build, mock.UnitDefs[0].BuildOptions[2]);
             yield return null;
             Assert.AreEqual(CommandKind.Build, root.Orders.Armed);
@@ -125,7 +125,7 @@ namespace OpenKingdomsUnity.Tests
                 root.LoadSave(mine);
                 yield return Until(() => root.Flow.State == FlowState.Playing, 30f, "the save to load");
                 Assert.AreEqual("mock_highlands", root.CurrentMap().Id);
-                Assert.AreEqual(18, root.World.Entities.UnitCount);
+                Assert.AreEqual(24, root.World.Entities.UnitCount);
             }
             finally { System.IO.File.Delete(path); }
         }

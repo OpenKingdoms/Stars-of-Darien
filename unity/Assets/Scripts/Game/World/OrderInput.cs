@@ -59,8 +59,20 @@ namespace OpenKingdomsUnity.Game.World
         // Set when a turn is refused, for the ghost to shake.
         public float RefusedAt { get; private set; } = -10f;
 
+        // The selection's sidebar actions, kept fresh by the HUD, and the one
+        // waiting for a click or a drag in the world.
+        public UnitAction[] Actions = System.Array.Empty<UnitAction>();
+        public UnitAction ArmedAction { get; private set; }
+
+        public void ArmAction(UnitAction a)
+        {
+            DisarmHere();
+            ArmedAction = a;
+        }
+
         public void Arm(CommandKind kind, int def = -1)
         {
+            ArmedAction = null;
             Armed = kind;
             ArmedDef = def;
             Facing = kind == CommandKind.Build && facings.TryGetValue(def, out var f) ? f : 0;
@@ -82,6 +94,7 @@ namespace OpenKingdomsUnity.Game.World
         public void Disarm()
         {
             if (Armed != null && Classic) backend.Cancel();
+            ArmedAction = null;
             Armed = null;
             ArmedDef = -1;
             world.Entities.Ghost = null;
@@ -90,6 +103,7 @@ namespace OpenKingdomsUnity.Game.World
 
         void DisarmHere()
         {
+            ArmedAction = null;
             Armed = null;
             ArmedDef = -1;
             world.Entities.Ghost = null;
@@ -143,6 +157,8 @@ namespace OpenKingdomsUnity.Game.World
             PointerOnGround = onGround;
             PointerAt = at;
             PointerUnit = overUi ? -1 : Pick(cam, m, units, count, null);
+
+            if (ArmedAction != null && UpdateArmedAction(cam, m, overUi, onGround, at, units, count)) return;
 
             if (Input.GetMouseButtonDown(1) && !overUi)
             {
@@ -205,6 +221,39 @@ namespace OpenKingdomsUnity.Game.World
             PushSelection();
         }
 
+        // An armed sidebar action: a click on a unit or the ground carries it
+        // out, a drag covers an area where the action takes one, Shift keeps
+        // it armed for another, and a right click or Escape lets it go.
+        // Returns true while it has the mouse.
+        bool UpdateArmedAction(Camera cam, Vector3 m, bool overUi, bool onGround, Vector3 at, UnitState[] units, int count)
+        {
+            var a = ArmedAction;
+            if (Input.GetKeyDown(KeyCode.Escape) || (Input.GetMouseButtonDown(1) && !overUi)) { ArmedAction = null; return true; }
+            if (Input.GetMouseButtonDown(0) && !overUi) { dragFrom = m; dragging = true; return true; }
+            if (!Input.GetMouseButtonUp(0) || !dragging) return true;
+            dragging = false;
+            bool areaAction = a.Target == ActionTarget.Area || a.Id == "ATTACK";
+            bool done;
+            if ((m - dragFrom).magnitude > DragPixels && areaAction)
+            {
+                if (!GroundPoint(cam.ScreenPointToRay(dragFrom), backend, out var p0) || !GroundPoint(cam.ScreenPointToRay(m), backend, out var p1)) return true;
+                var area = Rect.MinMaxRect(Mathf.Min(p0.x, p1.x), Mathf.Min(p0.z, p1.z), Mathf.Max(p0.x, p1.x), Mathf.Max(p0.z, p1.z));
+                done = backend.DoAction(a.Id, (p0 + p1) * 0.5f, -1, area, Shift);
+            }
+            else
+            {
+                int unit = a.Target == ActionTarget.Point ? -1 : Pick(cam, m, units, count, null);
+                if (a.Target == ActionTarget.Unit && unit < 0) return true;
+                if (unit < 0 && !onGround) return true;
+                done = backend.DoAction(a.Id, at, unit, default, Shift);
+            }
+            if (done && !Shift) ArmedAction = null;
+            return true;
+        }
+
+        // A drag with an armed area action is drawn like a selection box.
+        public bool DraggingArea => dragging && ArmedAction != null;
+
         // The pointer for what it is over: the game decides, as in the
         // original, except for a command armed only here by the modern
         // scheme.
@@ -213,6 +262,7 @@ namespace OpenKingdomsUnity.Game.World
             if (PointerOverUi || (PointerUnit < 0 && !PointerOnGround)) return GameCursor.Normal;
             // A building armed on a spot that cannot take it.
             if (Armed == CommandKind.Build && !GhostOk) return GameCursor.Cannot;
+            if (ArmedAction != null) return GameCursors.For(ArmedAction.Command);
             if (!Classic && Armed != null) return GameCursors.For(Armed.Value);
             return backend.CursorAt(PointerAt, PointerUnit, out _);
         }
@@ -233,6 +283,21 @@ namespace OpenKingdomsUnity.Game.World
                 if (Input.GetKeyDown(KeyCode.LeftBracket) || (Input.GetKeyDown(KeyCode.R) && Shift)) Rotate(-1);
             }
             if (Selected.Count == 0) return;
+            if (Actions.Length > 0)
+            {
+                foreach (var a in Actions)
+                {
+                    if (string.IsNullOrEmpty(a.Hotkey) || a.Hotkey.Length != 1 || !a.Enabled) continue;
+                    char c = char.ToLowerInvariant(a.Hotkey[0]);
+                    if (c < 'a' || c > 'z' || !Input.GetKeyDown(KeyCode.A + (c - 'a'))) continue;
+                    // W, A, S and D pan the camera, so their commands take Ctrl.
+                    bool camKey = "wasd".IndexOf(c) >= 0;
+                    if (camKey != Ctrl) continue;
+                    if (a.Target == ActionTarget.None) backend.DoAction(a.Id, Vector3.zero, -1, default, Shift);
+                    else ArmAction(a);
+                }
+                return;
+            }
             // A and S pan the camera, so attack and stop take Ctrl.
             if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); }
             if (Input.GetKeyDown(KeyCode.M)) Arm(CommandKind.Move);

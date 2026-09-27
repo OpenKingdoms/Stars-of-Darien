@@ -164,7 +164,7 @@ namespace OpenKingdomsUnity.Game
             World?.Dispose();
             World = null;
             input = null;
-            Backend.EndGame();
+            Backend?.EndGame();
             FramesPlayed = 0;
         }
 
@@ -197,8 +197,8 @@ namespace OpenKingdomsUnity.Game
                     break;
                 case FlowState.Playing:
                     if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.Pause)) { Flow.Fire(FlowEvent.Pause); break; }
-                    RunSim(Time.deltaTime);
-                    input?.Update();
+                    using (SimMarker.Auto()) RunSim(Time.deltaTime);
+                    using (InputMarker.Auto()) input?.Update();
                     FramesPlayed++;
                     if (Backend.Status == GameStatus.Victory) Flow.Fire(FlowEvent.Won);
                     else if (Backend.Status == GameStatus.Defeat) Flow.Fire(FlowEvent.Lost);
@@ -219,12 +219,17 @@ namespace OpenKingdomsUnity.Game
             }
             if (World != null)
             {
-                World.Render();
+                using (RenderMarker.Auto()) World.Render();
                 if (!Application.isBatchMode) TellView();
             }
-            Screens.Tick();
-            Pointer.Show(PointerCursor(), Time.unscaledTime);
+            using (ScreensMarker.Auto()) Screens.Tick();
+            using (PointerMarker.Auto()) Pointer.Show(PointerCursor(), Time.unscaledTime);
         }
+
+        // Profiler markers for the frame's parts, read by the crowd test.
+        static readonly Unity.Profiling.ProfilerMarker SimMarker = new Unity.Profiling.ProfilerMarker("Oku.Sim"),
+            InputMarker = new Unity.Profiling.ProfilerMarker("Oku.Input"), RenderMarker = new Unity.Profiling.ProfilerMarker("Oku.Render"),
+            ScreensMarker = new Unity.Profiling.ProfilerMarker("Oku.Screens"), PointerMarker = new Unity.Profiling.ProfilerMarker("Oku.Pointer");
 
         // The hourglass while loading, the game's pick in a battle, and the
         // plain pointer on every screen.

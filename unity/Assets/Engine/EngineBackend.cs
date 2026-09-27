@@ -596,6 +596,11 @@ namespace OpenKingdomsUnity.Engine
 
         public bool CanRotate(int def) => OkEngine.okx_def_can_turn(def) != 0;
 
+        // Spells, abilities and stances wait for the engine's action list.
+        public UnitAction[] SelectionActions() => Array.Empty<UnitAction>();
+        public bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue) => false;
+        public RgbaImage ActionPicture(int picture) => null;
+
         public bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped)
         {
             int ok = OkEngine.okx_build_site_facing(def, facing & 3, (int)(at.x / S), (int)(-at.z / S), out int sx, out int sy);

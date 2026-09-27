@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace OpenKingdomsUnity.Game
 {
-    public sealed class MockBackend : IGameBackend
+    public sealed partial class MockBackend : IGameBackend
     {
         public const int Tps = 30;
 
@@ -18,6 +18,8 @@ namespace OpenKingdomsUnity.Game
         public float StageSeconds = 0.2f;
         // Scales unit damage, so a long test can keep everyone alive.
         public float DamageScale = 1f;
+        // A mage, a healer and a wagon beside each army, for the battle HUD.
+        public bool Specialists = true;
         // Extra soldiers per side, in ranks behind the first, for load tests.
         public int ExtraSoldiers;
 
@@ -126,6 +128,7 @@ namespace OpenKingdomsUnity.Game
                 unitDefs[i].BuildOptions = new[] { i + 1, i + 2, i + 3 };
                 unitDefs[i + 3].BuildOptions = new[] { i + 1, i + 2 };
             }
+            AddSpecialists();
             featureDefs.Add(new FeatureDef { Id = 0, Name = "mock_tree", ObjectName = "mocktree", SequenceName = "", Category = "trees", Footprint = new Vector2Int(1, 1), Height = 3f });
             featureDefs.Add(new FeatureDef { Id = 1, Name = "mock_rock", ObjectName = "", SequenceName = "mockrock", Category = "rocks", Footprint = new Vector2Int(2, 2), Height = 1.5f });
             featureDefs.Add(new FeatureDef { Id = 2, Name = "mock_bush", ObjectName = "", SequenceName = "mockbush", Category = "plants", Footprint = new Vector2Int(1, 1), Height = 1f });
@@ -295,6 +298,7 @@ namespace OpenKingdomsUnity.Game
                 Spawn(side + DefBuilder, p.Index, home);
                 for (int i = 0; i < 4; i++) Spawn(side + DefKnight, p.Index, home + new Vector2(3 + i * 1.5f, -2));
                 for (int i = 0; i < 3; i++) Spawn(side + DefArcher, p.Index, home + new Vector2(3 + i * 1.5f, -4));
+                if (Specialists) SpawnSpecialists(p, home);
                 for (int i = 0; i < ExtraSoldiers; i++)
                     Spawn(side + (i % 2 == 0 ? DefKnight : DefArcher), p.Index, home + new Vector2(-6 + (i % 12) * 1.3f, -6 - (i / 12) * 1.3f));
             }
@@ -328,6 +332,7 @@ namespace OpenKingdomsUnity.Game
         {
             const float dt = 1f / Tps;
             Tick++;
+            TickMana(dt);
             for (int i = 0; i < economy.Count; i++)
             {
                 var e = economy[i];
@@ -344,6 +349,7 @@ namespace OpenKingdomsUnity.Game
                     if (u.DyingFor > 1.5f) { units.RemoveAt(i); byHandle.Remove(u.Handle); }
                     continue;
                 }
+                if (aboard.Contains(u.Handle)) continue;
                 if (u.Built < 1f) { u.Built = Mathf.Min(1f, u.Built + dt / 4f); u.Health = Mathf.Max(u.Health, (int)(u.MaxHealth * u.Built)); continue; }
                 Think(u, dt);
             }
@@ -372,10 +378,14 @@ namespace OpenKingdomsUnity.Game
             if (d.IsBuilding) { TickBuild(u, dt); return; }
             TickBuild(u, dt);
 
-            bool ranged = u.Def % 4 == DefArcher;
+            bool ranged = RoleOf(u.Def) == Role.Archer || RoleOf(u.Def) == Role.Mage;
             float range = ranged ? 8f : 1.4f;
             if (u.Target >= 0 && (!byHandle.TryGetValue(u.Target, out var tgt) || tgt.Dying)) u.Target = -1;
-            if (u.Target < 0 && u.Def % 4 != DefBuilder) u.Target = NearestEnemy(u, u.Goal == null ? 9f : 4f);
+            // Passive units never pick a fight, defensive ones only close by.
+            var stance = StanceOf(u.Handle);
+            var role = RoleOf(u.Def);
+            bool fights = role != Role.Monarch && role != Role.Healer && role != Role.Wagon && stance != Stance.Passive;
+            if (u.Target < 0 && fights) u.Target = NearestEnemy(u, stance == Stance.Defensive ? 3f : u.Goal == null ? 9f : 4f);
 
             Vector2 pos = new Vector2(u.Pos.x, u.Pos.z);
             Vector2? moveTo = u.Goal;
@@ -414,7 +424,7 @@ namespace OpenKingdomsUnity.Game
             if (moveTo is Vector2 goal)
             {
                 var to = goal - pos;
-                float speed = u.Def % 4 == DefKnight ? 3.2f : 2.4f;
+                float speed = RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? 3.2f : 2.4f;
                 if (to.magnitude < 0.3f) { if (u.Goal != null && (u.Goal.Value - pos).magnitude < 0.3f) u.Goal = null; }
                 else
                 {
@@ -658,6 +668,7 @@ namespace OpenKingdomsUnity.Game
             foreach (var u in units)
             {
                 if (n >= into.Length) break;
+                if (aboard.Contains(u.Handle)) continue;
                 var f = UnitFlags.Active;
                 if (u.Dying) f = UnitFlags.Dying;
                 if (u.Built < 1f) f |= UnitFlags.Building;
@@ -668,6 +679,7 @@ namespace OpenKingdomsUnity.Game
                     Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = u.Player, Flags = f,
                     Position = u.Pos, Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
                     Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
+                    Mana = ManaOf(u.Handle), MaxMana = mana.ContainsKey(u.Handle) ? MageMana : 0,
                 };
             }
             return n;
@@ -815,6 +827,9 @@ namespace OpenKingdomsUnity.Game
                     return false;
             }
         }
+
+        public bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue) => DoMockAction(id, at, unit, area, queue);
+        public RgbaImage ActionPicture(int picture) => null;
 
         // The mock is silent.
         public bool SetAudio(float volume, bool music) => false;
@@ -1049,6 +1064,8 @@ namespace OpenKingdomsUnity.Game
 
         byte[] fogSeen = Array.Empty<byte>();
 
+        bool[] sight;
+
         public int ReadFog(byte[] into, out int width, out int height)
         {
             width = Terrain != null ? Terrain.HeightsW : 0;
@@ -1058,23 +1075,31 @@ namespace OpenKingdomsUnity.Game
             if (fogSeen.Length != need) fogSeen = new byte[need];
             bool revealed = setup != null && setup.MapRevealed;
             float cell = Terrain.CellSize;
-            for (int y = 0; y < height; y++)
-                for (int x = 0; x < width; x++)
+            // Sight is ten units round each of the player's units, stamped
+            // cell by cell around each, rather than every unit for every cell.
+            if (sight == null || sight.Length != need) sight = new bool[need];
+            System.Array.Clear(sight, 0, need);
+            if (!revealed)
+            {
+                int r = Mathf.CeilToInt(10f / cell);
+                foreach (var u in units)
                 {
-                    int i = y * width + x;
-                    bool inSight = revealed;
-                    if (!inSight)
-                    {
-                        var p = new Vector2(x * cell, -y * cell);
-                        foreach (var u in units)
+                    if (u.Dying || u.Player != LocalPlayer) continue;
+                    int cx = Mathf.RoundToInt(u.Pos.x / cell), cy = Mathf.RoundToInt(-u.Pos.z / cell);
+                    for (int y = Mathf.Max(0, cy - r); y <= Mathf.Min(height - 1, cy + r); y++)
+                        for (int x = Mathf.Max(0, cx - r); x <= Mathf.Min(width - 1, cx + r); x++)
                         {
-                            if (u.Dying || u.Player != LocalPlayer) continue;
-                            if ((new Vector2(u.Pos.x, u.Pos.z) - p).sqrMagnitude < 100f) { inSight = true; break; }
+                            float dx = x * cell - u.Pos.x, dy = -y * cell - u.Pos.z;
+                            if (dx * dx + dy * dy < 100f) sight[y * width + x] = true;
                         }
-                    }
-                    if (inSight) fogSeen[i] = 1;
-                    into[i] = inSight ? (byte)2 : fogSeen[i];
                 }
+            }
+            for (int i = 0; i < need; i++)
+            {
+                bool inSight = revealed || sight[i];
+                if (inSight) fogSeen[i] = 1;
+                into[i] = inSight ? (byte)2 : fogSeen[i];
+            }
             return need;
         }
 

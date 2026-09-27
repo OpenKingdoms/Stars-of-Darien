@@ -76,10 +76,10 @@ namespace OpenKingdomsUnity.Game.World
             var cam = Camera.GetComponent<UnityEngine.Camera>();
             // Shadows reach a little past what the camera frames, so the
             // cascades spend their texels where the eye is.
-            Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
-            Fog.Update();
-            Entities.Render(cam);
-            Effects.Render(cam);
+            using (new Unity.Profiling.ProfilerMarker("Oku.Shadows").Auto()) Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
+            using (new Unity.Profiling.ProfilerMarker("Oku.Fog").Auto()) Fog.Update();
+            using (new Unity.Profiling.ProfilerMarker("Oku.Entities").Auto()) Entities.Render(cam);
+            using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 

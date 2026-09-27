@@ -18,6 +18,7 @@ namespace OpenKingdomsUnity.Game.World
     public sealed class GlbExtras : MonoBehaviour
     {
         public float StandTop;
+        public string ReplacesPiece, ReplacesTexture;
     }
 
     public static class GlbLoader
@@ -100,8 +101,13 @@ namespace OpenKingdomsUnity.Game.World
             }
             int mesh = MiniJson.Int(n, "mesh");
             // A plinth says how high a building on it stands.
-            if (extras != null && extras.TryGetValue("standTop", out var top) && top is double d)
-                go.AddComponent<GlbExtras>().StandTop = (float)d;
+            if (extras != null)
+            {
+                var x = go.AddComponent<GlbExtras>();
+                if (extras.TryGetValue("standTop", out var top) && top is double d) x.StandTop = (float)d;
+                x.ReplacesPiece = MiniJson.Text(extras, "replacesPiece", null);
+                x.ReplacesTexture = MiniJson.Text(extras, "replacesTexture", null);
+            }
             if (mesh >= 0) AddMesh(ctx, mesh, go);
             foreach (var c in MiniJson.Arr(n, "children") ?? new List<object>()) Node(ctx, (int)(double)c, t);
         }
