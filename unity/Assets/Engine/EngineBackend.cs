@@ -439,6 +439,36 @@ namespace OpenKingdomsUnity.Engine
             return nodes > 0 ? WritePose(nodes, into, true) : 0;
         }
 
+        readonly byte[] runningBuf = new byte[1024];
+
+        // The function driving the pose: of the threads running now, a walk
+        // while moving, an attack or a weapon while fighting, a build while
+        // building. Watchers and control loops that always run never count.
+        public string UnitAnimation(int handle)
+        {
+            int state = OkEngine.okx_unit_anim(handle, runningBuf, runningBuf.Length);
+            if (state < 0 || state == OkEngine.AnimIdle || state == OkEngine.AnimDead) return "";
+            int end = Array.IndexOf(runningBuf, (byte)0);
+            var running = System.Text.Encoding.ASCII.GetString(runningBuf, 0, Math.Max(0, end))
+                .Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            string[] wanted;
+            switch (state)
+            {
+                case OkEngine.AnimMoving: wanted = new[] { "walk" }; break;
+                case OkEngine.AnimAttacking: wanted = new[] { "attack", "fire", "aim", "melee" }; break;
+                case OkEngine.AnimBuilding: wanted = new[] { "startbuild", "build" }; break;
+                case OkEngine.AnimDying: wanted = new[] { "dying", "killed" }; break;
+                default: wanted = Array.Empty<string>(); break;
+            }
+            foreach (var w in wanted)
+                foreach (var r in running)
+                    if (r.StartsWith(w, StringComparison.OrdinalIgnoreCase) &&
+                        !r.EndsWith("control", StringComparison.OrdinalIgnoreCase) &&
+                        !r.EndsWith("watcher", StringComparison.OrdinalIgnoreCase))
+                        return r;
+            return state == OkEngine.AnimMoving ? "walk" : "";
+        }
+
         public int ReadFeaturePose(int index, PiecePose[] into)
         {
             int nodes = OkEngine.okx_feature_pose(index, pose, 128);

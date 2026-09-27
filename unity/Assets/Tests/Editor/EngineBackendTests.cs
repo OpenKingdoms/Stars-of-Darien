@@ -196,6 +196,7 @@ namespace OpenKingdomsUnity.Tests
             foreach (var f in fog) if (f == 2) inSight++;
             Assert.Greater(inSight, 0);
             Assert.AreEqual(120, backend.Advance(120));
+            StringAssert.StartsWith("walk", backend.UnitAnimation(u.Handle), "a marching unit is walking");
             n = backend.ReadUnits(units);
             float x = u.Position.x;
             for (int i = 0; i < n; i++) if (units[i].Handle == u.Handle) x = units[i].Position.x;

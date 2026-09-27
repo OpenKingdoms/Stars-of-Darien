@@ -806,6 +806,14 @@ namespace OpenKingdomsUnity.Game
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
         public int ReadEffects(EffectState[] into) => 0;
+
+        public string UnitAnimation(int handle)
+        {
+            if (!byHandle.TryGetValue(handle, out var u) || u.Dying) return "";
+            if (u.Attacking) return "attack";
+            if (u.Moving) return "walk";
+            return "";
+        }
         public RgbaImage UnitPicture(int def) => null;
 
         // ---- The game's own controls, simply ----

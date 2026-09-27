@@ -65,6 +65,9 @@ namespace OpenKingdomsUnity.Game
         // handle) or a model feature (by index). Returns the piece count.
         int ReadUnitPose(int handle, PiecePose[] into);
         int ReadFeaturePose(int index, PiecePose[] into);
+        // The unit script function driving a unit's pose now, one of its
+        // UnitDef.Animations ("walk", "attack1"), or "" when idle or unknown.
+        string UnitAnimation(int handle);
 
         // Art. LoadModel returns a model id (or -1) for an object name in a
         // team colour. Model ids in UnitState and FeatureState are the same ids.

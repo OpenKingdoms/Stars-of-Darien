@@ -198,7 +198,8 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 14;
+        public const int ApiVersion = 15;
+        public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
         public const int NetOff = 0, NetConnecting = 1, NetLobby = 2, NetRoom = 3, NetLoading = 4,
             NetPlaying = 5, NetRefused = 6, NetGone = 7;
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
@@ -303,6 +304,7 @@ namespace OpenKingdomsUnity.Engine
 
         [DllImport(Lib)] public static extern int okx_units([Out] OkxUnit[] units, int cap);
         [DllImport(Lib)] public static extern int okx_unit_pose(int handle, [Out] float[] matrices, [Out] byte[] hidden, int cap);
+        [DllImport(Lib)] public static extern int okx_unit_anim(int handle, [Out] byte[] running, int cap);
         [DllImport(Lib)] public static extern int okx_features([Out] OkxFeature[] features, int cap);
         [DllImport(Lib)] public static extern int okx_feature_pose(int index, [Out] float[] matrices, int cap);
         [DllImport(Lib)] public static extern int okx_sprite(int def, [Out] byte[] rgba, int cap, out int w, out int h);
