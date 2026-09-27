@@ -46,7 +46,8 @@ namespace OpenKingdomsUnity.Game.World
             for (int ry = 0; ry < rh; ry++)
                 for (int rx = 0; rx < rw; rx++)
                     regions[rx, ry] = BuildRegion(t, rx, ry);
-            Apron = BuildApron(t, Chunk, Root.transform);
+            Apron = BuildRing(t, Chunk, Root.transform);
+            Shader.SetGlobalVector("_OkuMapSize", new Vector4(t.Size.x, t.Size.y, 0, 0));
             chunkImages.Clear();
 
             if (t.SeaLevel > 0) Water = BuildWater(t, parent);
@@ -117,77 +118,51 @@ namespace OpenKingdomsUnity.Game.World
             mat.SetTexture("_DepthTex", waterDepth);
         }
 
-        // Land past the map edge, so the world does not stop at a void: a
-        // skirt of ground sloping away and down, in the colour of the edge.
-        GameObject BuildApron(MapTerrain t, System.Func<int, RgbaImage> chunk, Transform parent)
+        // The land past the playable edge: the edge ring, textured with a
+        // picture of the whole map mirrored at the edge.
+        GameObject BuildRing(MapTerrain t, System.Func<int, RgbaImage> chunk, Transform parent)
         {
-            const float reach = 140f;
-            float step = t.CellSize;
-            var size = t.Size;
-            var ring = new List<Vector2>();
-            for (float x = 0; x < size.x; x += step) ring.Add(new Vector2(x, 0));
-            for (float z = 0; z < size.y; z += step) ring.Add(new Vector2(size.x, -z));
-            for (float x = size.x; x > 0; x -= step) ring.Add(new Vector2(x, -size.y));
-            for (float z = size.y; z > 0; z -= step) ring.Add(new Vector2(0, -z));
-            float low = float.MaxValue;
-            foreach (var p in ring) low = Mathf.Min(low, t.Sample(p.x, p.y));
-            float farY = (t.SeaLevel > 0 ? Mathf.Min(low, t.SeaLevel) : low) - 4f;
-            var centre = new Vector2(size.x / 2, -size.y / 2);
-            var verts = new List<Vector3>();
-            var cols = new List<Color32>();
-            var tris = new List<int>();
-            foreach (var p in ring)
-            {
-                var out2 = p - centre;
-                out2 = new Vector2(Mathf.Abs(out2.x) >= size.x / 2 - 0.01f ? Mathf.Sign(out2.x) : 0, Mathf.Abs(out2.y) >= size.y / 2 - 0.01f ? Mathf.Sign(out2.y) : 0).normalized;
-                // Feathered along the edge: this block and the two beside it.
-                var along = new Vector2(-out2.y, out2.x) * t.BlockSize;
-                Color c = ((Color)EdgeColour(t, chunk, p) * 2 + EdgeColour(t, chunk, p + along) + EdgeColour(t, chunk, p - along)) / 4f;
-                // The inner edge tucks under the map's own edge, so no seam shows.
-                var tuck = p - out2 * (t.CellSize * 0.5f);
-                float edgeY = t.Sample(tuck.x, tuck.y) - 0.04f;
-                // A shore at the edge drops under the sea at once, so the
-                // water hides the join. Higher land eases down.
-                bool shore = t.SeaLevel > 0 && edgeY < t.SeaLevel + 1.5f;
-                float midY = shore ? Mathf.Min(edgeY - 0.5f, t.SeaLevel - 2.5f) : edgeY - 1f;
-                verts.Add(new Vector3(tuck.x, edgeY, tuck.y));
-                verts.Add(new Vector3(p.x + out2.x * 6f, midY, p.y + out2.y * 6f));
-                verts.Add(new Vector3(p.x + out2.x * reach, Mathf.Min(farY, midY - 1f), p.y + out2.y * reach));
-                cols.Add(c);
-                cols.Add(c * 0.95f);
-                cols.Add(c * 0.85f);
-            }
-            int n = ring.Count;
-            for (int i = 0; i < n; i++)
-            {
-                for (int k = 0; k < 2; k++)
-                {
-                    int a = 3 * i + k, b = 3 * ((i + 1) % n) + k;
-                // The ring runs clockwise seen from above, and the outer edge
-                // lies outside it, so this order faces up.
-                    tris.Add(a); tris.Add(b + 1); tris.Add(b);
-                    tris.Add(a); tris.Add(a + 1); tris.Add(b + 1);
-                }
-            }
-            var mesh = new Mesh { name = "apron" };
-            mesh.SetVertices(verts);
-            mesh.SetColors(cols);
-            mesh.SetTriangles(tris, 0);
-            var norms = new Vector3[verts.Count];
-            for (int i = 0; i < norms.Length; i++) norms[i] = Vector3.up;
-            mesh.normals = norms;
-            mesh.uv = new Vector2[verts.Count];
-            mesh.RecalculateBounds();
+            var mesh = EdgeRing.Build(t);
             owned.Add(mesh);
-            var go = new GameObject("Apron");
+            var picture = UI.UiKit.ToTexture(WholeMap(t, chunk, 1024), true);
+            picture.wrapMode = TextureWrapMode.Clamp;
+            owned.Add(picture);
+            var mat = new Material(Looks.Find("OkuRing", "Unlit/Texture")) { hideFlags = HideFlags.DontSave, mainTexture = picture };
+            mat.SetColor("_Haze", RenderSettings.fogColor);
+            mat.SetFloat("_Width", EdgeRing.Width);
+            owned.Add(mat);
+            var go = new GameObject("Edge ring");
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var r = go.AddComponent<MeshRenderer>();
-            var mat = Looks.Model(null);
-            owned.Add(mat);
             r.sharedMaterial = mat;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
             return go;
+        }
+
+        // A picture of the whole map, at most size pixels across.
+        static RgbaImage WholeMap(MapTerrain t, System.Func<int, RgbaImage> chunk, int size)
+        {
+            var mapSize = t.Size;
+            int w = size, h = Mathf.Max(1, Mathf.RoundToInt(size * mapSize.y / mapSize.x));
+            if (h > size) { h = size; w = Mathf.Max(1, Mathf.RoundToInt(size * mapSize.x / mapSize.y)); }
+            var img = new RgbaImage(w, h);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float wx = (x + 0.5f) / w * mapSize.x, wz = (y + 0.5f) / h * mapSize.y;
+                    int bx = Mathf.Min(t.BlocksW - 1, (int)(wx / t.BlockSize)), by = Mathf.Min(t.BlocksH - 1, (int)(wz / t.BlockSize));
+                    int b = by * t.BlocksW + bx;
+                    var c = chunk(t.Blocks[3 * b]);
+                    if (c == null) continue;
+                    int cx = t.Blocks[3 * b + 1] + (int)((wx / t.BlockSize - bx) * t.BlockTexels);
+                    int cy = t.Blocks[3 * b + 2] + (int)((wz / t.BlockSize - by) * t.BlockTexels);
+                    cx = Mathf.Clamp(cx, 0, c.Width - 1);
+                    cy = Mathf.Clamp(cy, 0, c.Height - 1);
+                    System.Buffer.BlockCopy(c.Pixels, (cy * c.Width + cx) * 4, img.Pixels, (y * w + x) * 4, 4);
+                }
+            return img;
         }
 
         static Color32 EdgeColour(MapTerrain t, System.Func<int, RgbaImage> chunk, Vector2 p)
@@ -231,7 +206,7 @@ namespace OpenKingdomsUnity.Game.World
 
         GameObject BuildWater(MapTerrain t, Transform parent)
         {
-            const float margin = 60f, cell = 2f;
+            float margin = EdgeRing.Width * t.CellSize + 40f, cell = 2f;
             var size = t.Size;
             int nx = Mathf.CeilToInt((size.x + 2 * margin) / cell), nz = Mathf.CeilToInt((size.y + 2 * margin) / cell);
             var verts = new Vector3[(nx + 1) * (nz + 1)];

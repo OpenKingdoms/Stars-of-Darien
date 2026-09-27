@@ -120,6 +120,7 @@ namespace OpenKingdomsUnity.Game.World
             var verts = new List<Vector3>();
             var norms = new List<Vector3>();
             var uvs = new List<Vector2>();
+            var cols = new List<Color>();
             var subs = new List<int[]>();
             var mats = new List<Material>();
             foreach (var p in MiniJson.Arr(meshJson, "primitives"))
@@ -147,6 +148,17 @@ namespace OpenKingdomsUnity.Game.World
                     for (int i = 0; i < count; i++) uvs.Add(new Vector2(U[2 * i], 1f - U[2 * i + 1]));
                 }
                 else for (int i = 0; i < count; i++) uvs.Add(Vector2.zero);
+                // Vertex colour multiplies the base colour, where a model has it.
+                int col = MiniJson.Int(attrs, "COLOR_0");
+                if (col >= 0)
+                {
+                    var acc = MiniJson.Arr(ctx.Json, "accessors")[col];
+                    int comps = MiniJson.Text(acc, "type") == "VEC4" ? 4 : 3;
+                    var C = ReadFloats(ctx, col, comps);
+                    for (int i = 0; i < count; i++)
+                        cols.Add(new Color(C[comps * i], C[comps * i + 1], C[comps * i + 2], comps == 4 ? C[comps * i + 3] : 1f));
+                }
+                else for (int i = 0; i < count; i++) cols.Add(Color.white);
 
                 int[] idx;
                 int ind = MiniJson.Int(p, "indices");
@@ -171,6 +183,7 @@ namespace OpenKingdomsUnity.Game.World
                         verts.Add(verts[basev + i]);
                         norms.Add(-norms[basev + i]);
                         uvs.Add(uvs[basev + i]);
+                        cols.Add(cols[basev + i]);
                     }
                     var both = new int[idx.Length * 2];
                     Array.Copy(idx, both, idx.Length);
@@ -190,9 +203,7 @@ namespace OpenKingdomsUnity.Game.World
             mesh.indexFormat = verts.Count > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             mesh.SetVertices(verts);
             mesh.SetUVs(0, uvs);
-            var white = new Color32[verts.Count];
-            for (int i = 0; i < white.Length; i++) white[i] = new Color32(255, 255, 255, 255);
-            mesh.colors32 = white;
+            mesh.SetColors(cols);
             mesh.subMeshCount = subs.Count;
             for (int s = 0; s < subs.Count; s++) mesh.SetTriangles(subs[s], s);
             bool haveNormals = false;
@@ -216,9 +227,12 @@ namespace OpenKingdomsUnity.Game.World
             var factor = MiniJson.Arr(pbr, "baseColorFactor");
             if (factor != null && factor.Count == 4) m.color = new Color(F(factor[0]), F(factor[1]), F(factor[2]), F(factor[3]));
             m.SetFloat("_Glossiness", (1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1)) * 0.5f);
-            // Cut out by the texture's alpha whatever the mode says, since
-            // sprite-painted models leave the sprite's clear pixels clear.
-            m.SetFloat("_Cutoff", MiniJson.Text(json, "alphaMode") == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : 0.5f);
+            // The glTF alpha mode: OPAQUE ignores alpha, so nothing is cut out
+            // and no clear texel opens a hole, MASK cuts at alphaCutoff (0.5
+            // by default), and BLEND is cut at a half as effects are.
+            string mode = MiniJson.Text(json, "alphaMode", "OPAQUE");
+            m.SetFloat("_Cutoff", mode == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : mode == "BLEND" ? 0.5f : 0f);
+            if (mode == "OPAQUE") m.color = new Color(m.color.r, m.color.g, m.color.b, 1f);
             ctx.Materials[index] = m;
             return m;
         }

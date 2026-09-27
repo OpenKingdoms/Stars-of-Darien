@@ -58,7 +58,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
                 c.rgb *= lerp(1, 0.72, wet);
                 half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, lerp(_Glossiness, 0.6, wet), 0);
-                rgb *= OkuFogLight(i.positionWS);
+                rgb *= OkuFogLight(i.positionWS) * OkuEdgeBand(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
             ENDHLSL
@@ -146,7 +146,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             fixed4 c = tex2D(_MainTex, IN.uv_MainTex);
             float wet = saturate(1 - (IN.worldPos.y - _SeaLevel) / 0.6);
             c.rgb *= lerp(1, 0.72, wet);
-            o.Albedo = c.rgb * OkuFogLight(IN.worldPos);
+            o.Albedo = c.rgb * OkuFogLight(IN.worldPos) * OkuEdgeBand(IN.worldPos);
             o.Smoothness = lerp(_Glossiness, 0.6, wet);
             o.Metallic = 0;
             o.Alpha = 1;

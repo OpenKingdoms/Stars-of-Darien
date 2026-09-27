@@ -20,6 +20,10 @@ namespace OpenKingdomsUnity.Game.World
         public Vector2 boundsMin, boundsMax = new Vector2(64, 0);
         public bool edgePan = true, keyboard = true;
         public Func<float, float, float> ground;
+        // How far past the playable edge the focus may go, and how far the
+        // land beyond it reaches (the edge ring), both in world units. The
+        // view is kept from ever reaching past the land.
+        public float focusMargin = 4f, landPastEdge = 32f;
 
         float targetDistance;
         Vector3 lastMouse;
@@ -115,6 +119,39 @@ namespace OpenKingdomsUnity.Game.World
             Apply(dt);
         }
 
+        // Tilts the view up (toward straight down) and then pulls it in until
+        // all four corners of the screen land on ground inside the land past
+        // the edge, so neither the void nor the horizon shows.
+        void KeepOnLand()
+        {
+            var cam = GetComponent<Camera>();
+            if (cam == null) return;
+            for (int guard = 0; guard < 80 && !CornersOnLand(cam); guard++)
+            {
+                if (pitch < maxPitch - 0.5f) pitch = Mathf.Min(maxPitch, pitch + 1.5f);
+                else distance = targetDistance = Mathf.Max(minDistance, distance * 0.96f);
+            }
+        }
+
+        public bool CornersOnLand(Camera cam)
+        {
+            var rot = Quaternion.Euler(pitch, yaw, 0);
+            var pos = focus - rot * Vector3.forward * distance;
+            float tanV = Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad), tanH = tanV * cam.aspect;
+            float floor = focus.y - 4f;
+            var lo = new Vector2(boundsMin.x - landPastEdge, boundsMin.y - landPastEdge);
+            var hi = new Vector2(boundsMax.x + landPastEdge, boundsMax.y + landPastEdge);
+            for (int i = 0; i < 4; i++)
+            {
+                var dir = rot * new Vector3((i & 1) == 0 ? -tanH : tanH, (i & 2) == 0 ? -tanV : tanV, 1f);
+                if (dir.y >= -1e-3f) return false;
+                float t = (floor - pos.y) / dir.y;
+                var hit = pos + dir * t;
+                if (hit.x < lo.x || hit.x > hi.x || hit.z < lo.y || hit.z > hi.y) return false;
+            }
+            return true;
+        }
+
         bool PointerGround(Ray ray, out Vector3 at)
         {
             at = default;
@@ -131,10 +168,11 @@ namespace OpenKingdomsUnity.Game.World
         {
             pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             distance = Mathf.Lerp(distance, targetDistance, 1f - Mathf.Exp(-12f * dt));
-            focus.x = Mathf.Clamp(focus.x, boundsMin.x, boundsMax.x);
-            focus.z = Mathf.Clamp(focus.z, boundsMin.y, boundsMax.y);
+            focus.x = Mathf.Clamp(focus.x, boundsMin.x - focusMargin, boundsMax.x + focusMargin);
+            focus.z = Mathf.Clamp(focus.z, boundsMin.y - focusMargin, boundsMax.y + focusMargin);
             float g = ground != null ? ground(focus.x, focus.z) : 0f;
             focus.y = Mathf.Lerp(focus.y, g, 1f - Mathf.Exp(-6f * dt));
+            KeepOnLand();
             transform.rotation = Quaternion.Euler(pitch, yaw, 0);
             var pos = focus - transform.forward * distance;
             // Never dip under the ground below the camera.

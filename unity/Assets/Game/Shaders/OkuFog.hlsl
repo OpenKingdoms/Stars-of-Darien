@@ -18,4 +18,14 @@ half OkuFogLight(float3 positionWS)
     return lerp(lerp(0.22, 0.6, saturate(f * 2)), 1, saturate(f * 2 - 1));
 }
 
+float4 _OkuMapSize;     // width and depth of the playable map
+
+// A soft darkening a cell or two wide just inside the playable edge.
+half OkuEdgeBand(float3 positionWS)
+{
+    if (_OkuMapSize.x <= 0) return 1;
+    float inside = min(min(positionWS.x, _OkuMapSize.x - positionWS.x), min(-positionWS.z, _OkuMapSize.y + positionWS.z));
+    return lerp(0.72, 1, saturate(inside / 2.0));
+}
+
 #endif

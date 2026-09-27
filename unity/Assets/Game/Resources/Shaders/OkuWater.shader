@@ -80,7 +80,15 @@ Shader "OpenKingdoms/Presentation/Water"
                 float inside = step(0, duv.x) * step(duv.x, 1) * step(0, duv.y) * step(duv.y, 1);
                 float vdepth = lerp(4, SAMPLE_TEXTURE2D(_DepthTex, sampler_DepthTex, saturate(duv)).r * 4, inside);
                 float3 view = SafeNormalize(GetWorldSpaceViewDir(i.world));
-                float3 n = normalize(i.normal);
+                // The waves' normal per pixel, so the sea looks the same
+                // however coarse its mesh is.
+                float3 wt = float3(1, 0, 0), wb = float3(0, 0, 1);
+                float2 w = normalize(_Wind.xz + 1e-4);
+                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
+                Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, i.world, wt, wb);
+                Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, i.world, wt, wb);
+                Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, i.world, wt, wb);
+                float3 n = normalize(cross(wb, wt));
                 half4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
                 float fresnel = pow(1 - saturate(dot(n, view)), 4);
                 water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);
@@ -171,7 +179,15 @@ Shader "OpenKingdoms/Presentation/Water"
                 float inside = step(0, duv.x) * step(duv.x, 1) * step(0, duv.y) * step(duv.y, 1);
                 float vdepth = lerp(4, tex2D(_DepthTex, saturate(duv)).r * 4, inside);
                 float3 view = normalize(_WorldSpaceCameraPos - i.world);
-                float3 n = normalize(i.normal);
+                // The waves' normal per pixel, so the sea looks the same
+                // however coarse its mesh is.
+                float3 wt = float3(1, 0, 0), wb = float3(0, 0, 1);
+                float2 w = normalize(_Wind.xz + 1e-4);
+                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
+                Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, i.world, wt, wb);
+                Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, i.world, wt, wb);
+                Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, i.world, wt, wb);
+                float3 n = normalize(cross(wb, wt));
                 fixed4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
                 float fresnel = pow(1 - saturate(dot(n, view)), 4);
                 water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);

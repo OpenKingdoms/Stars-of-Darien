@@ -61,6 +61,77 @@ namespace OpenKingdomsUnity.Tests
             finally { UnityEngine.Object.DestroyImmediate(root); }
         }
 
+        // A triangle with a vertex colour and a material using a picture
+        // whose texels are all clear, in the given alpha mode.
+        static byte[] Painted(string alphaMode)
+        {
+            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            tex.SetPixels32(new[] { new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0) });
+            var png = tex.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(tex);
+            var bin = new List<byte>();
+            foreach (var f in new float[] { 0, 0, 0, 0, 0, 1, 1, 0, 0 }) bin.AddRange(BitConverter.GetBytes(f));
+            foreach (var f in new float[] { 0.5f, 0.5f, 0.5f, 1, 1, 1, 1, 1, 1 }) bin.AddRange(BitConverter.GetBytes(f));
+            foreach (var f in new float[] { 0, 0, 1, 0, 0, 1 }) bin.AddRange(BitConverter.GetBytes(f));
+            int imageAt = bin.Count;
+            bin.AddRange(png);
+            while (bin.Count % 4 != 0) bin.Add(0);
+            string mat = alphaMode == "MASK" ? "\"alphaMode\":\"MASK\",\"alphaCutoff\":0.3," : $"\"alphaMode\":\"{alphaMode}\",";
+            string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}]," +
+                "\"nodes\":[{\"name\":\"tri\",\"mesh\":0}]," +
+                "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"COLOR_0\":1,\"TEXCOORD_0\":2},\"material\":0}]}]," +
+                "\"materials\":[{" + mat + "\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
+                "\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}]," +
+                $"\"buffers\":[{{\"byteLength\":{bin.Count}}}]," +
+                "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}," +
+                $"{{\"buffer\":0,\"byteOffset\":72,\"byteLength\":24}},{{\"buffer\":0,\"byteOffset\":{imageAt},\"byteLength\":{png.Length}}}]," +
+                "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"},{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+                "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}]}";
+            while (json.Length % 4 != 0) json += " ";
+            var j = Encoding.UTF8.GetBytes(json);
+            var glb = new List<byte>();
+            glb.AddRange(BitConverter.GetBytes(0x46546C67u));
+            glb.AddRange(BitConverter.GetBytes(2u));
+            glb.AddRange(BitConverter.GetBytes((uint)(12 + 8 + j.Length + 8 + bin.Count)));
+            glb.AddRange(BitConverter.GetBytes((uint)j.Length));
+            glb.AddRange(BitConverter.GetBytes(0x4E4F534Au));
+            glb.AddRange(j);
+            glb.AddRange(BitConverter.GetBytes((uint)bin.Count));
+            glb.AddRange(BitConverter.GetBytes(0x004E4942u));
+            glb.AddRange(bin);
+            return glb.ToArray();
+        }
+
+        [Test]
+        public void AnOpaqueModelCutsNothingOutWhateverItsTextureSays()
+        {
+            var root = GlbLoader.Load(Painted("OPAQUE"), "painted", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var r = root.GetComponentInChildren<MeshRenderer>(true);
+                var mat = r.sharedMaterial;
+                Assert.LessOrEqual(mat.GetFloat("_Cutoff"), 0f, "no alpha test on an opaque material");
+                Assert.AreEqual(1f, mat.color.a, "alpha is not used");
+                var mesh = r.GetComponent<MeshFilter>().sharedMesh;
+                Assert.AreEqual(0.5f, mesh.colors[0].r, 0.01f, "the vertex colour is read");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void AMaskedModelCutsAtItsOwnCutoff()
+        {
+            var root = GlbLoader.Load(Painted("MASK"), "painted", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.AreEqual(0.3f, mat.GetFloat("_Cutoff"), 1e-4f);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
         [Test]
         public void NotAGlbIsRefused()
         {

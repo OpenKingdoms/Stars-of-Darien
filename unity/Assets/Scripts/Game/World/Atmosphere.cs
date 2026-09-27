@@ -187,6 +187,14 @@ namespace OpenKingdomsUnity.Game.World
         // Keeps the weather box over what the camera looks at.
         public void Follow(Vector3 focus, float cameraHeight, float cameraDistance)
         {
+            // The sun and sky for shaders that light themselves, such as the
+            // land past the edge.
+            if (Sun != null)
+            {
+                Shader.SetGlobalVector("_OkuSunDir", -Sun.transform.forward);
+                Shader.SetGlobalVector("_OkuSunColor", Sun.color * Sun.intensity);
+                Shader.SetGlobalVector("_OkuAmbient", RenderSettings.ambientSkyColor * 0.55f);
+            }
             // Fog thickens past what the camera frames, however far out it is.
             if (RenderSettings.fog)
             {
