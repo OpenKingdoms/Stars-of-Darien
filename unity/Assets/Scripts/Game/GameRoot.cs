@@ -71,6 +71,27 @@ namespace OpenKingdomsUnity.Game
                     if (b != null && !(b is GameCamera)) DestroyImmediate(b);
         }
 
+        // The Map Browser's Play button leaves a map here, and the next
+        // game starts straight on it, skipping the menus.
+        public const string AutoStartKey = "oku.autostart.map";
+
+        void Start()
+        {
+            string map = PlayerPrefs.GetString(AutoStartKey, "");
+            if (map.Length == 0) return;
+            PlayerPrefs.DeleteKey(AutoStartKey);
+            PlayerPrefs.Save();
+            foreach (var m in Backend.Maps)
+            {
+                if (m.Id != map) continue;
+                Flow.Fire(FlowEvent.OpenSkirmish);
+                Setup.MapId = map;
+                Screens.StartGame();
+                return;
+            }
+            Debug.LogWarning("Map Browser asked for " + map + ", which this engine does not have.");
+        }
+
         public static SkirmishSetup DefaultSetup(IGameBackend b)
         {
             var s = new SkirmishSetup { MapId = b.Maps.Count > 0 ? b.Maps[0].Id : "", Seed = (uint)Environment.TickCount };
