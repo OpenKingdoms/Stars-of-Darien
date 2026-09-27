@@ -46,8 +46,14 @@ namespace OpenKingdomsUnity.Game.World
             public int Def;
             public Vector3 At;
             public bool Ok;
+            public int Facing;          // quarter turns clockwise
+            public float ShakeFrom;     // when a turn was refused
         }
         public GhostState? Ghost;
+        // Sites already placed with Shift, waiting for their builder.
+        public List<GhostState> QueuedGhosts;
+        float ghostAngle;
+        int ghostDef = -1;
 
         // The map editor's brush on the ground: a ring, or a square for paint.
         public struct BrushState
@@ -125,38 +131,107 @@ namespace OpenKingdomsUnity.Game.World
 
         void AddGhost()
         {
-            if (Ghost == null) return;
+            if (QueuedGhosts != null)
+                foreach (var q in QueuedGhosts) AddGhostAt(q, q.Facing * 90f, false);
+            if (Ghost == null) { ghostDef = -1; return; }
             var g = Ghost.Value;
+            // The turn eases to the new facing over a fraction of a second.
+            float target = g.Facing * 90f;
+            if (g.Def != ghostDef) { ghostDef = g.Def; ghostAngle = target; }
+            ghostAngle = Mathf.MoveTowardsAngle(ghostAngle, target, Mathf.Max(90f, Mathf.Abs(Mathf.DeltaAngle(ghostAngle, target)) * 12f) * Time.unscaledDeltaTime);
+            // A refused turn shakes the ghost briefly.
+            float since = Time.unscaledTime - g.ShakeFrom;
+            if (since < 0.35f)
+            {
+                var cam = Camera.main;
+                var side = cam != null ? cam.transform.right : Vector3.right;
+                g.At += side * Mathf.Sin(since * 60f) * 0.25f * (1f - since / 0.35f);
+            }
+            AddGhostAt(g, ghostAngle, true);
+        }
+
+        void AddGhostAt(GhostState g, float angle, bool live)
+        {
             if (g.Def < 0 || g.Def >= backend.UnitDefs.Count) return;
+            var def = backend.UnitDefs[g.Def];
+            var turn = Quaternion.Euler(0, angle, 0);
+            var fp = new Vector3(Mathf.Max(1, def.Footprint.x), 1, Mathf.Max(1, def.Footprint.y));
+            overlay.Add(flat, 0, g.Ok ? ghostGood : ghostBad, Matrix4x4.TRS(g.At + Vector3.up * 0.06f, turn, fp));
+            foreach (var part in GhostParts(g, angle))
+                overlay.Add(part.mesh, part.sub, GhostMaterial(part.mat, g.Ok), part.m);
+        }
+
+        // The pieces of a building as it will stand, at the building's own
+        // scale and height, turned by its facing: the model's rest pose from
+        // its piece offsets, the script's alternate pieces (*_off, *_dead)
+        // left out as the engine hides them on a new building.
+        public List<(Mesh mesh, int sub, Material mat, Matrix4x4 m)> GhostParts(GhostState g, float angle)
+        {
+            var list = new List<(Mesh, int, Material, Matrix4x4)>();
             var def = backend.UnitDefs[g.Def];
             int id = backend.LoadModel(def.ObjectName, backend.Players.Count > 0 ? backend.Players[backend.LocalPlayer].Colour : 0);
             var model = models.Get(id);
-            if (model == null) return;
+            if (model == null) return list;
             var d = model.Data;
-            // The engine's pose for the model at rest, with its script's
-            // alternate pieces hidden. Without one, the pieces' offsets.
-            int n = Mathf.Min(backend.PoseModel(id, "", 0f, poses), model.Pieces.Length);
-            var at = Matrix4x4.Translate(g.At);
+            var at = Matrix4x4.TRS(g.At + Vector3.up * SiteLift(g.At), Quaternion.Euler(0, angle, 0), Vector3.one);
             for (int p = 0; p < model.Pieces.Length; p++)
             {
-                Matrix4x4 m;
-                if (n > 0)
-                {
-                    if (p >= n || poses[p].Hidden) continue;
-                    m = at * poses[p].Matrix * model.Unscale;
-                }
-                else
-                {
-                    string name = d.Pieces[p].Name ?? "";
-                    if (name.EndsWith("_off") || name.EndsWith("_dead")) continue;
-                    var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
-                    for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
-                    m = at * r;
-                }
-                if (model.Pieces[p] == null) continue;
-                for (int s = 0; s < model.Materials[p].Length; s++)
-                    overlay.Add(model.Pieces[p], s, GhostMaterial(model.Materials[p][s], g.Ok), m);
+                string name = d.Pieces[p].Name ?? "";
+                if (name.EndsWith("_off") || name.EndsWith("_dead") || model.Pieces[p] == null) continue;
+                var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+                for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
+                for (int s = 0; s < model.Materials[p].Length; s++) list.Add((model.Pieces[p], s, model.Materials[p][s], at * r));
             }
+            return list;
+        }
+
+        // Where the ghost's pieces reach, in world space.
+        public Bounds GhostBounds(GhostState g) => BoundsOf(GhostParts(g, g.Facing * 90f));
+
+        // Where a unit's drawn pieces reach, in world space.
+        public Bounds UnitBounds(int handle)
+        {
+            var list = new List<(Mesh, int, Material, Matrix4x4)>();
+            for (int i = 0; i < UnitCount; i++)
+            {
+                if (Units[i].Handle != handle) continue;
+                var model = models.Get(Units[i].Model);
+                if (model == null) break;
+                int n = Mathf.Min(backend.ReadUnitPose(handle, poses), model.Pieces.Length);
+                float lift = backend.UnitDefs[Units[i].Def].IsBuilding ? SiteLift(Units[i].Position) : 0f;
+                for (int p = 0; p < n; p++)
+                    if (model.Pieces[p] != null && !poses[p].Hidden)
+                        list.Add((model.Pieces[p], 0, null, Matrix4x4.Translate(Vector3.up * lift) * poses[p].Matrix * model.Unscale));
+            }
+            return BoundsOf(list);
+        }
+
+        static Bounds BoundsOf(List<(Mesh mesh, int sub, Material mat, Matrix4x4 m)> parts)
+        {
+            bool first = true;
+            var b = new Bounds();
+            foreach (var part in parts)
+            {
+                var mb = part.mesh.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var c = new Vector3((i & 1) == 0 ? mb.min.x : mb.max.x, (i & 2) == 0 ? mb.min.y : mb.max.y, (i & 4) == 0 ? mb.min.z : mb.max.z);
+                    var w = part.m.MultiplyPoint3x4(c);
+                    if (first) { b = new Bounds(w, Vector3.zero); first = false; } else b.Encapsulate(w);
+                }
+            }
+            return b;
+        }
+
+        // How far a building on a lodestone site stands up: the top of the
+        // site's drop-in plinth ("standTop" in its glTF extras), else 0.
+        readonly List<(Vector3 at, float top)> sites = new List<(Vector3, float)>();
+
+        public float SiteLift(Vector3 at)
+        {
+            foreach (var s in sites)
+                if ((new Vector2(s.at.x - at.x, s.at.z - at.z)).sqrMagnitude < 1.5f * 1.5f) return s.top;
+            return 0f;
         }
 
         public EntityRenderer(IGameBackend backend, ModelCache models)
@@ -234,7 +309,9 @@ namespace OpenKingdomsUnity.Game.World
             else if (model != null)
             {
                 int n = Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length);
-                for (int p = 0; p < n; p++) posed[p] = poses[p].Matrix * model.Unscale;
+                // A building on a site with a plinth stands on the plinth.
+                var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
+                for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
                 // Nudges from the animation editor, for every animation and
                 // for the script function driving the unit now.
                 var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
@@ -300,6 +377,7 @@ namespace OpenKingdomsUnity.Game.World
                 bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
                 featureCount = n;
                 featureDraws.Clear();
+                sites.Clear();
                 foreach (var d in drapes) { owned.Remove(d); Looks.Release(d); }
                 drapes.Clear();
                 spriteFeatures.Clear();
@@ -316,6 +394,7 @@ namespace OpenKingdomsUnity.Game.World
                         var over = OverrideLoader.Find(OverrideKind.Feature, null, fnames);
                         if (over != null)
                         {
+                            if (over.StandTop > 0) sites.Add((f.Position, over.StandTop));
                             var at = Matrix4x4.TRS(f.Position, Quaternion.Euler(0, f.Heading, 0), Vector3.one);
                             foreach (var part in over.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat));
                             continue;

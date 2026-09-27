@@ -207,6 +207,10 @@ namespace OpenKingdomsUnity.Game.UI
                 detail.text = string.Join(", ", chosen.GroupBy(u => u.Def).Select(g => $"{g.Count()} {Nice(b.UnitDefs[g.Key])}"));
                 order.text = "";
             }
+            // While a building is being placed, say how to turn it.
+            var orders = root.Orders;
+            if (orders != null && orders.Armed == CommandKind.Build)
+                order.text = b.CanRotate(orders.ArmedDef) ? "R or ] turns it, Shift R or [ turns it back" : "This building cannot be turned";
             RefreshGrid(chosen);
         }
 

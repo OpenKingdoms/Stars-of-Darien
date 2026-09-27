@@ -217,7 +217,7 @@ namespace OpenKingdomsUnity.Tests
                 for (int k = 0; k < 8 && !placed; k++)
                 {
                     var at = u.Position + Quaternion.Euler(0, k * 45f, 0) * new Vector3(r, 0, 0);
-                    if (backend.CanBuildAt(building, at, out var snapped))
+                    if (backend.CanBuildAt(building, at, 0, out var snapped))
                     {
                         placed = true;
                         Assert.AreEqual(at.x, snapped.x, 2f);

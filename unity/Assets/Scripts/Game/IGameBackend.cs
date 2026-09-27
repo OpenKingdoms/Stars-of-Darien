@@ -114,7 +114,7 @@ namespace OpenKingdomsUnity.Game
         // Arm a command button so the next Click carries it out: Move,
         // Attack, Guard, Patrol, Load, Unload, Repair, Reclaim, or Build with
         // the building's def.
-        void Arm(CommandKind kind, int buildDef = -1);
+        void Arm(CommandKind kind, int buildDef = -1, int facing = 0);
         // An order for everything selected that needs no point: Stop,
         // SetAggro and SetWeapon with arg, Gate.
         bool OrderSelection(CommandKind kind, int arg = 0);
@@ -128,7 +128,12 @@ namespace OpenKingdomsUnity.Game
         // For the HUD. Where a building of def would stand for a site at
         // `at`, snapped to the cell grid as the game places it, and whether
         // it can be built there.
-        bool CanBuildAt(int def, Vector3 at, out Vector3 snapped);
+        // facing is 0 to 3, a quarter turn clockwise seen from above each,
+        // and odd facings swap the footprint.
+        bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped);
+        // False for a building the engine will not turn, such as a
+        // lodestone, whose yard must cover its site. It is placed at 0.
+        bool CanRotate(int def);
         // How many of def a factory has queued or in progress, or all of
         // them for def -1.
         int QueuedCount(int factory, int def);
@@ -382,6 +387,7 @@ namespace OpenKingdomsUnity.Game
         public int Health, MaxHealth;
         public float BuildProgress; // 1 when finished
         public int Model;
+        public int Facing;          // a building's quarter turns, 0 to 3; Heading carries it too
     }
 
     public struct FeatureState
@@ -468,6 +474,7 @@ namespace OpenKingdomsUnity.Game
         public int BuildDef;        // for Build, else -1
         public int Arg;
         public bool Queue;          // add after current orders
+        public int Facing;          // for Build, 0 to 3
 
         public static GameCommand To(CommandKind kind, int unit, Vector3 at) =>
             new GameCommand { Kind = kind, Unit = unit, Target = at, TargetUnit = -1, BuildDef = -1 };

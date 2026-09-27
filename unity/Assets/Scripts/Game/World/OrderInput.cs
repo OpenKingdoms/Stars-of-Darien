@@ -50,11 +50,33 @@ namespace OpenKingdomsUnity.Game.World
         static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         static bool Ctrl => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 
+        // The facing a building is placed at, 0 to 3 clockwise, remembered
+        // per building type for the next placement.
+        public int Facing { get; private set; }
+        readonly Dictionary<int, int> facings = new Dictionary<int, int>();
+        // Shift-queued sites, drawn as ghosts until the builder gets to them.
+        public readonly List<EntityRenderer.GhostState> Queued = new List<EntityRenderer.GhostState>();
+        // Set when a turn is refused, for the ghost to shake.
+        public float RefusedAt { get; private set; } = -10f;
+
         public void Arm(CommandKind kind, int def = -1)
         {
             Armed = kind;
             ArmedDef = def;
-            if (Classic) backend.Arm(kind, def);
+            Facing = kind == CommandKind.Build && facings.TryGetValue(def, out var f) ? f : 0;
+            if (Classic) backend.Arm(kind, def, Facing);
+        }
+
+        // Turns the armed building a quarter clockwise (+1) or back (-1).
+        public bool Rotate(int by)
+        {
+            if (Armed != CommandKind.Build) return false;
+            if (!backend.CanRotate(ArmedDef)) { RefusedAt = Time.unscaledTime; return false; }
+            Facing = ((Facing + by) % 4 + 4) % 4;
+            facings[ArmedDef] = Facing;
+            // The engine keeps the armed facing for the placing click.
+            if (Classic) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+            return true;
         }
 
         public void Disarm()
@@ -63,6 +85,7 @@ namespace OpenKingdomsUnity.Game.World
             Armed = null;
             ArmedDef = -1;
             world.Entities.Ghost = null;
+            Queued.Clear();
         }
 
         void DisarmHere()
@@ -106,6 +129,14 @@ namespace OpenKingdomsUnity.Game.World
             int count = world.Entities.UnitCount;
             Keys();
 
+            // A queued site's ghost goes once its building stands there.
+            if (Queued.Count > 0 && Time.frameCount % 15 == 0)
+                Queued.RemoveAll(q =>
+                {
+                    for (int i = 0; i < count; i++)
+                        if (units[i].Def == q.Def && (units[i].Position - q.At).sqrMagnitude < 0.5f) return true;
+                    return false;
+                });
             bool onGround = OrderInput.GroundPoint(cam.ScreenPointToRay(m), backend, out var at);
             UpdateGhost(onGround, at);
             PointerOverUi = overUi;
@@ -156,8 +187,12 @@ namespace OpenKingdomsUnity.Game.World
                 if (unit >= 0 || onGround)
                 {
                     if (Armed == CommandKind.Build && !GhostOk) return;
+                    if (Armed == CommandKind.Build && Shift)
+                        Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
                     backend.Click(Armed == CommandKind.Build ? GhostAt : at, Armed == CommandKind.Build ? -1 : unit, Shift);
-                    if (Armed != null && !Shift) DisarmHere();
+                    // The engine disarms after a click, so a Shift placement arms again.
+                    if (Armed == CommandKind.Build && Shift) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+                    if (Armed != null && !Shift) { DisarmHere(); Queued.Clear(); }
                     PullSelection();
                 }
                 return;
@@ -176,6 +211,8 @@ namespace OpenKingdomsUnity.Game.World
         public GameCursor PointerCursor()
         {
             if (PointerOverUi || (PointerUnit < 0 && !PointerOnGround)) return GameCursor.Normal;
+            // A building armed on a spot that cannot take it.
+            if (Armed == CommandKind.Build && !GhostOk) return GameCursor.Cannot;
             if (!Classic && Armed != null) return GameCursors.For(Armed.Value);
             return backend.CursorAt(PointerAt, PointerUnit, out _);
         }
@@ -189,6 +226,12 @@ namespace OpenKingdomsUnity.Game.World
                 if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); }
                 else if (backend.RecallGroup(g) > 0) PullSelection();
             }
+            // R or ] turns a building being placed clockwise, Shift R or [ back.
+            if (Armed == CommandKind.Build)
+            {
+                if (Input.GetKeyDown(KeyCode.RightBracket) || (Input.GetKeyDown(KeyCode.R) && !Shift)) Rotate(1);
+                if (Input.GetKeyDown(KeyCode.LeftBracket) || (Input.GetKeyDown(KeyCode.R) && Shift)) Rotate(-1);
+            }
             if (Selected.Count == 0) return;
             // A and S pan the camera, so attack and stop take Ctrl.
             if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); }
@@ -200,14 +243,17 @@ namespace OpenKingdomsUnity.Game.World
 
         void UpdateGhost(bool onGround, Vector3 at)
         {
+            world.Entities.QueuedGhosts = Queued;
             if (Armed != CommandKind.Build) { world.Entities.Ghost = null; return; }
             GhostOk = false;
             if (onGround)
             {
-                GhostOk = backend.CanBuildAt(ArmedDef, at, out var snapped);
+                GhostOk = backend.CanBuildAt(ArmedDef, at, Facing, out var snapped);
                 GhostAt = snapped;
             }
-            world.Entities.Ghost = onGround ? new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = GhostOk } : (EntityRenderer.GhostState?)null;
+            world.Entities.Ghost = onGround
+                ? new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = GhostOk, Facing = Facing, ShakeFrom = RefusedAt }
+                : (EntityRenderer.GhostState?)null;
         }
 
         // The modern scheme's armed command, sent unit by unit.
@@ -218,7 +264,8 @@ namespace OpenKingdomsUnity.Game.World
             {
                 if (!GhostOk) return;
                 foreach (var h in Selected)
-                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift });
+                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Facing = Facing });
+                if (Shift) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
             }
             else
             {
@@ -230,7 +277,7 @@ namespace OpenKingdomsUnity.Game.World
                     else MoveBlock(kind, at);
                 }
             }
-            if (!Shift) DisarmHere();
+            if (!Shift) { DisarmHere(); Queued.Clear(); }
         }
 
         void OrderAll(CommandKind kind, Vector3 at, int target)

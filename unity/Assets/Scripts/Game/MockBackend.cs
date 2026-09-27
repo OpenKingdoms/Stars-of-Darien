@@ -93,6 +93,8 @@ namespace OpenKingdomsUnity.Game
             public int BuildDef = -1;
             public float BuildLeft;
             public int Model;
+            public int Facing, BuildFacing;
+            public Vector3? BuildAt;
         }
 
         sealed class Feature
@@ -138,7 +140,7 @@ namespace OpenKingdomsUnity.Game
             {
                 Id = unitDefs.Count, Name = name, ObjectName = obj, Side = side, Category = cat,
                 Description = title, MaxHealth = hp, ManaCost = cost, IsBuilding = building,
-                Footprint = building ? new Vector2Int(3, 3) : new Vector2Int(1, 1), Animations = anims,
+                Footprint = building ? new Vector2Int(4, 2) : new Vector2Int(1, 1), Animations = anims,
             });
         }
 
@@ -298,16 +300,17 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
-        Unit Spawn(int def, int player, Vector2 at, float built = 1f)
+        Unit Spawn(int def, int player, Vector2 at, float built = 1f, int facing = 0)
         {
             var d = unitDefs[def];
+            facing = d.IsBuilding && CanRotate(def) ? ((facing % 4) + 4) % 4 : 0;
             var u = new Unit
             {
                 Handle = nextHandle++, Def = def, Player = player, MaxHealth = d.MaxHealth,
                 Health = built >= 1f ? d.MaxHealth : 1, Built = built, Home = at,
                 Pos = new Vector3(at.x, Terrain.Sample(at.x, at.y), at.y),
-                Heading = (float)rng.NextDouble() * 360f, WalkPhase = (float)rng.NextDouble() * 6f,
-                Model = LoadModel(d.ObjectName, players[player].Colour),
+                Heading = d.IsBuilding ? facing * 90f : (float)rng.NextDouble() * 360f, WalkPhase = (float)rng.NextDouble() * 6f,
+                Model = LoadModel(d.ObjectName, players[player].Colour), Facing = facing,
             };
             units.Add(u);
             byHandle[u.Handle] = u;
@@ -442,10 +445,17 @@ namespace OpenKingdomsUnity.Game
             economy[u.Player] = e;
             u.BuildLeft -= dt;
             if (u.BuildLeft > 0) return;
-            var h = Quaternion.Euler(0, u.Heading, 0) * Vector3.forward * 2.5f;
-            var made = Spawn(u.BuildDef, u.Player, new Vector2(u.Pos.x + h.x, u.Pos.z + h.z));
+            Unit made;
+            if (u.BuildAt is Vector3 site)
+                made = Spawn(u.BuildDef, u.Player, new Vector2(site.x, site.z), 1f, u.BuildFacing);
+            else
+            {
+                var h = Quaternion.Euler(0, u.Heading, 0) * Vector3.forward * 2.5f;
+                made = Spawn(u.BuildDef, u.Player, new Vector2(u.Pos.x + h.x, u.Pos.z + h.z));
+            }
             made.Home = u.Home;
             u.BuildDef = -1;
+            u.BuildAt = null;
         }
 
         void Face(Unit u, Vector2 dir, float dt)
@@ -657,7 +667,7 @@ namespace OpenKingdomsUnity.Game
                 {
                     Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = u.Player, Flags = f,
                     Position = u.Pos, Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
-                    Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model,
+                    Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
                 };
             }
             return n;
@@ -786,6 +796,13 @@ namespace OpenKingdomsUnity.Game
                 case CommandKind.FactoryEnqueue:
                     // One thing at a time: a new order replaces the last.
                     if (Array.IndexOf(def.BuildOptions, c.BuildDef) < 0) return false;
+                    if (c.Kind == CommandKind.Build && unitDefs[c.BuildDef].IsBuilding && !def.IsBuilding)
+                    {
+                        if (!CanBuildAt(c.BuildDef, c.Target, c.Facing, out var site)) return false;
+                        u.BuildAt = site;
+                        u.BuildFacing = c.Facing;
+                    }
+                    else u.BuildAt = null;
                     u.BuildDef = c.BuildDef;
                     u.BuildLeft = 5f;
                     return true;
@@ -847,7 +864,7 @@ namespace OpenKingdomsUnity.Game
             {
                 mockIsArmed = false;
                 foreach (int h in mockSelection.ToArray())
-                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef });
+                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef, Facing = mockArmedFacing, Queue = shift });
                 return;
             }
             if (friend)
@@ -872,7 +889,7 @@ namespace OpenKingdomsUnity.Game
             siteClear = false;
             if (mockIsArmed)
             {
-                if (mockArmed == CommandKind.Build) { siteClear = CanBuildAt(mockArmedDef, at, out _); return GameCursor.Place; }
+                if (mockArmed == CommandKind.Build) { siteClear = CanBuildAt(mockArmedDef, at, mockArmedFacing, out _); return GameCursor.Place; }
                 return GameCursors.For(mockArmed);
             }
             if (unit < 0 || !byHandle.TryGetValue(unit, out var u) || u.Dying) return GameCursor.Normal;
@@ -887,10 +904,13 @@ namespace OpenKingdomsUnity.Game
             else mockSelection.Clear();
         }
 
-        public void Arm(CommandKind kind, int buildDef = -1)
+        int mockArmedFacing;
+
+        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0)
         {
             mockArmed = kind;
             mockArmedDef = buildDef;
+            mockArmedFacing = facing;
             mockIsArmed = true;
         }
 
@@ -962,14 +982,46 @@ namespace OpenKingdomsUnity.Game
 
         // ---- HUD helpers ----
 
-        public bool CanBuildAt(int def, Vector3 at, out Vector3 snapped)
+        public bool CanRotate(int def) => def >= 0 && def < unitDefs.Count && unitDefs[def].IsBuilding;
+
+        // The cells a building of def covers at a centre and facing: odd
+        // facings swap its width and depth.
+        public static RectInt FootprintAt(Vector2Int footprint, int facing, Vector3 centre)
         {
-            snapped = new Vector3(Mathf.Floor(at.x) + 0.5f, 0f, Mathf.Floor(at.z) + 0.5f);
-            if (Terrain == null) return false;
-            snapped.y = Terrain.Sample(snapped.x, snapped.z);
+            var size = (facing & 1) == 1 ? new Vector2Int(footprint.y, footprint.x) : footprint;
+            int x0 = Mathf.RoundToInt(centre.x - size.x / 2f), z0 = Mathf.RoundToInt(-centre.z - size.y / 2f);
+            return new RectInt(x0, z0, size.x, size.y);
+        }
+
+        // Where a building stands: its footprint's cells, rows running south.
+        public RectInt Occupied(int handle)
+        {
+            if (!byHandle.TryGetValue(handle, out var u) || !unitDefs[u.Def].IsBuilding) return new RectInt();
+            return FootprintAt(unitDefs[u.Def].Footprint, u.Facing, u.Pos);
+        }
+
+        public bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped)
+        {
+            snapped = at;
+            if (Terrain == null || def < 0 || def >= unitDefs.Count) return false;
+            var d = unitDefs[def];
+            if (!CanRotate(def)) facing = 0;
+            var size = (facing & 1) == 1 ? new Vector2Int(d.Footprint.y, d.Footprint.x) : d.Footprint;
+            // Snap so the footprint sits on whole cells.
+            float cx = size.x % 2 == 0 ? Mathf.Round(at.x) : Mathf.Floor(at.x) + 0.5f;
+            float cz = size.y % 2 == 0 ? Mathf.Round(at.z) : Mathf.Floor(at.z) + 0.5f;
+            snapped = new Vector3(cx, Terrain.Sample(cx, cz), cz);
             if (Terrain.SeaLevel > 0 && snapped.y < Terrain.SeaLevel + 0.2f) return false;
+            var rect = FootprintAt(d.Footprint, facing, snapped);
             foreach (var u in units)
-                if (!u.Dying && new Vector2(u.Pos.x - snapped.x, u.Pos.z - snapped.z).magnitude < 1.5f) return false;
+            {
+                if (u.Dying) continue;
+                if (unitDefs[u.Def].IsBuilding)
+                {
+                    if (FootprintAt(unitDefs[u.Def].Footprint, u.Facing, u.Pos).Overlaps(rect)) return false;
+                }
+                else if (rect.Contains(new Vector2Int(Mathf.FloorToInt(u.Pos.x), Mathf.FloorToInt(-u.Pos.z)))) return false;
+            }
             return true;
         }
 

@@ -97,12 +97,12 @@ namespace OpenKingdomsUnity.Tests
                 root.World.Fog.Update(true);
                 root.Orders.Frozen = true;
                 cam3.focus = site;
-                bool ok = root.Backend.CanBuildAt(lode, site, out var snapped);
+                bool ok = root.Backend.CanBuildAt(lode, site, 0, out var snapped);
                 root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
                 yield return View(cam3, 22f, 50f, 0f);
                 yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-on-site.png"));
                 var off = site + new Vector3(5, 0, 3);
-                ok = root.Backend.CanBuildAt(lode, off, out snapped);
+                ok = root.Backend.CanBuildAt(lode, off, 0, out snapped);
                 root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
                 yield return null;
                 yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-off-site.png"));

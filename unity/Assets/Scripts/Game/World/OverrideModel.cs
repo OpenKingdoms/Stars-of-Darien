@@ -76,11 +76,16 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         public string Path;
+        // The top of a lodestone site's plinth, in cells, from the glTF
+        // root node's extras ("standTop"); 0 when it has none.
+        public float StandTop;
         public readonly List<Part> Parts = new List<Part>();
 
         public static OverrideModel From(GameObject template, PieceInfo[] pieces, string path)
         {
             var o = new OverrideModel { Path = path };
+            var extras = template.GetComponentInChildren<GlbExtras>(true);
+            if (extras != null) o.StandTop = extras.StandTop;
             var toRoot = template.transform.worldToLocalMatrix;
             var names = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (pieces != null)

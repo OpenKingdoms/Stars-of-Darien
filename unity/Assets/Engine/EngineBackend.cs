@@ -591,7 +591,11 @@ namespace OpenKingdomsUnity.Engine
             return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, c.Arg) == 0;
         }
 
-        public bool CanBuildAt(int def, Vector3 at, out Vector3 snapped)
+        // The facing waits for okengine API 17. Until then every site is judged at 0.
+        public bool CanRotate(int def) =>
+            def >= 0 && def < unitDefs.Count && unitDefs[def].Name.IndexOf("LODE", StringComparison.OrdinalIgnoreCase) < 0;
+
+        public bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped)
         {
             int ok = OkEngine.okx_build_site(def, (int)(at.x / S), (int)(-at.z / S), out int sx, out int sy);
             snapped = new Vector3(sx * S, 0f, -sy * S);
@@ -644,7 +648,7 @@ namespace OpenKingdomsUnity.Engine
             return art;
         }
 
-        public void Arm(CommandKind kind, int buildDef = -1)
+        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0)
         {
             int mode;
             switch (kind)

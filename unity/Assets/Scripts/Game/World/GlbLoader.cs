@@ -14,6 +14,12 @@ using UnityEngine.Rendering;
 
 namespace OpenKingdomsUnity.Game.World
 {
+    // Values a glb's nodes carry in their glTF extras.
+    public sealed class GlbExtras : MonoBehaviour
+    {
+        public float StandTop;
+    }
+
     public static class GlbLoader
     {
         // A template GameObject, inactive and hidden, or null with the reason.
@@ -67,6 +73,7 @@ namespace OpenKingdomsUnity.Game.World
         static void Node(Ctx ctx, int index, Transform parent)
         {
             var n = MiniJson.Arr(ctx.Json, "nodes")[index];
+            var extras = MiniJson.Obj(n, "extras");
             var go = new GameObject(MiniJson.Text(n, "name", "node" + index)) { hideFlags = HideFlags.HideAndDontSave };
             var t = go.transform;
             t.SetParent(parent, false);
@@ -92,6 +99,9 @@ namespace OpenKingdomsUnity.Game.World
                 if (sc != null) t.localScale = new Vector3(F(sc[0]), F(sc[1]), F(sc[2]));
             }
             int mesh = MiniJson.Int(n, "mesh");
+            // A plinth says how high a building on it stands.
+            if (extras != null && extras.TryGetValue("standTop", out var top) && top is double d)
+                go.AddComponent<GlbExtras>().StandTop = (float)d;
             if (mesh >= 0) AddMesh(ctx, mesh, go);
             foreach (var c in MiniJson.Arr(n, "children") ?? new List<object>()) Node(ctx, (int)(double)c, t);
         }
