@@ -1,6 +1,7 @@
 """Veruna mana lodestone: a green marble column, fluted, with a draped
-collar, carrying a gold collar and two swept gold horns that cradle a large
-blue brilliant. Built to the picture's classic silhouette.
+collar, carrying a gold collar and two gold dolphins that hold a large blue
+brilliant between their beaks and tails. Built to the picture's classic
+silhouette.
 
     blender -b --factory-startup --python tools/sprite-replace/lodes/VERMANA.py
 """
@@ -90,54 +91,19 @@ def lathe(profile, seg, mat=None, name="lathe", rmod=None, yc=CY):
     return rings_mesh(rows, mat, name)
 
 
-def sweep(pts, radius, sides=10, n=3, mat=None, name="horn", squash=1.0):
-    """A tube along a smooth curve through pts; radius(t) sets its section,
-    squash flattens it along the curve's bend. Closed at the root, pointed
-    at the tip."""
-    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
-    c = []
-    for i in range(1, len(ext) - 2):
-        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
-        for j in range(n):
-            t = j / n
-            c.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-                            + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t))
-    c.append(pts[-1].copy())
-    L = [0.0]
-    for a, b in zip(c, c[1:]):
-        L.append(L[-1] + (b - a).length)
-    bm = bmesh.new()
-    rings = []
-    N = (c[1] - c[0]).normalized().orthogonal().normalized()
-    for i, p in enumerate(c[:-1]):
-        T = (c[i + 1] - c[max(i - 1, 0)]).normalized()
-        N = (N - T * N.dot(T)).normalized()
-        B = T.cross(N)
-        r = radius(L[i] / L[-1])
-        rings.append([bm.verts.new(p + (N * math.cos(2 * math.pi * k / sides) * squash
-                                         + B * math.sin(2 * math.pi * k / sides)) * r) for k in range(sides)])
-    tip = bm.verts.new(c[-1])
-    for A, Bq in zip(rings, rings[1:]):
-        for k in range(sides):
-            bm.faces.new((A[k], A[(k + 1) % sides], Bq[(k + 1) % sides], Bq[k]))
-    for k in range(sides):
-        bm.faces.new((rings[-1][k], rings[-1][(k + 1) % sides], tip))
-    bm.faces.new(list(reversed(rings[0])))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return hk.smooth(hk._object(name, bm, mat), 70)
-
-
-def brilliant(R, crown, pav, tilt, centre, seg, mats):
+def brilliant(R, crown, pav, tilt, centre, seg, mats, mid=0.84, low=0.6):
     """A round brilliant, each ring turned half a facet from the last, built
     table up and tipped by tilt about x (negative leans the table back).
-    mats: deep, mid, the bright top-left crown facets, two pavilion blues."""
-    rings = [(0.6 * R, -pav * 0.42, 0.5), (R, -0.035, 0.0), (R, 0.035, 0.0),
-             (0.84 * R, crown * 0.5, 0.5), (0.53 * R, crown, 0.0)]
+    mats: deep, mid, the bright crown facets, two pavilion blues, then the
+    table's pale blue and its whiter left half."""
+    rings = [(low * R, -pav * 0.42, 0.5), (R, -0.035, 0.0), (R, 0.035, 0.0),
+             (mid * R, crown * 0.5, 0.5), (0.53 * R, crown, 0.0)]
     bm = bmesh.new()
     vr = [[bm.verts.new((r * math.cos(2 * math.pi * (k + h) / seg), r * math.sin(2 * math.pi * (k + h) / seg), z))
            for k in range(seg)] for r, z, h in rings]
     tip = bm.verts.new((0.0, 0.0, -pav))
-    faces = [(bm.faces.new(vr[-1]), 0, None)]
+    mid_v = bm.verts.new((0.0, 0.0, crown))
+    faces = [(bm.faces.new((mid_v, vr[-1][k], vr[-1][(k + 1) % seg])), k, None) for k in range(seg)]
     for (A, B), (ra, rb) in zip(zip(vr, vr[1:]), zip(rings, rings[1:])):
         for k in range(seg):
             k1 = (k + 1) % seg
@@ -152,14 +118,17 @@ def brilliant(R, crown, pav, tilt, centre, seg, mats):
     for k in range(seg):
         faces.append((bm.faces.new((vr[0][(k + 1) % seg], vr[0][k], tip)), k, -pav))
     for f, k, z in faces:
-        if z is None:
-            f.material_index = 0
-            continue
         cx = sum(v.co.x for v in f.verts) / len(f.verts)
         cy_ = sum(v.co.y for v in f.verts) / len(f.verts)
         cz = sum(v.co.z for v in f.verts) / len(f.verts)
         ang = math.degrees(math.atan2(cy_, cx))
-        if z > 0.05 and 112 < ang < 160:
+        if z is None:
+            # the table: pale blue, its left half whiter as painted
+            f.material_index = 6 if cx < -0.02 * R else 5
+        elif z == crown and cx < 0.3 * R:
+            # the star facets round the table catch its light
+            f.material_index = 2
+        elif z > 0.05 and 112 < ang < 160:
             f.material_index = 2
         elif cz < -0.04:
             f.material_index = 3 + k % 2
@@ -173,6 +142,61 @@ def brilliant(R, crown, pav, tilt, centre, seg, mats):
     for m in mats[1:]:
         ob.data.materials.append(m)
     return ob
+
+
+def catmull(pts, n):
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    c = []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for j in range(n):
+            t = j / n
+            c.append(0.5 * (2 * p1 + (p2 - p0) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                            + (3 * p1 - p0 - 3 * p2 + p3) * t * t * t))
+    c.append(pts[-1].copy())
+    return c
+
+
+def body(pts, size, side_axis, flat=0.7, sides=12, n=3, mat=None, name="body", tip_round=0.0):
+    """A sweep along a smooth curve through pts whose section is an ellipse:
+    size(s0, s1) gives its half-height in the plane of the bend, with s0 and
+    s1 the distance from the start and from the end, and flat how thick it
+    is along side_axis (the lateral axis, kept square to the curve). Closed
+    at the start, drawn to a point or a small dome at the end."""
+    c = catmull(pts, n)
+    L = [0.0]
+    for a, b in zip(c, c[1:]):
+        L.append(L[-1] + (b - a).length)
+    bm = bmesh.new()
+    rings = []
+    last = None
+    for i, p in enumerate(c[:-1]):
+        T = (c[i + 1] - c[max(i - 1, 0)]).normalized()
+        Lv = side_axis - T * side_axis.dot(T)
+        Lv.normalize()
+        D = T.cross(Lv)
+        r = size(L[i], L[-1] - L[i])
+        rings.append([bm.verts.new(p + (D * math.cos(2 * math.pi * k / sides)
+                                        + Lv * math.sin(2 * math.pi * k / sides) * flat) * r)
+                      for k in range(sides)])
+        last = (p, T, D, Lv, r)
+    if tip_round > 0:
+        p, T, D, Lv, r = last
+        q = c[-1]
+        rings.append([bm.verts.new(q + (D * math.cos(2 * math.pi * k / sides)
+                                        + Lv * math.sin(2 * math.pi * k / sides) * flat) * tip_round)
+                      for k in range(sides)])
+        tip = bm.verts.new(q + T * tip_round * 0.9)
+    else:
+        tip = bm.verts.new(c[-1])
+    for A, Bq in zip(rings, rings[1:]):
+        for k in range(sides):
+            bm.faces.new((A[k], A[(k + 1) % sides], Bq[(k + 1) % sides], Bq[k]))
+    for k in range(sides):
+        bm.faces.new((rings[-1][k], rings[-1][(k + 1) % sides], tip))
+    bm.faces.new(list(reversed(rings[0])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    return hk.smooth(hk._object(name, bm, mat), 75)
 
 
 def image(name, rgb):
@@ -245,10 +269,13 @@ def classic_extents(ob):
 hk.reset()
 
 MARBLE = textured("ver_marble", marble_img("ver_marble_tex", (92, 114, 104), (160, 194, 170), (40, 50, 48), 5), 0.3)
-MARBLE_LT = textured("ver_marble_pale", marble_img("ver_marble_pale_tex", (132, 180, 144), (184, 218, 190),
-                                                   (88, 122, 98), 11), 0.34)
+MARBLE_LT = textured("ver_marble_pale", marble_img("ver_marble_pale_tex", (126, 164, 128), (172, 210, 176),
+                                                   (78, 112, 84), 11), 0.36)
 PALE = hk.pbr("ver_marble_ring", lin(212, 234, 214), rough=0.28)
-GOLD = hk.pbr("ver_gold", lin(255, 222, 105), rough=0.18, metal=0.6)
+GOLD = hk.pbr("ver_gold", lin(236, 190, 80), rough=0.28, metal=0.96)
+# the collar is older, duller gold than the dolphins
+GOLD_OLD = hk.pbr("ver_gold_collar", lin(200, 160, 72), rough=0.38, metal=0.95)
+JET = hk.pbr("ver_dolphin_eye", lin(28, 22, 16), rough=0.15)
 SAPPHIRE = hk.pbr("ver_sapphire", lin(8, 26, 118), rough=0.12, emit=lin(10, 30, 150), strength=0.45)
 SAPPHIRE_MID = hk.pbr("ver_sapphire_facet", lin(11, 34, 138), rough=0.12, emit=lin(14, 40, 175), strength=0.5)
 SAPPHIRE_LT = hk.pbr("ver_sapphire_light", lin(100, 145, 235), rough=0.04, emit=lin(110, 155, 255), strength=0.85)
@@ -259,6 +286,9 @@ SAPPHIRE_PAV2 = hk.pbr("ver_sapphire_pavilion_facet", lin(11, 34, 138), rough=0.
                        strength=0.55)
 for m in (SAPPHIRE_PAV, SAPPHIRE_PAV2):
     m.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.2
+# the table: a large pale window, whiter on its left as painted
+TABLE = hk.pbr("ver_sapphire_table", lin(120, 160, 245), rough=0.04, emit=lin(80, 130, 255), strength=1.3)
+TABLE_W = hk.pbr("ver_sapphire_table_white", lin(226, 236, 255), rough=0.04, emit=lin(210, 222, 255), strength=1.4)
 
 parts = []
 
@@ -279,27 +309,31 @@ prof = [(0.0, 0.0), (0.7, 0.0), (0.735, 0.06), (0.735, 0.13), (0.7, 0.19), (0.64
         (0.66, 4.77), (0.62, 4.82), (0.6, 5.0), (0.6, 5.9), (0.62, 6.0), (0.62, 6.1), (0.0, 6.1)]
 parts.append(hk.smooth(cyl_uv(lathe(prof, 48, MARBLE, "column", rmod=flute), CY), 50))
 
-# the drape: pale marble cloth hung in four swags, the front one full on,
-# its folds twisting round the column
-K, S = 48, 7
+# the drape: pale marble cloth pinned under the ring at four points and
+# hung between them in four clean swags, the front one full on, each with
+# a couple of soft folds that follow its sag and a rolled hem
+K, S = 32, 8
 Z_TOP = 5.96
 rows = [[(0.6 * math.cos(2 * math.pi * k / K), CY + 0.6 * math.sin(2 * math.pi * k / K), Z_TOP)
          for k in range(K)]]
-for s in range(S + 2):
+hem, under = [], []
+for s in range(S + 1):
     ring = []
     for k in range(K):
         a = 2 * math.pi * k / K
-        z_low = 4.76 + 0.46 * (1 - abs(math.cos(2 * a)) ** 0.8)
-        t = min(1.0, s / S)
+        u = ((a - math.pi / 4) % (math.pi / 2)) / (math.pi / 2)
+        sag = math.sin(math.pi * u)
+        z_low = 5.22 - 0.46 * sag ** 0.9
+        t = s / S
         z = Z_TOP - t * (Z_TOP - z_low)
-        if s == S + 1:
-            r = 0.6
-        else:
-            # the cloth swells out and falls in soft folds that follow the hem
-            r = (0.6 + 0.08 + 0.07 * math.sin(math.pi * min(1.0, 0.2 + t)) + 0.035 * math.sin(3.2 * math.pi * t)
-                 + 0.02 * math.cos(10 * a - 4 * z))
+        r = (0.6 + 0.045 + 0.03 * math.sin(math.pi * min(1.0, 1.6 * t))
+             + sag * (0.075 * math.sin(math.pi * (0.25 + 0.6 * t)) + 0.016 * math.sin(4 * math.pi * t) * t))
         ring.append((r * math.cos(a), CY + r * math.sin(a), z))
+        if s == S:
+            hem.append(((r + 0.018) * math.cos(a), CY + (r + 0.018) * math.sin(a), z - 0.035))
+            under.append((0.6 * math.cos(a), CY + 0.6 * math.sin(a), z - 0.03))
     rows.append(ring)
+rows += [hem, under]
 drape = rings_mesh(rows, MARBLE_LT, "drape", cap_bottom=False, cap_top=False)
 parts.append(hk.smooth(cyl_uv(drape, CY), 60))
 
@@ -307,76 +341,113 @@ parts.append(hk.smooth(cyl_uv(drape, CY), 60))
 parts.append(hk.smooth(lathe([(0.6, 5.92), (0.68, 5.95), (0.7, 6.02), (0.68, 6.09), (0.6, 6.12)],
                              32, PALE, "ring"), 50))
 
-# the gold collar on the capital
-parts.append(hk.smooth(lathe([(0.0, 6.06), (0.5, 6.06), (0.57, 6.12), (0.58, 6.24), (0.52, 6.34),
-                              (0.36, 6.42), (0.0, 6.44)], 28, GOLD, "collar"), 50))
+# the gold collar: a heavy band round the capital, the marble showing in
+# its middle, that the claws spring from
+parts.append(hk.smooth(lathe([(0.0, 6.2), (0.5, 6.04), (0.57, 6.09), (0.6, 6.18), (0.58, 6.28), (0.52, 6.34),
+                              (0.44, 6.35), (0.39, 6.3), (0.37, 6.22), (0.0, 6.2)], 24, GOLD_OLD, "collar"), 40))
+parts.append(hk.smooth(lathe([(0.0, 6.2), (0.375, 6.2), (0.37, 6.25), (0.3, 6.3), (0.0, 6.32)], 20, MARBLE,
+                             "capital_top"), 50))
 
 # the brilliant, tipped back from the classic camera as the painting has
-# it: the table high in the outline, the pavilion's point low; it sits over
-# the column and its pavilion drops into claws rising from the collar
-R, CROWN, PAV, TILT = 0.8, 0.4, 1.5, math.radians(-15)
+# it: the table high in the outline, the long pavilion's point low; it
+# floats over the collar in four claws
+R, CROWN, PAV, TILT = 0.76, 0.4, 1.66, math.radians(-15)
+MID, LOW = 0.82, 0.64
 n = Vector((0.0, -math.sin(TILT), math.cos(TILT)))
-GEM_MATS = (SAPPHIRE, SAPPHIRE_MID, SAPPHIRE_LT, SAPPHIRE_PAV, SAPPHIRE_PAV2)
-probe = brilliant(R, CROWN, PAV, TILT, Vector((0.0, 0.0, 0.0)), 16, GEM_MATS)
+GEM_MATS = (SAPPHIRE, SAPPHIRE_MID, SAPPHIRE_LT, SAPPHIRE_PAV, SAPPHIRE_PAV2, TABLE, TABLE_W)
+probe = brilliant(R, CROWN, PAV, TILT, Vector((0.0, 0.0, 0.0)), 16, GEM_MATS, MID, LOW)
 top_px = max(16 * v.co.y + 8 * v.co.z for v in probe.data.vertices)
 bpy.data.objects.remove(probe, do_unlink=True)
 gy = CY + 0.12
 gz = (HY - 24.3 - top_px - 16 * gy) / 8
 G = Vector((0.0, gy, gz))
-parts.append(brilliant(R, CROWN, PAV, TILT, G, 16, GEM_MATS))
+parts.append(brilliant(R, CROWN, PAV, TILT, G, 16, GEM_MATS, MID, LOW))
 tip = G - n * PAV
-print("GEM centre", tuple(round(c, 3) for c in G), "tip", tuple(round(c, 3) for c in tip))
+print("GEM centre", tuple(round(c, 3) for c in G), "tip", tuple(round(c, 3) for c in tip),
+      "tip row %.1f" % (HY - 16 * tip.y - 8 * tip.z))
 
 
 def pav_r(d):
     """The pavilion's radius a distance d below the girdle."""
     if d < PAV * 0.42:
-        return R + (0.6 * R - R) * d / (PAV * 0.42)
-    return 0.6 * R * (PAV - d) / (PAV * 0.58)
+        return R + (LOW * R - R) * d / (PAV * 0.42)
+    return LOW * R * (PAV - d) / (PAV * 0.58)
 
 
-# a short stem to the pavilion's point and four claws gripping its sides
-parts.append(sweep([Vector((0.0, CY, 6.3)), Vector((0.0, CY - 0.03, 6.7)), Vector((0.0, (CY + tip.y) / 2, 6.95)),
-                    tip + n * 0.18],
-                   lambda t: 0.2 - 0.12 * t + 0.06 * max(0.0, t - 0.75) / 0.25, sides=10, n=3, mat=GOLD,
-                   name="stem"))
-for a in (math.radians(d) for d in (45, 135, 225, 315)):
+# two broad claws, flat against the stone like petals, rise from the back
+# of the collar and close round the pavilion's lower cone; the dolphins'
+# tails hold its front
+for deg in (45, 135):
+    a = math.radians(deg)
     u = Vector((math.cos(a), math.sin(a), 0.0))
     w = (u - n * u.dot(n)).normalized()
-    dd = PAV * 0.5
-    grip = G - n * dd + w * (pav_r(dd) + 0.03)
-    root = Vector((0.3 * math.cos(a), CY + 0.3 * math.sin(a), 6.4))
-    mid = root.lerp(grip, 0.45) + u * 0.08
-    top = G - n * (dd - 0.32) + w * (pav_r(dd - 0.32) + 0.03)
-    parts.append(sweep([root, mid, grip, top], lambda t: 0.085 - 0.045 * t, sides=6, n=3, mat=GOLD,
-                       name="claw"))
+    hug = [G - n * (PAV * f) + w * (pav_r(PAV * f) + 0.045) for f in (0.86, 0.74)]
+    root = Vector((0.46 * math.cos(a), CY + 0.46 * math.sin(a), 6.3))
+    lift = root.lerp(hug[0], 0.5) + w * 0.07
+    end = G - n * (PAV * 0.62) + w * (pav_r(PAV * 0.62) + 0.02)
+    parts.append(body([root, lift] + hug + [end], lambda s0, s1: 0.115 - 0.035 * min(1.0, s0 / 0.8),
+                      w, flat=0.42, sides=8, n=2, mat=GOLD, name="claw", tip_round=0.05))
 
-# the horns: swept gold, round in section, from the collar out and forward
-# along the painted crescent, the upper tip curling in toward the gem; the
-# outer fin point is a spur off the lower bend
-HORN = [(26.5, 60.5, 0.12), (23.0, 60.0, 0.0), (19.0, 58.5, -0.15), (15.5, 56.0, -0.28), (12.2, 52.8, -0.38),
-        (10.2, 49.0, -0.42), (9.8, 45.5, -0.4), (10.3, 42.0, -0.32), (11.4, 38.8, -0.2), (13.2, 36.0, -0.08),
-        (15.3, 34.2, 0.02), (17.0, 33.6, 0.1), (18.6, 34.6, 0.15)]
-FIN = [(13.0, 52.0, -0.4), (9.0, 51.4, -0.38), (5.0, 51.6, -0.35), (0.3, 52.5, -0.3)]
-
-
-def horn_r(t):
-    prof = [(0.0, 0.2), (0.14, 0.25), (0.32, 0.3), (0.48, 0.34), (0.62, 0.3), (0.78, 0.21), (0.9, 0.11),
-            (1.0, 0.012)]
-    for (t0, r0), (t1, r1) in zip(prof, prof[1:]):
-        if t <= t1:
-            return r0 + (r1 - r0) * (t - t0) / (t1 - t0)
-    return prof[-1][1]
+# the dolphins: each rests its belly on the collar and curls its tail up
+# under the gem, the flukes cradling the pavilion either side of its point;
+# the back arches outward with a swept fin on it, and the round head leans
+# in so the short beak rests on the gem's girdle
+girdle = G + Vector((-R - 0.02, -0.06, 0.01))
+u = Vector((-math.sqrt(0.5), -math.sqrt(0.5), 0.0))
+W_FRONT = (u - n * u.dot(n)).normalized()
+TAIL = [G - n * (PAV * 0.88) + W_FRONT * (pav_r(PAV * 0.88) + 0.06), Vector((-0.31, -0.15, 6.7)),
+        Vector((-0.5, -0.07, 6.37))]
+S_RING = (TAIL[1] - TAIL[0]).length + (TAIL[2] - TAIL[1]).length
+SPINE = [(18.0, 58.2, -0.06), (14.2, 55.2, -0.1), (11.6, 51.4, -0.1),
+         (10.4, 47.2, -0.08), (10.2, 43.0, -0.02), (10.8, 38.9, 0.14), (14.8, 36.0, 0.26)]
+FIN = [(10.4, 49.2, -0.12), (6.4, 50.6, -0.12), (3.0, 52.0, -0.11), (1.0, 53.0, -0.1)]
 
 
+def dolphin_size(s0, s1):
+    """Beak, round head and a body that thins to the tail, by the distance
+    from the tail (s0) and from the beak's tip (s1)."""
+    if s0 < S_RING:
+        taper = (0.055 + 0.06 * s0 / S_RING) / 0.32
+    else:
+        taper = min(1.0, 0.36 + 0.64 * (s0 - S_RING) / 1.3)
+    if s1 < 0.28:
+        return 0.035 + 0.04 * s1 / 0.28
+    if s1 < 0.56:
+        return 0.075 + 0.225 * math.sin(0.5 * math.pi * (s1 - 0.28) / 0.28)
+    return min(0.3 + 0.02 * min(1.0, (s1 - 0.56) / 0.4), 0.32 * taper)
+
+
+Y = Vector((0.0, 1.0, 0.0))
 for side in (-1, 1):
-    h = sweep([P(*q) for q in HORN], horn_r, sides=10, n=3, mat=GOLD, name="horn")
-    f = sweep([P(*q) for q in FIN], lambda t: 0.19 * (1 - t) ** 0.7 + 0.015, sides=8, n=3, mat=GOLD,
-              name="fin")
+    pts = [q.copy() for q in TAIL] + [P(*q) for q in SPINE] + [girdle.copy()]
+    group = [body(pts, dolphin_size, Y, flat=0.7, sides=12, n=3, mat=GOLD, name="dolphin", tip_round=0.035)]
+    group.append(body([P(*q) for q in FIN], lambda s0, s1: 0.07 + 0.15 * min(1.0, s1 / 0.7), Y,
+                      flat=0.22, sides=6, n=3, mat=GOLD, name="fin", tip_round=0.06))
+    # flukes: two thin lobes swept up from the tail's end, lying round the
+    # pavilion
+    t0 = pts[0]
+    T = (pts[1] - pts[0]).normalized()
+    spread = T.cross(W_FRONT).normalized()
+    for sgn in (-1, 1):
+        lobe = [t0 + T * 0.08, t0 - T * 0.01 + spread * sgn * 0.09, t0 - T * 0.05 + spread * sgn * 0.18]
+        group.append(body(lobe, lambda s0, s1: 0.07 * min(1.0, s1 / 0.14) ** 0.7 + 0.004,
+                          W_FRONT, flat=0.3, sides=6, n=2, mat=GOLD, name="fluke"))
+    # small jet eyes either side of the head, above and behind the beak
+    head = P(*SPINE[5])
+    Th = (P(*SPINE[6]) - head).normalized()
+    Lh = (Y - Th * Y.dot(Th)).normalized()
+    Dh = Th.cross(Lh)
+    for sgn in (-1, 1):
+        e = head + Th * 0.14 + Dh * 0.07 + Lh * sgn * 0.185
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=6, v_segments=4, radius=0.04)
+        for v in bm.verts:
+            v.co += e
+        group.append(hk.smooth(hk._object("eye", bm, JET), 80))
     if side > 0:
-        mirror(h)
-        mirror(f)
-    parts += [h, f]
+        for g in group:
+            mirror(g)
+    parts += group
 
 ob = hk.finish(parts, r"D:\OKReplace\lodes\hand\models\VERMANA.glb",
                {"replacesTexture": "vermana_divinelodestone", "replacesPiece": "VerLode"})

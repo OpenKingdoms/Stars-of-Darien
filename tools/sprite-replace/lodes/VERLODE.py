@@ -1,4 +1,4 @@
-"""Veruna lodestone: a gold octopus clasping a worked grey stone, arms raised
+"""Veruna lodestone: a gold octopus clasping a grey boulder, arms raised
 round a blue crystal that floats over its head. Built to the picture's
 classic silhouette.
 
@@ -9,6 +9,7 @@ import sys
 
 import bmesh
 import bpy
+import numpy as np
 from mathutils import Vector
 
 sys.path.insert(0, r"D:\Projects\openkingdoms-unity\tools\sprite-replace")
@@ -43,11 +44,13 @@ def catmull(pts, n):
     return out
 
 
-def tube(pts, r0, r1, sides=8, n=3, power=0.9, mat=None, name="arm", inner=None, suckers=None):
+def tube(pts, r0, r1, sides=8, n=3, power=0.9, mat=None, name="arm", inner=None, suckers=None,
+         inward=None, round_tip=False):
     """A tapering tentacle along a smooth curve through pts, closed at the
-    base and drawn to a point at the tip. inner=(mat, t0) puts the inside of
-    the curl from t0 on on a second material; suckers=(mat, t0, t1, count)
-    sets small cups along that inner side."""
+    base and drawn to a point at the tip, or to a small dome if round_tip.
+    inner=(mat, t0) puts the inside of the curl from t0 on on a second
+    material; suckers=(mat, t0, t1, count) sets small cups along that inner
+    side. inward(p) overrides the curl as the inner side's direction."""
     c = catmull(pts, n)
     L = [0.0]
     for a, b in zip(c, c[1:]):
@@ -56,21 +59,33 @@ def tube(pts, r0, r1, sides=8, n=3, power=0.9, mat=None, name="arm", inner=None,
     rings, frames = [], []
     T0 = (c[1] - c[0]).normalized()
     N = T0.orthogonal().normalized()
-    for i, p in enumerate(c[:-1]):
+    body = c if round_tip else c[:-1]
+    for i, p in enumerate(body):
         T = (c[min(i + 1, len(c) - 1)] - c[max(i - 1, 0)]).normalized()
         N = (N - T * N.dot(T)).normalized()
         B = T.cross(N)
         t = L[i] / L[-1]
         r = r1 + (r0 - r1) * (1 - t) ** power
-        # the inside of the bend, lifted a little so the camera above sees it
-        k = c[min(i + 1, len(c) - 1)] - 2 * p + c[max(i - 1, 0)]
-        k = (k - T * k.dot(T))
-        k = (k.normalized() if k.length > 1e-6 else -N) + Vector((0, 0, 0.45))
+        if inward is not None:
+            k = inward(p)
+        else:
+            # the inside of the bend, lifted a little so the camera above sees it
+            k = c[min(i + 1, len(c) - 1)] - 2 * p + c[max(i - 1, 0)]
+            k = (k - T * k.dot(T))
+            k = (k.normalized() if k.length > 1e-6 else -N) + Vector((0, 0, 0.45))
         k = (k - T * k.dot(T)).normalized()
         frames.append((p, T, N, B, r, t, k))
         rings.append([bm.verts.new(p + (N * math.cos(2 * math.pi * j / sides) + B * math.sin(2 * math.pi * j / sides)) * r)
                       for j in range(sides)])
-    tip = bm.verts.new(c[-1])
+    if round_tip:
+        p, T, N, B, r, t, k = frames[-1]
+        q = p + T * r1 * 0.55
+        frames.append((q, T, N, B, r1 * 0.8, 1.0, k))
+        rings.append([bm.verts.new(q + (N * math.cos(2 * math.pi * j / sides) + B * math.sin(2 * math.pi * j / sides))
+                                   * r1 * 0.8) for j in range(sides)])
+        tip = bm.verts.new(p + T * r1)
+    else:
+        tip = bm.verts.new(c[-1])
     faces = []
     for i, (A, Bq) in enumerate(zip(rings, rings[1:])):
         for j in range(sides):
@@ -93,7 +108,7 @@ def tube(pts, r0, r1, sides=8, n=3, power=0.9, mat=None, name="arm", inner=None,
             tt = s0 + (s1 - s0) * (q + 0.5) / count
             i = min(range(len(frames)), key=lambda m: abs(frames[m][5] - tt))
             p, T, N, B, r, t, k = frames[i]
-            rr = max(0.028, r * 0.42)
+            rr = max(0.024, min(0.065, r * 0.62))
             cups.append((p + k * r * 0.93, k, T, rr))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     ob = hk._object(name, bm, mat)
@@ -107,17 +122,17 @@ def tube(pts, r0, r1, sides=8, n=3, power=0.9, mat=None, name="arm", inner=None,
 
 
 def cup(p, n, T, r, mat):
-    """A sucker: a low six-sided ring with a dimple, facing n."""
+    """A sucker: a low five-sided ring with a dimple, facing n."""
     bm = bmesh.new()
     B = n.cross(T).normalized()
     T = B.cross(n).normalized()
     outer = [bm.verts.new(p + (T * math.cos(a) + B * math.sin(a)) * r - n * r * 0.3)
-             for a in (2 * math.pi * j / 6 for j in range(6))]
+             for a in (2 * math.pi * j / 5 for j in range(5))]
     lip = [bm.verts.new(p + (T * math.cos(a) + B * math.sin(a)) * r * 0.8 + n * r * 0.35)
-           for a in (2 * math.pi * j / 6 for j in range(6))]
+           for a in (2 * math.pi * j / 5 for j in range(5))]
     pit = bm.verts.new(p + n * r * 0.05)
-    for j in range(6):
-        j1 = (j + 1) % 6
+    for j in range(5):
+        j1 = (j + 1) % 5
         bm.faces.new((outer[j], outer[j1], lip[j1], lip[j]))
         bm.faces.new((lip[j], lip[j1], pit))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
@@ -223,6 +238,113 @@ def ellipsoid(c, r, mat=None, name="ball", u=12, v=8):
     return hk.smooth(hk._object(name, bm, mat), 80)
 
 
+def image(name, rgb):
+    """A packed image from an (h, w, 3) array of sRGB values in 0-1."""
+    h, w, _ = rgb.shape
+    img = bpy.data.images.new(name, w, h, alpha=False)
+    px = np.ones((h, w, 4), np.float32)
+    px[..., :3] = np.clip(rgb, 0, 1)
+    img.pixels[:] = px.ravel()
+    img.pack()
+    return img
+
+
+def noise(n, beta, seed):
+    """Tileable 1/f noise in 0-1."""
+    rng = np.random.default_rng(seed)
+    f = np.fft.fft2(rng.standard_normal((n, n)))
+    fx, fy = np.fft.fftfreq(n)[:, None], np.fft.fftfreq(n)[None, :]
+    r = np.sqrt(fx * fx + fy * fy)
+    r[0, 0] = 1.0
+    f = f / r ** (beta / 2)
+    f[0, 0] = 0
+    t = np.real(np.fft.ifft2(f))
+    return (t - t.min()) / (t.max() - t.min())
+
+
+def granite_img(name, base, seed, n=256):
+    """Weathered grey stone: broad cloudy patches, fine grit and a few
+    darker specks, tiling in both directions."""
+    rng = np.random.default_rng(seed)
+    cloud = noise(n, 3.2, seed)
+    grit = rng.random((n, n))
+    speck = (noise(n, 1.2, seed + 7) > 0.8).astype(np.float32)
+    b = np.array(base, np.float32) / 255
+    shade = 0.8 + 0.34 * cloud + 0.1 * (grit - 0.5) - 0.18 * speck
+    col = b[None, None, :] * shade[..., None]
+    col[..., 2] *= 0.98 + 0.05 * cloud
+    return image(name, col)
+
+
+def textured(name, img, rough):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Roughness"].default_value = rough
+    t = nt.nodes.new("ShaderNodeTexImage")
+    t.image = img
+    nt.links.new(t.outputs["Color"], b.inputs["Base Color"])
+    return m
+
+
+def boulder(prof, seg, mat, yc, facets, seed, name="stone", sx=None):
+    """A lumpy rounded stone through (radius, z) rings, bottom to top, round
+    (0, yc): each vertex pushed in or out by a little smooth noise, then
+    planed flat wherever a chisel facet (normal, depth from the centre at
+    height zc) cuts it; sx(z) widens it side to side. Wrapped in a spherical
+    UV for its grain."""
+    rng = np.random.default_rng(seed)
+    waves = [(rng.integers(1, 5), rng.uniform(0, 2 * math.pi), rng.uniform(1.5, 6.0), rng.uniform(0, 2 * math.pi))
+             for _ in range(7)]
+    bm = bmesh.new()
+    rings = []
+    for r, z in prof:
+        if r < 1e-5:
+            rings.append([bm.verts.new((0.0, yc, z))])
+            continue
+        ring = []
+        for k in range(seg):
+            a = 2 * math.pi * k / seg
+            lump = sum(math.sin(m * a + ph) * math.sin(f * z + pz) for m, ph, f, pz in waves) / len(waves)
+            rr = r * (1.0 + (0.05 + 0.07 * min(1.0, max(0.0, (z - 0.4) / 0.35))) * lump)
+            ring.append(bm.verts.new((rr * math.cos(a) * (sx(z) if sx else 1.0), yc + rr * math.sin(a), z)))
+        rings.append(ring)
+    for A, B in zip(rings, rings[1:]):
+        if len(A) == 1:
+            for k in range(seg):
+                bm.faces.new((A[0], B[(k + 1) % seg], B[k]))
+        elif len(B) == 1:
+            for k in range(seg):
+                bm.faces.new((A[k], A[(k + 1) % seg], B[0]))
+        else:
+            for k in range(seg):
+                bm.faces.new((A[k], A[(k + 1) % seg], B[(k + 1) % seg], B[k]))
+    if len(rings[0]) > 1:
+        bm.faces.new(list(reversed(rings[0])))
+    for n, d, zc in facets:
+        c = Vector((0.0, yc, zc))
+        for v in bm.verts:
+            s = (v.co - c).dot(n)
+            if s > d:
+                v.co -= n * (s - d)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    ob = hk._object(name, bm, mat)
+    me = ob.data
+    uv = me.uv_layers.new(name="UVMap")
+    for p in me.polygons:
+        us = []
+        for li in p.loop_indices:
+            co = me.vertices[me.loops[li].vertex_index].co
+            us.append((math.atan2(co.y - yc, co.x) / (2 * math.pi)) % 1.0)
+        if max(us) - min(us) > 0.5:
+            us = [u + 1.0 if u < 0.5 else u for u in us]
+        for li, u in zip(p.loop_indices, us):
+            co = me.vertices[me.loops[li].vertex_index].co
+            uv.data[li].uv = (u * 2.0, co.z * 0.6)
+    return ob
+
+
 def classic_extents(ob):
     cols = [HX + 16 * v.co.x for v in ob.data.vertices]
     rows = [HY - 16 * v.co.y - 8 * v.co.z for v in ob.data.vertices]
@@ -231,24 +353,34 @@ def classic_extents(ob):
 
 hk.reset()
 
-GOLD = hk.pbr("ver_gold", lin(255, 228, 110), rough=0.21, metal=0.52)
-GOLD_BACK = hk.pbr("ver_gold_worn", lin(240, 212, 100), rough=0.28, metal=0.52)
-GOLD_PALE = hk.pbr("ver_gold_underside", lin(252, 234, 150), rough=0.3, metal=0.4)
-STONE = hk.pbr("ver_stone", lin(135, 132, 122), rough=0.55)
-CRYSTAL = hk.pbr("ver_crystal", lin(8, 24, 116), rough=0.13, emit=lin(12, 28, 150), strength=0.4)
-CRYSTAL_LT = hk.pbr("ver_crystal_facet", lin(20, 46, 168), rough=0.13, emit=lin(28, 54, 225), strength=0.6)
+GOLD = hk.pbr("ver_gold", lin(236, 190, 80), rough=0.28, metal=0.95)
+GOLD_BACK = hk.pbr("ver_gold_worn", lin(218, 168, 66), rough=0.34, metal=0.95)
+GOLD_PALE = hk.pbr("ver_gold_underside", lin(240, 212, 140), rough=0.4, metal=0.6)
+STONE = textured("ver_stone", granite_img("ver_stone_tex", (100, 99, 96), 3), 0.78)
+CRYSTAL = hk.pbr("ver_crystal", lin(6, 18, 96), rough=0.13, emit=lin(8, 26, 150), strength=0.4)
+CRYSTAL_LT = hk.pbr("ver_crystal_facet", lin(12, 32, 140), rough=0.1, emit=lin(24, 58, 240), strength=1.3)
 EMERALD = hk.pbr("ver_emerald", lin(11, 110, 61), rough=0.08, emit=lin(20, 150, 80), strength=0.3)
 
 parts = []
 
-# the worked stone: a foot, a swelling bowl with a chisel band and a rolled
-# lip the octopus sits in; set back under the body, as the arms spread
-STONE_Y = 0.2
-STONE_PROF = [(0.0, 0.0), (0.5, 0.0), (0.525, 0.03), (0.525, 0.1), (0.49, 0.125), (0.44, 0.15),
-              (0.455, 0.2), (0.55, 0.32), (0.64, 0.5), (0.7, 0.68), (0.72, 0.78), (0.7, 0.8), (0.725, 0.83),
-              (0.74, 0.93), (0.735, 1.01), (0.715, 1.06), (0.7, 1.1), (0.755, 1.15), (0.785, 1.22),
-              (0.785, 1.28), (0.76, 1.34), (0.68, 1.38), (0.56, 1.35), (0.0, 1.3)]
-parts.append(hk.smooth(lathe(STONE_PROF, 20, STONE, "stone", y=STONE_Y), 35))
+# the stone: a weathered boulder on a flattened base, a few chisel facets
+# planed into it, narrowing to a small foot so none of it shows below the
+# ground arms' curls
+STONE_Y = 0.3
+STONE_PROF = [(0.0, 0.0), (0.27, 0.0), (0.31, 0.03), (0.35, 0.09), (0.41, 0.24), (0.49, 0.42), (0.57, 0.62),
+              (0.63, 0.82), (0.65, 0.98), (0.62, 1.14), (0.53, 1.28), (0.4, 1.38), (0.22, 1.44), (0.0, 1.46)]
+
+
+def facet(az, el, zc, d):
+    a, e = math.radians(az), math.radians(el)
+    return Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e))), d, zc
+
+
+FACETS = [facet(-124, 14, 0.82, 0.56), facet(-60, -10, 0.58, 0.46), facet(-90, 40, 0.98, 0.53),
+          facet(-160, -8, 0.6, 0.6), facet(150, 8, 0.72, 0.56), facet(95, 25, 0.95, 0.52),
+          facet(36, 20, 0.9, 0.56), facet(-18, 2, 0.7, 0.62)]
+parts.append(hk.smooth(boulder(STONE_PROF, 22, STONE, STONE_Y, FACETS, 5,
+                               sx=lambda z: 1.08 + 0.22 * min(1.0, max(0.0, (1.0 - z) / 0.5))), 40))
 
 # body: a flared skirt the arms spring from and the round mantle over it,
 # leaning back a touch; set back like the stone
@@ -301,8 +433,9 @@ TALL = [("xyz", -0.3, 0.05, 1.8), ("xyz", -0.55, -0.15, 2.45), (20.3, 86, -0.3),
         (9.6, 40, 0.2), (11.3, 36, -0.15), (13.6, 33.6, -0.38), (15.6, 32.5, -0.36), (16.8, 33.0, -0.08),
         (17.2, 33.6, 0.22)]
 MID = [("xyz", -0.3, -0.12, 2.0), (21.0, 97.3, -0.2), (15.5, 96.8, -0.26), (12.0, 95.3, -0.32),
-       (9.8, 92.0, -0.38), (8.4, 87.0, -0.42), (7.8, 80.0, -0.45), (7.2, 75.0, -0.46), (6.0, 71.0, -0.46)]
-LOW = [("xyz", -0.15, -0.38, 1.95), ("xyz", -0.5, -0.46, 1.55), ("xyz", -0.9, -0.44, 0.98),
+       (9.8, 92.0, -0.38), (8.4, 87.0, -0.42), (7.9, 80.0, -0.45), (7.4, 75.5, -0.46), (6.5, 72.0, -0.46),
+       (5.3, 70.2, -0.44)]
+LOW = [("xyz", -0.05, 0.02, 2.1), ("xyz", -0.2, -0.36, 1.9), ("xyz", -0.5, -0.46, 1.55), ("xyz", -0.9, -0.44, 0.98),
        ("xyz", -1.12, -0.4, 0.45), ("xyz", -1.2, -0.5, 0.1), ("xyz", -1.2, -0.82, 0.08),
        ("xyz", -1.05, -1.0, 0.08), ("xyz", -0.78, -1.02, 0.08), ("xyz", -0.56, -0.86, 0.1),
        ("xyz", -0.45, -0.64, 0.14), ("xyz", -0.44, -0.46, 0.24)]
@@ -310,12 +443,21 @@ BACK = [("xyz", -0.2, 0.25, 1.75), ("xyz", -0.45, 0.6, 1.15), ("xyz", -0.6, 1.0,
         ("xyz", -0.62, 1.3, 0.08), ("xyz", -0.45, 1.58, 0.08), ("xyz", -0.2, 1.6, 0.1),
         ("xyz", -0.12, 1.4, 0.18)]
 
+# the raised arms carry their pale band and cups on the side toward the
+# crystal and underneath, where a tilted camera finds them
+inward = lambda p: Vector((-math.copysign(1.0, p.x), 0.2, -0.45))
+
+# the ground arms keep theirs on the inside of the curl, tipped up
+curl = lambda p: Vector((math.copysign(0.82, p.x) - p.x, -0.74 - p.y, 0.0)).normalized() + Vector((0, 0, 0.5))
+
 for side in (-1, 1):
-    parts += tube(arm_pts(TALL, side), 0.15, 0.03, mat=GOLD, name="arm_tall")
-    parts += tube(arm_pts(MID, side), 0.17, 0.035, mat=GOLD, name="arm_mid")
+    parts += tube(arm_pts(TALL, side), 0.16, 0.02, power=1.8, mat=GOLD, name="arm_tall",
+                  inner=(GOLD_PALE, 0.22), suckers=(GOLD_PALE, 0.24, 0.64, 6), inward=inward)
+    parts += tube(arm_pts(MID, side), 0.165, 0.03, power=1.8, mat=GOLD, name="arm_mid",
+                  inner=(GOLD_PALE, 0.22), suckers=(GOLD_PALE, 0.26, 0.72, 4), inward=inward, round_tip=True)
     parts += tube(arm_pts(LOW, side), 0.155, 0.04, mat=GOLD, name="arm_low",
-                  inner=(GOLD_PALE, 0.45), suckers=(GOLD_PALE, 0.45, 0.93, 7))
-    parts += tube(arm_pts(BACK, side), 0.14, 0.04, mat=GOLD_BACK, name="arm_back")
+                  inner=(GOLD_PALE, 0.5), suckers=(GOLD_PALE, 0.5, 0.94, 7), inward=curl)
+    parts += tube(arm_pts(BACK, side), 0.15, 0.02, n=2, power=1.8, mat=GOLD_BACK, name="arm_back")
 
 # the crystal floating over the head: flattened front to back so its crown
 # comes to the picture's point, a ridge toward the camera

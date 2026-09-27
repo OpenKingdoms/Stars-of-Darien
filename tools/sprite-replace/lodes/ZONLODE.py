@@ -1,6 +1,7 @@
 """ZONLODE, the Zhon lodestone: two weathered posts, one hemp rope lashed
-round each post and knotted round the collar of a brass orb that hangs
-between them, with gold straps, a navy cabochon and a horned gold crest.
+round each post and knotted round the collar of a polished bronze orb that
+hangs between them, with a gold strap down its front, a gold rib off the
+collar down its upper left, a navy cabochon and a horned gold crest.
 
     blender -b --factory-startup --python ZONLODE.py
 """
@@ -32,12 +33,17 @@ PR = 0.285            # post radius
 PH = 5.95             # post height at the rim
 ORB_C = Vector((0.0, PY, 2.85))
 ORB_R = 0.71
-TILT = math.radians(45)   # the orb's crown leans back toward the classic camera's up
+TILT = math.radians(30)   # the orb's crown leans back toward the classic camera's up
 POLE = Vector((0.0, math.sin(TILT), math.cos(TILT)))
 BACK = POLE.cross(Vector((1, 0, 0)))  # completes the orb frame (x, BACK, POLE)
-NECK_H, NECK_R = 0.095, 0.115       # the collar neck the rope is knotted round
-CAP_TOP = 0.17                        # the crest seat above the orb surface
-ROPE_R = 0.05
+NECK_H, NECK_R = 0.15, 0.115        # the collar neck the rope is knotted round
+CAP_TOP = 0.32                        # the crest seat above the orb surface
+ROPE_R = 0.044
+LASH_TOP = 5.32       # the top turn of each lashing, at the post's sides
+TURNS = 2.5           # tight turns per lashing
+PITCH = 2 * ROPE_R * 0.96
+LASH_TILT = 0.07      # the turns ride a little higher on the front than the back
+LASH_BAND = (LASH_TOP - TURNS * PITCH - 0.05, LASH_TOP + 0.05)
 NS = 22               # post columns
 TW = 0.10             # grain twist, radians per cell
 VS = 0.9              # share of the post texture given to the sides
@@ -238,11 +244,12 @@ class Post:
         top = Vv >= VS
         rr = 1 - (Vv - VS) / (1 - VS)
         rings = 0.5 + 0.5 * np.sin(2 * math.pi * (rr * 6 + 0.4 * n.fbm(px * 8, py * 8, 3, 2)))
-        tc = mix(rgb((58, 52, 40)), rgb((92, 82, 64)), n.fbm(px * 12, py * 12, 5, 3))
+        tc = mix(rgb((26, 19, 9)), rgb((58, 45, 22)), n.fbm(px * 12, py * 12, 5, 3))
+        tc = mix(tc, rgb((70, 58, 30)), smoothstep(0.6, 0.95, 1 - rr) * 0.4)  # the weathered edge
         tc = tc * (0.88 + 0.12 * rings[..., None])
         a_s = 2 * math.pi * self.split[0] / NS
         dsp = np.abs((a0 - a_s + math.pi) % (2 * math.pi) - math.pi)
-        tc = mix(tc, rgb((20, 17, 11)), np.exp(-(dsp * rr / 0.05) ** 2) * (rr > 0.25))
+        tc = mix(tc, rgb((9, 7, 4)), np.exp(-(dsp * rr / 0.05) ** 2) * (rr > 0.25))
         c = np.where(top[..., None], tc, c)
         h = 0.009 * (grain - 0.5) + 0.002 * (fine - 0.5) - 0.012 * np.clip(cr, 0, 1) * zn + 0.0015 * m_l
         h = np.where(top, 0.003 * rings, h)
@@ -260,7 +267,7 @@ def rope_texture(W=64, H=64):
     g = (3 * (Vv + U)) % 1.0
     ply = np.sin(math.pi * g) ** 0.6
     fib = n.value((Vv + U) * 3 * 16, (U - Vv) * 24, 0.5)
-    c = mix(rgb((92, 88, 60)), rgb((190, 178, 126)), ply * (0.8 + 0.2 * fib))
+    c = mix(rgb((90, 84, 50)), rgb((192, 180, 112)), ply * (0.8 + 0.2 * fib))
     return c, 0.012 * ply + 0.002 * fib
 
 
@@ -269,58 +276,93 @@ def neck_frame():
     return nc, Vector((1, 0, 0)), BACK
 
 
-def helix(post, a0, dirn, z0, z1, turns, lift=None, per_turn=12):
+def helix(post, a0, dirn, z0, z1, turns, per_turn=24, sink=None):
+    """Turns laid on the post's surface from (a0, z0) to z1, riding LASH_TILT
+    higher on the front than the back; sink(t) pulls the rope into the post."""
     pts = []
     n = max(2, int(round(turns * per_turn)))
     for k in range(n + 1):
         t = k / n
         a = a0 + dirn * 2 * math.pi * turns * t
-        z = z0 + (z1 - z0) * t
-        r = post.surface_r(a, z) + ROPE_R * 0.8 + (lift(t) if lift else 0.0)
+        z = z0 + (z1 - z0) * t - LASH_TILT * math.sin(a)
+        r = post.surface_r(a, z) + ROPE_R * 0.85 - (sink(t) if sink else 0.0)
         ax, ay = post.axis(z)
         pts.append(Vector((float(ax) + r * math.cos(a), float(ay) + r * math.sin(a), z)))
     return pts
 
 
 def lashing(post):
-    """From where the V rope arrives at the top: wraps down the post, one
-    turn crossing back up over them, and a short tail hanging beside the
-    V rope. Returns (points, count)."""
+    """From where the V rope arrives on the inner side: tight turns up the
+    post, the end tucked in under the top turn at the back."""
     s = post.s
-    z0, z1 = post.band
-    a0 = math.atan2(-0.9, -0.44) if s > 0 else math.atan2(-0.9, 0.44)
-    wraps = helix(post, a0, s, z1, z0, 3.5, per_turn=9)
-    a1 = a0 + s * 2 * math.pi * 3.5
-    cross = helix(post, a1, s, z0, z1 + 0.06, 1.5, lift=lambda t: 1.7 * ROPE_R * math.sin(math.pi * t) ** 0.5,
-                  per_turn=9)
-    end = cross[-1]
-    ax, ay = post.axis(end.z)
-    outw = Vector((end.x - float(ax), end.y - float(ay), 0)).normalized()
-    tail = [end + outw * 0.07 + Vector((0, 0, -0.08)), end + outw * 0.1 + Vector((0, 0, -0.24)),
-            end + outw * 0.11 + Vector((-s * 0.03, 0, -0.42))]
-    return wraps + cross[1:] + tail, len(wraps) + len(cross) - 1
+    a0 = math.radians(-20.0) if s < 0 else math.radians(-160.0)
+    z0 = LASH_TOP - TURNS * PITCH
+    wraps = helix(post, a0, s, z0, LASH_TOP, TURNS)
+    a1 = a0 + s * 2 * math.pi * TURNS
+    tuck = helix(post, a1, s, LASH_TOP, LASH_TOP - 0.05, 0.12, sink=lambda t: ROPE_R * 1.9 * t)
+    return wraps + tuck[1:]
+
+
+def tail(post, mat, seed):
+    """The rope's end, pulled out from under the bottom turn on the front
+    and hanging, round to the frayed tip."""
+    s = post.s
+    a = math.radians(-128.0) if s < 0 else math.radians(-52.0)
+    z0 = LASH_TOP - TURNS * PITCH - LASH_TILT * math.sin(a)
+    ax, ay = post.axis(z0)
+    out = Vector((math.cos(a), math.sin(a), 0))
+    side = Vector((0, 0, 1)).cross(out) * s
+
+    def p(r, dz, sd=0.0):
+        return Vector((float(ax), float(ay), z0 + dz)) + out * r + side * sd
+    rs = post.surface_r(a, z0)
+    ctrl = [p(rs - 0.04, 0.04), p(rs + ROPE_R * 0.4, -0.02), p(rs + ROPE_R * 0.95, -0.1, 0.01),
+            p(rs + ROPE_R * 1.05, -0.2, 0.025), p(rs + ROPE_R * 1.2, -0.3, 0.03)]
+    pts = zk.resample(zk.spline(ctrl, 8), 0.024)
+    bm = bmesh.new()
+    zk.sweep(bm, pts, lambda q: ROPE_R * (0.95 + 0.12 * sstep(0.8, 1.0, q)), seg=8, ulen=0.3)
+    ob = zk.smooth(zk.make("tail", bm, [mat]), 70)
+    d = (pts[-1] - pts[-2]).normalized()
+    return [ob, frayed(pts[-1], d, out, mat, seed)]
+
+
+def frayed(tip, d, out, mat, seed):
+    """Loose fibres splaying a little from the rope's cut end."""
+    rng = random.Random(seed)
+    side = d.cross(out).normalized()
+    bm = bmesh.new()
+    for k in range(7):
+        a = 2 * math.pi * k / 7 + rng.uniform(-0.3, 0.3)
+        rad = out * math.cos(a) + side * math.sin(a)
+        p0 = tip - d * 0.01 + rad * ROPE_R * 0.5
+        ln = rng.uniform(0.04, 0.07)
+        p2 = p0 + d * ln + rad * ln * rng.uniform(0.15, 0.35)
+        pts = zk.resample(zk.spline([p0, (p0 + p2) / 2 + rad * 0.004, p2], 3), 0.014)
+        zk.sweep(bm, pts, lambda q: 0.011 * (1 - 0.85 * q) + 0.001, seg=4, ulen=0.3)
+    zk.fix_normals(bm)
+    return zk.smooth(zk.make("fibres", bm, [mat]), 70)
 
 
 def rope(posts, mat):
-    """One rope: left tail and lashing, down to the orb's collar, round it
-    one and a half times, and up to the right lashing and tail."""
+    """One rope: tucked into the left lashing, down to the orb's collar,
+    round it one and a half times, and up into the right lashing."""
     nc, ex, ey = neck_frame()
     rn = NECK_R + ROPE_R * 0.85
     loop = []
-    n = 18
+    n = 36
     for k in range(n + 1):
         t = k / n
         psi = math.pi + 3 * math.pi * t  # from the left side, round the front, one and a half turns
         h = -0.045 + 0.09 * t
         loop.append(nc + (ex * math.cos(psi) + ey * math.sin(psi)) * rn + POLE * h)
-    pl, nl = lashing(posts[0])
-    pr, nr = lashing(posts[1])
+    pl = lashing(posts[0])
+    pr = lashing(posts[1])
     pl.reverse()
 
     def v_rope(a, ta, b, tb):
         mid = (a + b) / 2 + Vector((0, 0, -0.04))
-        ctrl = [a, a + ta * 0.18, mid, b - tb * 0.18, b]
-        return zk.resample(zk.spline(ctrl, 6), 0.16)[1:-1]
+        ctrl = [a, a + ta * 0.16, mid, b - tb * 0.16, b]
+        return zk.resample(zk.spline(ctrl, 8), 0.08)[1:-1]
     # tangents where the rope leaves the loop and joins each lashing
     tl = (loop[1] - loop[0]).normalized()
     tr = (loop[-1] - loop[-2]).normalized()
@@ -329,16 +371,10 @@ def rope(posts, mat):
     left = v_rope(pl[-1], tpl, loop[0], tl)
     right = v_rope(loop[-1], tr, pr[0], tpr)
     pts = pl + left + loop + right + pr
-    L = len(pts)
-
-    def radius(s):
-        # frayed tapering tails at both ends
-        e = min(s, 1 - s) * L / 3.0
-        return ROPE_R * (0.55 + 0.45 * min(1.0, e))
     bm = bmesh.new()
-    zk.sweep(bm, pts, radius, seg=5, ulen=0.3)
-    ob = zk.make("rope", bm, [mat])
-    return zk.smooth(ob, 70)
+    zk.sweep(bm, pts, lambda s: ROPE_R, seg=8, ulen=0.3)
+    ob = zk.smooth(zk.make("rope", bm, [mat]), 70)
+    return [ob] + tail(posts[0], mat, 11) + tail(posts[1], mat, 12)
 
 
 # ---- orb, straps, gem, collar and crest --------------------------------------
@@ -349,50 +385,223 @@ def orb_point(psi, theta, r=ORB_R):
                     * math.sin(theta)) * r
 
 
+ORB_SEG, ORB_RINGS = 48, 24
+OCX, OCY = zk.screen(ORB_C, HOT)   # the orb's centre in the picture
+GLINT = (24.8, 30.3, 2.6, 4.4)     # the burnished spot: picture x, row and its half-sizes in px
+RPX = ORB_R * 16
+
+
+def glint(P, N, cap_only=False):
+    """The burnished glint on the upper left front and its fainter streak
+    running down under it (or with cap_only the gleam along the collar's
+    lower left), for points P with normals N (arrays)."""
+    sx = HOT[0] + 16 * P[..., 0]
+    sy = HOT[1] - (zk.SY * P[..., 1] + zk.SZ * P[..., 2])
+    gx, gy, rx, ry = GLINT
+    front = smoothstep(0.1, 0.35, N @ np.array(-zk.VIEW))
+    core = np.exp(-((sx - gx) / rx) ** 2 - ((sy - gy) / ry) ** 2)
+    tail = 0.5 * np.exp(-((sx - gx + 1.4) / (rx * 0.8)) ** 2 - ((sy - gy - 5.5) / (ry * 1.0)) ** 2)
+    cap = 0.85 * np.exp(-((sx - 21.2) / 2.2) ** 2 - ((sy - 26.8) / 1.3) ** 2)  # along the collar's lower left
+    if cap_only:
+        return cap * front
+    return np.maximum(core, tail) * front
+
+
 def orb(mat):
-    seg, rings = 24, 13
+    seg, rings = ORB_SEG, ORB_RINGS
     P = [[orb_point(2 * math.pi * i / seg, math.pi * (rings - j) / rings) for i in range(seg)]
          for j in range(1, rings)]
     bm = bmesh.new()
-    zk.grid(bm, P, top=orb_point(0, 0), bottom=orb_point(0, math.pi))
+    zk.grid(bm, P, uv=lambda j, i: (i / seg, (j + 1) / rings), top=orb_point(0, 0),
+            bottom=orb_point(0, math.pi))
     zk.fix_normals(bm)
     return zk.smooth(zk.make("orb", bm, [mat]), 80)
 
 
-def strap(psi, mat, width=0.07):
-    """A flat gold strap round the orb on the great circle through the crown at psi."""
-    pts = [orb_point(psi, 2 * math.pi * k / 24, ORB_R + 0.014) for k in range(25)]
+def orb_paint(W=256, H=128):
+    """Old bronze: dark oxidised brown over most of it, cleaner brass on the
+    upper left with a burnished glint, a few red-violet patina specks on the
+    right. Returns colour, metal-rough, emission and height."""
+    u = (np.arange(W) + 0.5) / W
+    v = (np.arange(H) + 0.5) / H
+    U, V = np.meshgrid(u, v)
+    psi, th = 2 * math.pi * U, math.pi * (1 - V)
+    ex, eb, ep = (np.array(q) for q in (Vector((1, 0, 0)), BACK, POLE))
+    n = (ep * np.cos(th)[..., None] + (ex * np.cos(psi)[..., None] + eb * np.sin(psi)[..., None])
+         * np.sin(th)[..., None])
+    P = np.array(ORB_C) + n * ORB_R
+    sx, sy = n[..., 0], n @ np.array(zk.SCREEN_UP)     # screen right and up, in orb radii
+    facing = n @ np.array(-zk.VIEW)
+    nz = zk.Noise(31)
+    Q = n * 3.0
+    blot = nz.fbm(Q[..., 0], Q[..., 1], Q[..., 2], 4)
+    fine = nz.fbm(Q[..., 0] * 7, Q[..., 1] * 7, Q[..., 2] * 7 + 5, 3)
+    pit = nz.value(Q[..., 0] * 30, Q[..., 1] * 30, Q[..., 2] * 30 + 9)
+    # brass left clean on the upper left, oxidised toward the lower right and underneath
+    clean = smoothstep(-0.05, 0.75, -0.8 * sx + 0.7 * sy + 0.35 * (blot - 0.5)) * smoothstep(-0.2, 0.3, facing)
+    ox = smoothstep(-0.35, 0.45, 0.9 * sx - 0.5 * sy + 0.5 * (blot - 0.5))
+    c = np.broadcast_to(rgb((74, 54, 28)), n.shape).copy()
+    c = mix(c, rgb((136, 116, 70)), clean * 0.85)
+    c = mix(c, rgb((62, 42, 18)), ox * 0.9)
+    # darker still just right of the strap, as the picture's dark reflection there
+    shade = np.exp(-((sx - 0.24) / 0.22) ** 2 - ((sy + 0.02) / 0.5) ** 2) * smoothstep(0.0, 0.3, facing)
+    c = c * (1 - 0.55 * shade)[..., None]
+    c = mix(c, rgb((36, 27, 15)), smoothstep(0.72, 0.9, pit) * ox * 0.7)
+    # red-violet patina specks on the right half
+    spk = nz.value(Q[..., 0] * 11 + 40, Q[..., 1] * 11, Q[..., 2] * 11)
+    m_s = smoothstep(0.76, 0.86, spk) * smoothstep(0.0, 0.3, sx) * smoothstep(0.35, 0.6, blot)
+    c = mix(c, rgb((88, 52, 62)), m_s * 0.8)
+    c = c * (0.93 + 0.14 * fine)[..., None]
+    g = glint(P, n)
+    # a broad sheen round the glint, fading to the dark left edge
+    sxp, syp = HOT[0] + 16 * P[..., 0], HOT[1] - (zk.SY * P[..., 1] + zk.SZ * P[..., 2])
+    halo = np.exp(-((sxp - 23.0) / 4.0) ** 2 - ((syp - 31.5) / 6.0) ** 2) * smoothstep(0.1, 0.4, facing)
+    c = mix(c, rgb((150, 142, 104)), halo * 0.45)
+    c = mix(c, rgb((238, 236, 206)), np.clip(g * 1.25, 0, 1))
+    rough = 0.34 - 0.14 * clean + 0.36 * ox - 0.1 * g + 0.15 * shade
+    metal = 0.55 + 0.1 * clean - 0.3 * ox
+    mr = np.stack([np.zeros_like(rough), rough, metal], axis=-1)
+    emit = rgb((255, 250, 232)) * smoothstep(0.35, 1.0, g)[..., None]
+    h = 0.0015 * fine - 0.002 * smoothstep(0.72, 0.9, pit) * ox
+    return c, mr, emit, h
+
+
+def bronze_material(name, col, mr, emit, emit_strength, nimg=None, nstrength=1.0):
+    """Colour, metal-rough (green rough, blue metal, as glTF packs them) and
+    emission textures on one set of UVs."""
+    m = zk.tex_mat(name, col, nimg=nimg, nstrength=nstrength)
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    uvn = [q for q in nt.nodes if q.type == "UVMAP"][0]
+    t = nt.nodes.new("ShaderNodeTexImage")
+    t.image = mr
+    sep = nt.nodes.new("ShaderNodeSeparateColor")
+    nt.links.new(uvn.outputs["UV"], t.inputs["Vector"])
+    nt.links.new(t.outputs["Color"], sep.inputs["Color"])
+    nt.links.new(sep.outputs["Green"], b.inputs["Roughness"])
+    nt.links.new(sep.outputs["Blue"], b.inputs["Metallic"])
+    if emit is not None:
+        te = nt.nodes.new("ShaderNodeTexImage")
+        te.image = emit
+        nt.links.new(uvn.outputs["UV"], te.inputs["Vector"])
+        nt.links.new(te.outputs["Color"], b.inputs["Emission Color"])
+        b.inputs["Emission Strength"].default_value = emit_strength
+    b.inputs["Specular IOR Level"].default_value = 0.2  # keeps the dull patina from greying
+    return m
+
+
+def strap_path(psi, t0, t1, r):
+    """Points on the great circle through the crown at psi, theta t0 to t1."""
+    n = max(4, int(round(abs(t1 - t0) / (2 * math.pi) * 64)))
+    return [orb_point(psi, t0 + (t1 - t0) * k / n, r) for k in range(n + 1)]
+
+
+def strap(psi, mat, t0=0.0, t1=2 * math.pi, width=0.065, tip=0.0):
+    """A flat strap on the orb along the great circle through the crown at
+    psi; a partial one (tip > 0) narrows over its last tip of length."""
+    pts = strap_path(psi, t0, t1, ORB_R + 0.014)
     m = Vector((math.cos(psi), 0, 0)) + BACK * math.sin(psi)
     side = POLE.cross(m).normalized()
+    L = sum((pts[i + 1] - pts[i]).length for i in range(len(pts) - 1))
+
+    def wid(s):
+        if tip <= 0:
+            return width
+        return width * (0.25 + 0.75 * min(1.0, (1 - s) / tip) ** 0.7)
     bm = bmesh.new()
-    zk.sweep(bm, pts, lambda s: width, seg=4, flat=0.28, up=tuple(side), a_off=math.pi / 4)
+    zk.sweep(bm, pts, wid, seg=4, flat=0.28, up=tuple(side), a_off=math.pi / 4, ulen=L)
     return zk.smooth(zk.make("strap", bm, [mat]), 40)
 
 
-def fit_strap_psi():
-    """The second strap runs down the orb's upper left edge in the picture."""
-    targets = [(19.0, 29.0), (17.0, 32.0), (21.5, 26.5)]
-    best = None
-    for d in range(0, 180, 2):
-        psi = math.radians(d)
-        err = 0.0
-        for tx, ty in targets:
-            e = 1e9
-            for k in range(180):
-                p = orb_point(psi, 2 * math.pi * k / 180, ORB_R)
-                if (p - ORB_C).dot(-zk.VIEW) < 0:
-                    continue
-                sx, sy = zk.screen(p, HOT)
-                e = min(e, (sx - tx) ** 2 + (sy - ty) ** 2)
-            err += e
-        if best is None or err < best[0]:
-            best = (err, psi)
-    return best[1]
+def strap_paint(psi, t0, t1, fade, W=256):
+    """Along one strap: pale burnished gold near the collar, darkening to
+    oxidised bronze further down (fade gives the picture rows over which it
+    turns), with the glint where it crosses the burnished spot."""
+    th = t0 + (t1 - t0) * (np.arange(W) + 0.5) / W
+    n = np.array([np.array(orb_point(psi, t, 1.0) - ORB_C) for t in th])
+    P = np.array(ORB_C) + n * (ORB_R + 0.03)
+    # the front run's picture rows set the fade; the back mirrors it by the angle from the crown
+    a = np.minimum(np.abs(th), np.abs(2 * math.pi - th))
+    row = np.array([zk.screen(ORB_C + Vector(q) * ORB_R, HOT)[1] for q in n])
+    front = n @ np.array(-zk.VIEW) > 0
+    o = np.argsort(row[front])
+    a_rows = np.interp(fade, row[front][o], a[front][o])
+    k = smoothstep(a_rows[0], a_rows[1], a)
+    gold, mid, pat = rgb((240, 210, 120)), rgb((175, 135, 65)), rgb((70, 46, 22))
+    c = np.where((k < 0.5)[..., None], mix(gold, mid, k * 2), mix(mid, pat, k * 2 - 1))
+    g = glint(P, n)
+    c = mix(c, rgb((246, 244, 222)), np.clip(g * 1.3, 0, 1))
+    rough = 0.3 + 0.35 * k
+    metal = 0.5 - 0.2 * k
+    mr = np.stack([np.zeros_like(rough), rough, metal], axis=-1)
+    emit = rgb((255, 250, 232)) * smoothstep(0.35, 1.0, g)[..., None]
+
+    def rep(x):
+        return np.repeat(x[None], 4, axis=0)
+    return rep(c), rep(mr), rep(emit)
+
+
+# the rib's course along the orb's upper left edge, in picture pixels
+RIB = [(24.8, 25.2), (23.4, 25.7), (21.3, 27.1), (19.3, 28.7), (17.9, 30.3), (16.9, 32.0), (16.4, 33.7), (16.2, 35.4)]
+
+
+def lift(x, row, fmin=0.16):
+    """The orb's outward normal where the classic camera sees picture pixel
+    (x, row), kept at least fmin toward the camera."""
+    sx, sy = (x - OCX) / RPX, (OCY - row) / RPX
+    q, lim = math.hypot(sx, sy), math.sqrt(1 - fmin * fmin)
+    if q > lim:
+        sx, sy = sx * lim / q, sy * lim / q
+    d = math.sqrt(max(0.0, 1 - sx * sx - sy * sy))
+    return (Vector((1, 0, 0)) * sx + zk.SCREEN_UP * sy - zk.VIEW * d).normalized()
+
+
+def rib_path():
+    ctrl = [ORB_C + lift(x, row) * ORB_R for x, row in RIB]
+    pts = zk.resample(zk.spline(ctrl, 8), 0.02)
+    return [ORB_C + (p - ORB_C).normalized() * (ORB_R + 0.006) for p in pts]
+
+
+def rim_rib(mat):
+    """A gold band from under the collar down the orb's upper left edge:
+    broad and flat where it leaves the collar, narrowing into a round rib
+    that ends a little below the equator."""
+    pts = rib_path()
+    T = [(pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized() for i in range(len(pts))]
+    N = [(p - ORB_C).normalized().cross(t).normalized() for p, t in zip(pts, T)]
+    B = [t.cross(n) for t, n in zip(T, N)]
+    L = sum((pts[i + 1] - pts[i]).length for i in range(len(pts) - 1))
+    bm = bmesh.new()
+    zk.sweep(bm, pts, lambda s: 0.042 + 0.082 * (1 - s) - 0.016 * sstep(0.85, 1.0, s), seg=12, flat=0.2,
+             bumps=lambda s, a: 3.4 * sstep(0.2, 0.6, s) * math.sin(a) ** 2, frames_=(T, N, B), ulen=L)
+    return zk.smooth(zk.make("rib", bm, [mat]), 80)
+
+
+def rib_paint(W=128):
+    """Bright gold along the rib, burnished where it leaves the collar and
+    browning toward its end."""
+    pts = rib_path()
+    L = [0.0]
+    for i in range(1, len(pts)):
+        L.append(L[-1] + (pts[i] - pts[i - 1]).length)
+    t = (np.arange(W) + 0.5) / W
+    P = np.array([np.interp(t * L[-1], L, [p[k] for p in pts]) for k in range(3)]).T
+    n = (P - np.array(ORB_C)) / np.linalg.norm(P - np.array(ORB_C), axis=-1, keepdims=True)
+    k = smoothstep(0.72, 1.0, t)
+    c = mix(mix(rgb((244, 206, 96)), rgb((236, 182, 74)), smoothstep(0.2, 0.6, t)), rgb((118, 72, 28)), k)
+    g = glint(P, n, cap_only=True)
+    c = mix(c, rgb((250, 226, 120)), np.clip(g * 1.2, 0, 1))
+    mr = np.stack([np.zeros_like(t), 0.3 + 0.3 * k, 0.3 + 0.0 * k], axis=-1)
+    emit = rgb((255, 214, 96)) * (0.5 * smoothstep(0.3, 1.0, g))[..., None]
+
+    def rep(x):
+        return np.repeat(x[None], 4, axis=0)
+    return rep(c), rep(mr), rep(emit)
 
 
 def gem(gem_mat, gold):
     # where the picture has it, on the face the classic camera sees
-    sx, sy = (29.5 - 27) / 16.0 / ORB_R, (35.5 - 31) / 16.0 / ORB_R
+    sx, sy = (29.5 - OCX) / 16.0 / ORB_R, (OCY - 31) / 16.0 / ORB_R
     toward = -zk.VIEW
     n = (Vector((1, 0, 0)) * sx + zk.SCREEN_UP * sy + toward * math.sqrt(1 - sx * sx - sy * sy)).normalized()
     base = ORB_C + n * ORB_R
@@ -417,9 +626,11 @@ def gem(gem_mat, gold):
 def collar(mat):
     """A gold cap on the crown, a neck for the rope, and a flange the crest sits on."""
     top = ORB_C + POLE * ORB_R
-    prof = [(0.25, -0.06), (0.245, -0.025), (0.21, 0.015), (0.165, 0.045), (0.135, 0.06), (NECK_R, 0.075),
-            (NECK_R, 0.125), (0.155, 0.14), (0.16, 0.155), (0.14, CAP_TOP), (0.08, CAP_TOP + 0.01)]
-    seg = 12
+    n0, n1 = NECK_H - 0.035, NECK_H + 0.035
+    prof = [(0.25, -0.06), (0.245, -0.025), (0.21, 0.015), (0.165, 0.045), (0.135, 0.06), (NECK_R, n0 - 0.01),
+            (NECK_R, n1 + 0.01), (0.155, CAP_TOP - 0.03), (0.16, CAP_TOP - 0.015), (0.14, CAP_TOP),
+            (0.08, CAP_TOP + 0.01)]
+    seg = 16
     ex, ey = Vector((1, 0, 0)), BACK
     P = [[top + (ex * math.cos(2 * math.pi * i / seg) + ey * math.sin(2 * math.pi * i / seg)) * r + POLE * h
           for i in range(seg)] for r, h in prof]
@@ -429,9 +640,9 @@ def collar(mat):
     return zk.smooth(zk.make("collar", bm, [mat]), 45)
 
 
-LEAN = math.radians(28)   # the crest's own lean, a little more upright than the crown
+LEAN = math.radians(28)   # the crest's own lean, close to the crown's
 CR = 0.46                 # crest arc radius
-TIPS = math.radians(18)   # horn tips this far above the arc's centre line
+TIPS = math.radians(25)   # horn tips this far above the arc's centre line
 
 
 def crest(gold, dark):
@@ -439,11 +650,11 @@ def crest(gold, dark):
     up = Vector((0, math.sin(LEAN), math.cos(LEAN)))
     ex = Vector((1, 0, 0))
     nf = ex.cross(up)  # faces the classic camera
-    wr_b = 0.1
+    wr_b = 0.125
     base = ORB_C + POLE * (ORB_R + CAP_TOP - 0.01)
     ctr = base + up * (CR + wr_b * 0.55)
-    oct_ = [(1, 0.55), (0.55, 1), (-0.55, 1), (-1, 0.55), (-1, -0.55), (-0.55, -1), (0.55, -1), (1, -0.55)]
-    inner = {3, 4}  # faces from vertex k to k+1 that look into the crescent
+    oct_ = [(1, 0.55), (0.55, 1), (-0.55, 1), (-1, 0.4), (-1, -0.4), (-0.55, -1), (0.55, -1), (1, -0.55)]
+    inner = {3}  # the face from vertex 3 to 4 looks into the crescent
     n = 26
     rings = []
     bm = bmesh.new()
@@ -453,8 +664,8 @@ def crest(gold, dark):
         rdir = ex * math.cos(phi) + up * math.sin(phi)
         c = ctr + rdir * CR
         w = math.sin(math.pi * s)
-        wr = wr_b * w ** 0.6
-        wn = 0.19 * w ** 0.85
+        wr = wr_b * w ** 0.5
+        wn = 0.15 * w ** 0.8
         if w < 1e-3:
             rings.append([bm.verts.new(c + rdir * 0.01)])
             continue
@@ -477,7 +688,7 @@ def crest(gold, dark):
 
 # ---- materials -------------------------------------------------------------
 
-posts = [Post(-1, 3, 0.0, (5.14, 5.5)), Post(1, 7, 0.5, (5.26, 5.62))]
+posts = [Post(-1, 3, 0.0, LASH_BAND), Post(1, 7, 0.5, LASH_BAND)]
 cl, hl = posts[0].paint()
 cr_, hr = posts[1].paint()
 POST_TEX = zk.image("zl_post_col", np.concatenate([cl, cr_], axis=1))
@@ -488,17 +699,28 @@ rc, rh = rope_texture()
 ROPE_TEX = zk.image("zl_rope_col", rc)
 ROPE_NRM = zk.normal_image("zl_rope_nrm", rh, 0.3 / 64, 2 * math.pi * ROPE_R / 64, 1.0, wrap_u=True, wrap_v=True)
 ROPE = zk.tex_mat("zl_rope", ROPE_TEX, rough=0.95, nimg=ROPE_NRM)
-GOLD = hk.pbr("zl_gold", lin((240, 202, 115)), rough=0.34, metal=0.65)
-DARK = hk.pbr("zl_crest_inner", lin((80, 80, 76)), rough=0.48, metal=0.5)
-BRONZE = hk.pbr("zl_bronze", lin((190, 172, 128)), rough=0.3, metal=1.0)
+GOLD = hk.pbr("zl_gold", lin((228, 188, 96)), rough=0.32, metal=0.5)
+DARK = hk.pbr("zl_crest_inner", lin((128, 120, 102)), rough=0.42, metal=0.45)
+EMIT = 3.2   # emission strength of the burnished glint
+oc, omr, oem, oh = orb_paint()
+BRONZE = bronze_material("zl_bronze", zk.image("zl_orb_col", oc), zk.image("zl_orb_mr", omr, noncolor=True),
+                         zk.image("zl_orb_emit", oem), EMIT,
+                         nimg=zk.normal_image("zl_orb_nrm", oh, 2 * math.pi * ORB_R / 256, math.pi * ORB_R / 128,
+                                              1.0), nstrength=0.6)
 GEM = hk.pbr("zl_gem", lin((14, 22, 50)), rough=0.06, emit=lin((20, 42, 110)), strength=0.25)
+
+PSI1 = math.pi / 2 - math.radians(5.5)   # the strap runs just left of the crown's meridian
+S1 = strap_paint(PSI1, 0.0, 2 * math.pi, (32.5, 39.5))
+S2 = rib_paint()
+STRAP1 = bronze_material("zl_strap", zk.image("zl_strap_col", S1[0]), zk.image("zl_strap_mr", S1[1], noncolor=True),
+                         zk.image("zl_strap_emit", S1[2]), EMIT)
+RIBM = bronze_material("zl_rib", zk.image("zl_rib_col", S2[0]), zk.image("zl_rib_mr", S2[1], noncolor=True),
+                      zk.image("zl_rib_emit", S2[2]), EMIT)
 
 # ---- build -----------------------------------------------------------------
 
-psi2 = fit_strap_psi()
-print("STRAP_PSI", round(math.degrees(psi2), 1))
-parts = [posts[0].build(BARK), posts[1].build(BARK), rope(posts, ROPE)]
-parts += [orb(BRONZE), strap(math.pi / 2, GOLD), strap(psi2, GOLD)]
+parts = [posts[0].build(BARK), posts[1].build(BARK)] + rope(posts, ROPE)
+parts += [orb(BRONZE), strap(PSI1, STRAP1), rim_rib(RIBM)]
 parts += gem(GEM, GOLD)
 parts += [collar(GOLD), crest(GOLD, DARK)]
 for p in parts:
@@ -508,3 +730,12 @@ ob = hk.finish(parts, os.path.join(OUT, "models", NAME + ".glb"),
                {"replacesTexture": "zhonlode", "replacesPiece": "zonlode"})
 print("TRIS", zk.tris(ob))
 hk.renders(ob, os.path.join(OUT, "renders"), NAME, SPRITE, HOT, scale=4)
+# the same views under a mid-grey sky, to check the metals don't go pale
+zk.grey_renders(ob, os.path.join(OUT, "renders", "grey"), NAME, SPRITE, HOT, scale=4)
+CHECK = os.environ.get("ZK_CHECK")
+if CHECK:
+    zk.closeups(CHECK, NAME + "_lash", (-PX, PY, LASH_TOP - 0.1), 1.3,
+                [("front", -90, 20), ("front34", -45, 25), ("side", 180, 10), ("back34", 135, 25)])
+    zk.closeups(CHECK, NAME + "_orb", tuple(ORB_C + Vector((0, 0, 0.3))), 2.2, [("classic", -90, 63.4),
+                                                                              ("low", -60, 15), ("q34", -130, 25),
+                                                                              ("side", 180, 10), ("back", 90, 25)])

@@ -364,3 +364,24 @@ def build(name, parts, texture, piece, sprite_dir=r"D:\OKReplace\lodes\sprites",
     print("MISCKIT_TRIS", name, tris(ob))
     hk.renders(ob, os.path.join(out, "renders"), name, os.path.join(sprite_dir, name + ".png"), hotspot, scale=4)
     return ob
+
+
+def up_normals(ob):
+    """Points every corner normal straight up, so a flame or ember lit by
+    the game's sun (which ignores emission) shades evenly bright."""
+    me = ob.data
+    for p in me.polygons:
+        p.use_smooth = True
+    me.normals_split_custom_set([(0.0, 0.0, 1.0)] * len(me.loops))
+    return ob
+
+
+def game_look(ob, name, pic, hot, out=r"D:\OKReplace\lodes\hand\work"):
+    """Renders the model as the game's shader shows it: no emission, no
+    metal, into a work folder beside the real renders."""
+    for m in bpy.data.materials:
+        b = m.node_tree.nodes.get("Principled BSDF") if m.use_nodes else None
+        if b is not None:
+            b.inputs["Emission Strength"].default_value = 0.0
+            b.inputs["Metallic"].default_value = 0.0
+    hk.renders(ob, out, name + "_game", pic, hot, scale=4)

@@ -332,3 +332,249 @@ def tris(ob):
 
 def smooth(ob, angle=50):
     return hk.smooth(ob, angle)
+
+
+# ---- extra checks ------------------------------------------------------------
+
+def grey_world(value=0.5, strength=1.0):
+    """A plain mid-grey sky, roughly what a Unity skybox or probe gives."""
+    w = bpy.data.worlds.new("zk_grey")
+    w.use_nodes = True
+    bg = w.node_tree.nodes["Background"]
+    bg.inputs["Color"].default_value = (value, value, value, 1.0)
+    bg.inputs["Strength"].default_value = strength
+    return w
+
+
+def grey_renders(ob, out_dir, name, sprite, hot, scale=4):
+    """The classic and turned views again under a mid-grey world."""
+    scene = bpy.context.scene
+    old = scene.world
+    scene.world = grey_world()
+    hk.renders(ob, out_dir, name + "_grey", sprite, hot, scale)
+    scene.world = old
+
+
+def closeups(out_dir, name, target, size, views, res=384):
+    """Orthographic close-ups of a region: views are (label, azimuth,
+    elevation) in degrees, azimuth -90 facing the classic camera's side."""
+    scene = bpy.context.scene
+    cam = scene.camera
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = size
+    scene.render.resolution_x = scene.render.resolution_y = res
+    target = Vector(target)
+    for label, az, el in views:
+        a, e = math.radians(az), math.radians(el)
+        d = Vector((math.cos(a) * math.cos(e), math.sin(a) * math.cos(e), math.sin(e)))
+        cam.location = target + d * 60
+        cam.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
+        scene.render.filepath = os.path.join(out_dir, "%s_%s.png" % (name, label))
+        bpy.ops.render.render(write_still=True)
+
+
+# ---- implicit forms --------------------------------------------------------
+
+def smin(a, b, k):
+    """Polynomial smooth minimum: a union with a fillet about k wide."""
+    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
+    return b * (1 - h) + a * h - k * h * (1 - h)
+
+
+def smax(a, b, k):
+    return -smin(-a, -b, k)
+
+
+def surface_nets(f, lo, hi, h, project=2):
+    """Polygonises the zero set of f (negative inside) over the box lo..hi
+    with cell size h. Returns (verts (n, 3), quads (m, 4))."""
+    axes = [np.arange(lo[i], hi[i] + h * 0.5, h) for i in range(3)]
+    G = np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1)
+    F = f(G)
+    nx, ny, nz = F.shape
+    cor = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0), (0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]
+    edg = [(0, 1), (2, 3), (4, 5), (6, 7), (0, 2), (1, 3), (4, 6), (5, 7), (0, 4), (1, 5), (2, 6), (3, 7)]
+    Fc = [F[i:nx - 1 + i, j:ny - 1 + j, k:nz - 1 + k] for i, j, k in cor]
+    acc = np.zeros(Fc[0].shape + (3,))
+    cnt = np.zeros(Fc[0].shape)
+    for a, b in edg:
+        fa, fb = Fc[a], Fc[b]
+        m = (fa < 0) != (fb < 0)
+        t = np.where(m, fa / np.where(m, fa - fb, 1.0), 0.0)
+        pa, pb = np.array(cor[a], float), np.array(cor[b], float)
+        acc += m[..., None] * (pa + t[..., None] * (pb - pa))
+        cnt += m
+    act = cnt > 0
+    idx = -np.ones(act.shape, dtype=np.int64)
+    idx[act] = np.arange(act.sum())
+    cube = np.argwhere(act).astype(float)
+    V = (cube + acc[act] / cnt[act][..., None]) * h + np.asarray(lo, float)
+    quads = []
+    inside = F < 0
+    # an edge of the grid that crosses the surface gets the quad of the four cubes round it
+    s = inside[:-1, 1:-1, 1:-1] != inside[1:, 1:-1, 1:-1]
+    for i, j, k in np.argwhere(s):
+        j, k = j + 1, k + 1
+        q = [idx[i, j - 1, k - 1], idx[i, j, k - 1], idx[i, j, k], idx[i, j - 1, k]]
+        quads.append(q if inside[i, j, k] else q[::-1])
+    s = inside[1:-1, :-1, 1:-1] != inside[1:-1, 1:, 1:-1]
+    for i, j, k in np.argwhere(s):
+        i, k = i + 1, k + 1
+        q = [idx[i - 1, j, k - 1], idx[i - 1, j, k], idx[i, j, k], idx[i, j, k - 1]]
+        quads.append(q if inside[i, j, k] else q[::-1])
+    s = inside[1:-1, 1:-1, :-1] != inside[1:-1, 1:-1, 1:]
+    for i, j, k in np.argwhere(s):
+        i, j = i + 1, j + 1
+        q = [idx[i - 1, j - 1, k], idx[i, j - 1, k], idx[i, j, k], idx[i - 1, j, k]]
+        quads.append(q if inside[i, j, k] else q[::-1])
+    for _ in range(project):  # pull the vertices onto the surface
+        e = h * 0.25
+        g = np.stack([(f(V + np.array(d) * e) - f(V - np.array(d) * e)) / (2 * e)
+                      for d in ((1, 0, 0), (0, 1, 0), (0, 0, 1))], axis=-1)
+        V = V - (f(V) / np.maximum((g * g).sum(-1), 1e-9))[..., None] * g
+    return V, np.array(quads, dtype=np.int64)
+
+
+def mesh_from(name, V, Q, mats):
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([tuple(v) for v in V], [], [tuple(int(i) for i in q) for q in Q])
+    me.update()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    for m in mats:
+        me.materials.append(m)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    return ob
+
+
+def decimate(ob, tris):
+    """Collapses the mesh to about tris triangles."""
+    now = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    if now > tris:
+        mod = ob.modifiers.new("dec", "DECIMATE")
+        mod.ratio = tris / now
+        hk._apply(ob)
+    return ob
+
+
+def unwrap(ob, margin=0.004):
+    """Smart UV project into 'UVMap'; returns cells per UV unit."""
+    bpy.ops.object.select_all(action="DESELECT")
+    bpy.context.view_layer.objects.active = ob
+    ob.select_set(True)
+    if "UVMap" not in ob.data.uv_layers:
+        ob.data.uv_layers.new(name="UVMap")
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(55), island_margin=margin, area_weight=0.0,
+                             scale_to_bounds=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    me = ob.data
+    uv = me.uv_layers["UVMap"].data
+    a3 = a2 = 0.0
+    for p in me.polygons:
+        lo = list(p.loop_indices)
+        for i in range(1, len(lo) - 1):
+            P = [me.vertices[me.loops[lo[k]].vertex_index].co for k in (0, i, i + 1)]
+            U = [uv[lo[k]].uv for k in (0, i, i + 1)]
+            a3 += ((P[1] - P[0]).cross(P[2] - P[0])).length
+            a2 += abs((U[1] - U[0]).cross(U[2] - U[0]))
+    return math.sqrt(a3 / max(a2, 1e-12))
+
+
+def raster(ob, W, H):
+    """Texel centres covered by the mesh's UVs: returns (rows, cols, P, N)
+    with the surface point and smooth normal behind each covered texel."""
+    me = ob.data
+    me.calc_loop_triangles()
+    nt = len(me.loop_triangles)
+    li = np.zeros(nt * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("loops", li)
+    vi = np.zeros(nt * 3, dtype=np.int64)
+    me.loop_triangles.foreach_get("vertices", vi)
+    uv = np.zeros(len(me.loops) * 2)
+    me.uv_layers["UVMap"].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)[li].reshape(nt, 3, 2) * (W, H)
+    co = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)[vi].reshape(nt, 3, 3)
+    nv = np.zeros(len(me.vertices) * 3)
+    me.vertices.foreach_get("normal", nv)
+    nv = nv.reshape(-1, 3)[vi].reshape(nt, 3, 3)
+    R, C, P, N = [], [], [], []
+    for t in range(nt):
+        a, b, c = uv[t]
+        x0, x1 = int(math.floor(min(a[0], b[0], c[0]))), int(math.ceil(max(a[0], b[0], c[0])))
+        y0, y1 = int(math.floor(min(a[1], b[1], c[1]))), int(math.ceil(max(a[1], b[1], c[1])))
+        xs, ys = np.meshgrid(np.arange(max(x0, 0), min(x1 + 1, W)) + 0.5,
+                             np.arange(max(y0, 0), min(y1 + 1, H)) + 0.5)
+        if xs.size == 0:
+            continue
+        d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+        if abs(d) < 1e-12:
+            continue
+        l0 = ((b[1] - c[1]) * (xs - c[0]) + (c[0] - b[0]) * (ys - c[1])) / d
+        l1 = ((c[1] - a[1]) * (xs - c[0]) + (a[0] - c[0]) * (ys - c[1])) / d
+        l2 = 1 - l0 - l1
+        m = (l0 >= -1e-4) & (l1 >= -1e-4) & (l2 >= -1e-4)
+        if not m.any():
+            continue
+        L = np.stack([l0[m], l1[m], l2[m]], -1)
+        R.append((ys[m] - 0.5).astype(np.int64))
+        C.append((xs[m] - 0.5).astype(np.int64))
+        P.append(L @ co[t])
+        n = L @ nv[t]
+        N.append(n / np.linalg.norm(n, axis=-1, keepdims=True))
+    return np.concatenate(R), np.concatenate(C), np.concatenate(P), np.concatenate(N)
+
+
+def dilate(img, mask, steps=6):
+    """Spreads painted texels into the unpainted ones round them, so
+    island edges don't bleed dark when the texture is filtered."""
+    img, mask = img.copy(), mask.copy()
+    for _ in range(steps):
+        acc = np.zeros_like(img)
+        cnt = np.zeros(mask.shape)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            m = np.roll(np.roll(mask, dy, 0), dx, 1)
+            acc += np.roll(np.roll(img, dy, 0), dx, 1) * m.reshape(m.shape + (1,) * (img.ndim - 2))
+            cnt += m
+        new = (~mask) & (cnt > 0)
+        img[new] = (acc[new].T / cnt[new]).T
+        mask = mask | new
+    return img, mask
+
+
+def normals_from_height(h, du, dv, strength=1.0):
+    """Tangent-space normal colours (H, W, 3) from a height field in cells."""
+    gy, gx = np.gradient(h, dv, du)
+    n = np.stack([-gx * strength, -gy * strength, np.ones_like(h)], axis=-1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    return n * 0.5 + 0.5
+
+
+def frames_facing(pts, toward):
+    """Sweep frames whose first normal leans toward the direction toward,
+    so a tube's texture keeps its v = 0 ridge on that side."""
+    T = []
+    for i in range(len(pts)):
+        a = pts[max(i - 1, 0)]
+        b = pts[min(i + 1, len(pts) - 1)]
+        T.append((b - a).normalized())
+    R = Vector(toward).normalized()
+    N, prev = [], None
+    for t in T:
+        n = R - t * R.dot(t)
+        if n.length < 0.15 and prev is not None:
+            n = prev - t * prev.dot(t)
+        n = n.normalized()
+        if prev is not None and n.dot(prev) < 0.2:
+            n = (prev - t * prev.dot(t)).normalized().lerp(n, 0.3).normalized()
+        N.append(n)
+        prev = n
+    B = [T[i].cross(N[i]) for i in range(len(pts))]
+    return T, N, B
