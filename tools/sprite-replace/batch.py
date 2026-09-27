@@ -104,7 +104,7 @@ def main():
         try:
             bpy.ops.wm.read_factory_settings(use_empty=True)
             spr = carve.Sprite(os.path.join(catalog, "sprites", name + ".png"))
-            shape = shape_of(name)
+            shape = shape_of(name) or r.get("shape")
             if shape:
                 r = dict(r, shape=shape)
             kind = shape if shape in arch.HAND_KINDS else (None if shape else arch.kind_of(r))

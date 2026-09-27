@@ -17,7 +17,7 @@ TOWER_WORDS = ("tower",)
 TENT_WORDS = ("tent",)
 HOUSE_WORDS = ("house", "hut", "hovel", "building", "barn", "shack", "cottage", "well", "temple", "church")
 # kinds only shapes.json assigns, by looking at the sprite
-HAND_KINDS = ("flat", "vault", "granary", "well", "site")
+HAND_KINDS = ("flat", "vault", "granary", "well", "site", "lode_ara", "lode_zon")
 # the top of a lodestone site's plinth, in cells: lodestones stand on it
 SITE_TOP = 0.3
 
@@ -97,6 +97,19 @@ def _ring(r, spr, kind):
     return ((lo + hi + 1) / 2 - hx) / 16.0, max(0.3, rad)
 
 
+def _disc_y(bm, cx, cz, r, thick, seg=20):
+    """A round plate standing upright, facing south (-Y)."""
+    rings = []
+    for y in (-thick / 2, thick / 2):
+        rings.append([bm.verts.new((cx + math.cos(2 * math.pi * i / seg) * r, y,
+                                    cz + math.sin(2 * math.pi * i / seg) * r)) for i in range(seg)])
+    for i in range(seg):
+        j = (i + 1) % seg
+        bm.faces.new((rings[0][i], rings[0][j], rings[1][j], rings[1][i]))
+    bm.faces.new(rings[0])
+    bm.faces.new(list(reversed(rings[1])))
+
+
 def drawn_height(r, spr, kind):
     """How tall the sprite shows the thing, in cells. The unit files'
     height is not the drawn height (walls say 12 cells and are drawn 1),
@@ -127,7 +140,10 @@ def build(r, kind, spr=None):
     # the drawn width, which often overhangs the footprint
     drawn = r["sprite"]["w"] / 16.0
     H = max(0.5, (r["height"] or 32) / 16.0)
-    if spr is not None and kind != "site":
+    if kind in ("lode_ara", "lode_zon"):
+        # a lodestone stands as tall as its 3DO card
+        H = max(0.5, r["height"] / 16.0)
+    elif spr is not None and kind != "site":
         H = min(H, drawn_height(r, spr, kind)) if r["height"] else drawn_height(r, spr, kind)
     bm = bmesh.new()
     if kind in ("wall", "fence"):
@@ -207,6 +223,19 @@ def build(r, kind, spr=None):
         shaft = H - roof
         _cyl(bm, cx, 0, 0, rad, rad * 0.97, shaft, seg=20)
         _cyl(bm, cx, 0, shaft, rad * 1.1, 0.05, roof, seg=20)
+    elif kind == "lode_ara":
+        # a six-sided plinth and a tall crystal on it
+        rad = min(fx, fz) / 2 * 0.8
+        _cyl(bm, 0, 0, 0, rad, rad * 0.92, H * 0.18, seg=6)
+        _cyl(bm, 0, 0, H * 0.18, rad * 0.3, rad * 0.3, H * 0.12, seg=6)
+        _cyl(bm, 0, 0, H * 0.3, rad * 0.3, 0.02, H * 0.7, seg=6)
+    elif kind == "lode_zon":
+        # two posts, a beam and the gong hanging between them
+        half = min(fx, fz) / 2 * 0.85
+        for e in (-1, 1):
+            _cyl(bm, e * half, 0, 0, 0.16, 0.13, H, seg=10)
+        _box(bm, 0, 0, H * 0.88, half * 2 + 0.3, 0.16, 0.14)
+        _disc_y(bm, 0, H * 0.45, min(half * 0.7, H * 0.36), 0.12)
     elif kind == "site":
         # a lodestone site: a two-step round plinth, its top the site art
         rad = max(min(fx, fz) / 2 * 0.95, spr.w / 32.0)
@@ -244,6 +273,10 @@ def build(r, kind, spr=None):
     lo = [min(v.co[i] for v in me.vertices) for i in range(2)]
     hi = [max(v.co[i] for v in me.vertices) for i in range(2)]
     ob["box"] = (lo[0], hi[0], lo[1], hi[1])
+    if kind in ("lode_ara", "lode_zon") and spr is not None:
+        # the painting was drawn for a card leaning back: stretch it down
+        hx0, hy0 = r["sprite"]["hotspot"]
+        ob["zscale"] = max(1.0, (hy0 - _top_row(spr)) / 8.0 / H)
     if kind == "site":
         ob["site_top"] = SITE_TOP
         ob["standTop"] = SITE_TOP

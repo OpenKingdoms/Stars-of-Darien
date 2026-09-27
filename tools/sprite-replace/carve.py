@@ -125,6 +125,8 @@ def carve(r, spr):
     shape = r.get("shape")
     if shape in ("crown", "poplar", "bush"):
         tree, rounded = True, True
+    if shape == "lode":
+        rounded = True
     if "dead" in words:
         rounded = False
     # The box: east-west from the sprite itself (things overhang their
@@ -162,6 +164,10 @@ def carve(r, spr):
     # a tree may stand lower than the sprite's height; its crown still
     # takes the sprite's full height of painting, stretched down
     zscale = 1.0
+    if shape == "lode":
+        # a lodestone stands as tall as its 3DO card; its painting, drawn
+        # for a card leaning back, is stretched down onto it
+        zscale = max(1.0, (hy / (CELL * TILT)) / H)
     if tree:
         wide = (x1 - x0) > 0.6 * H
         trunk_top = H * (0.32 if wide else 0.14)
@@ -224,7 +230,7 @@ def carve(r, spr):
                 elif rounded:
                     # the width of the silhouette at this height, seen at the
                     # middle of the object, sets the radius of this slice
-                    span = spr.row_span(screen(hx, hy, 0, (y0 + y1) / 2, z)[1])
+                    span = spr.row_span(screen(hx, hy, 0, (y0 + y1) / 2, z * zscale)[1])
                     if not span:
                         continue
                     cxs = ((span[0] + span[1]) / 2 - hx) / CELL
