@@ -106,7 +106,7 @@ namespace OpenKingdomsUnity.Game
 
     public enum SeatKind { Closed, Human, Computer }
 
-    public enum AiDifficulty { Easy, Normal, Hard }
+    public enum AiDifficulty { Easy, Normal, Hard, Brutal }
 
     // The engine's command numbers, TAK_CMD_* in tak_commands.h.
     public enum CommandKind

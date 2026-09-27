@@ -74,6 +74,8 @@ namespace OpenKingdomsUnity.Game.World
             for (int i = 0; i < shotCount; i++)
             {
                 var s = shots[i];
+                // Picture shots come through the effects instead.
+                if (s.Kind == 2) continue;
                 var dir = s.Velocity.sqrMagnitude > 1e-4f ? s.Velocity.normalized : Vector3.forward;
                 solid.Add(shaft, 0, shaftMat, Matrix4x4.TRS(s.Position, Quaternion.LookRotation(dir), Vector3.one));
             }

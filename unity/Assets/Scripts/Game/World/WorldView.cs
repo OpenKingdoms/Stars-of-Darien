@@ -12,6 +12,7 @@ namespace OpenKingdomsUnity.Game.World
         public Atmosphere Atmosphere { get; } = new Atmosphere();
         public ModelCache Models { get; private set; }
         public EntityRenderer Entities { get; private set; }
+        public EffectRenderer Effects { get; private set; }
         public GameCamera Camera { get; private set; }
         readonly IGameBackend backend;
 
@@ -25,6 +26,7 @@ namespace OpenKingdomsUnity.Game.World
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
+            Effects = new EffectRenderer(backend);
 
             var cam = UnityEngine.Camera.main;
             if (cam == null)
@@ -63,12 +65,14 @@ namespace OpenKingdomsUnity.Game.World
             // cascades spend their texels where the eye is.
             QualitySettings.shadowDistance = Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f);
             Entities.Render(cam);
+            Effects.Render(cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 
         public void Dispose()
         {
             Entities?.Dispose();
+            Effects?.Dispose();
             Models?.Dispose();
             Terrain.Dispose();
             Atmosphere.Dispose();
