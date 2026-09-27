@@ -29,6 +29,7 @@ namespace OpenKingdomsUnity.Engine
         readonly float[] pose = new float[128 * 12];
         readonly byte[] hidden = new byte[128];
         SkirmishSetup pending;
+        string pendingSave;
         bool loadStarted;
         readonly byte[] statusBuf = new byte[128];
         GameStatus status = GameStatus.Idle;
@@ -99,8 +100,35 @@ namespace OpenKingdomsUnity.Engine
         {
             EndGame();
             pending = setup;
+            pendingSave = null;
             loadStarted = false;
             status = GameStatus.Loading;
+        }
+
+        // Not in IGameBackend yet: saved games. SaveGame writes the running
+        // battle. LoadGame is StartSkirmish for a save: PumpLoading then
+        // brings it up through the same loading screen.
+        public bool SaveGame(string path) => status == GameStatus.Running && OkEngine.okx_save(path) == 0;
+
+        public bool LoadGame(string path)
+        {
+            if (OkEngine.okx_save_info(path, out _) != 0) return false;
+            EndGame();
+            pendingSave = path;
+            pending = new SkirmishSetup();
+            loadStarted = false;
+            status = GameStatus.Loading;
+            return true;
+        }
+
+        public bool SaveInfo(string path, out string map, out uint tick, out DateTime savedAt)
+        {
+            map = null; tick = 0; savedAt = default;
+            if (OkEngine.okx_save_info(path, out var info) != 0) return false;
+            map = info.map;
+            tick = info.tick;
+            savedAt = DateTimeOffset.FromUnixTimeSeconds((long)info.savedAt).UtcDateTime;
+            return true;
         }
 
         // How long one PumpLoading call may work, so the loading screen
@@ -128,6 +156,17 @@ namespace OpenKingdomsUnity.Engine
                 ReadPlayers(setup);
                 status = GameStatus.Running;
                 return new LoadProgress { Fraction = 1, Done = true, Stage = "ready" };
+            }
+            if (pendingSave != null)
+            {
+                if (OkEngine.okx_load_save_begin(pendingSave) != 0)
+                {
+                    pending = null;
+                    status = GameStatus.Failed;
+                    return new LoadProgress { Fraction = 1, Failed = true, Error = OkEngine.LastError, Stage = "failed" };
+                }
+                loadStarted = true;
+                return new LoadProgress { Fraction = 0, Stage = "starting" };
             }
             var cfg = OkxSkirmish.For(setup.MapId);
             cfg.lineOfSight = setup.LineOfSight ? 1 : 0;

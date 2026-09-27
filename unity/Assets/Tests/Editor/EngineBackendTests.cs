@@ -72,6 +72,30 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(backend.Players[1].IsComputer);
         }
 
+        [Test, Order(4)]
+        public void ASavedGameComesBack()
+        {
+            backend.Advance(60);
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units);
+            uint tick = backend.Tick;
+            string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "okunity-test.sav");
+            Assert.IsTrue(backend.SaveGame(path));
+            Assert.IsTrue(backend.SaveInfo(path, out string map, out uint savedTick, out _));
+            Assert.AreEqual("two castles", map);
+            Assert.AreEqual(tick, savedTick);
+            backend.Advance(120);
+            Assert.IsTrue(backend.LoadGame(path));
+            LoadProgress p = default;
+            for (int i = 0; i < 5000 && !p.Done && !p.Failed; i++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            Assert.AreEqual(tick, backend.Tick);
+            var again = new UnitState[512];
+            Assert.AreEqual(n, backend.ReadUnits(again));
+            for (int i = 0; i < n; i++) Assert.AreEqual(units[i].Position, again[i].Position);
+            System.IO.File.Delete(path);
+        }
+
         [Test, Order(3)]
         public void TheBattleReadsAndTakesOrders()
         {

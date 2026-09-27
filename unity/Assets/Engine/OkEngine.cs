@@ -54,6 +54,15 @@ namespace OpenKingdomsUnity.Engine
         public float x, y, z, vx, vy, vz, heading, pitch, roll, fromX, fromY, fromZ;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxSaveInfo
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 96)] public string map;
+        public uint tick;
+        public ulong savedAt;
+        public int players;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct OkxSeat
     {
@@ -160,7 +169,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 8;
+        public const int ApiVersion = 9;
         public const int EffectImpact = 0, EffectProjectile = 1;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
@@ -194,6 +203,9 @@ namespace OpenKingdomsUnity.Engine
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
         [DllImport(Lib)] public static extern int okx_load_begin(ref OkxSkirmish cfg);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_save(string path);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_load_save_begin(string path);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_save_info(string path, out OkxSaveInfo info);
         [DllImport(Lib)] public static extern int okx_load_step(int maxMs, out float progress, [Out] byte[] status, int cap);
         [DllImport(Lib)] public static extern void okx_end_game();
         [DllImport(Lib)] public static extern int okx_tick_rate();
