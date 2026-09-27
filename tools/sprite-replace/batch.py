@@ -23,6 +23,7 @@ from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import arch  # noqa: E402
+import frond  # noqa: E402
 import carve  # noqa: E402
 
 
@@ -65,6 +66,9 @@ def main():
     if names:
         keep = set(names.split(","))
         rows = [r for r in rows if r["name"] in keep]
+    if os.environ.get("ONLY_FROND"):
+        rows = [r for r in rows if not arch.kind_of(r) and (frond.is_decal(r) or frond.is_frond(
+            r, carve.Sprite(os.path.join(catalog, "sprites", r["name"] + ".png"))))]
     only = os.environ.get("ONLY_ARCH")
     if only:
         rows = [r for r in rows if arch.kind_of(r)]
@@ -79,8 +83,19 @@ def main():
             bpy.ops.wm.read_factory_settings(use_empty=True)
             spr = carve.Sprite(os.path.join(catalog, "sprites", name + ".png"))
             kind = arch.kind_of(r)
-            ob = arch.build(r, kind, spr) if kind else carve.carve(r, spr)[0]
+            decal = not kind and frond.is_decal(r)
+            fr = not kind and (decal or frond.is_frond(r, spr))
+            if decal:
+                ob = frond.build_decal(r, spr)
+            elif kind:
+                ob = arch.build(r, kind, spr)
+            elif fr:
+                ob = frond.build(r, spr)
+            else:
+                ob = carve.carve(r, spr)[0]
             carve.paint(ob, r, spr)
+            if fr:
+                frond.cut_out(ob)
             thumbs(ob, out, name)
             bpy.ops.object.select_all(action="DESELECT")
             ob.select_set(True)
