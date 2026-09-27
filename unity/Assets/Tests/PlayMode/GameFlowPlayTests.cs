@@ -71,7 +71,7 @@ namespace OpenKingdomsUnity.Tests
             // Selecting the monarch fills the command and build buttons.
             var ents = root.World.Entities;
             for (int i = 0; i < ents.UnitCount; i++)
-                if (ents.Units[i].Player == 0 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) ents.Selected.Add(ents.Units[i].Handle);
+                if (ents.Units[i].Player == 0 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) mock.Select(new[] { ents.Units[i].Handle }, false);
             // The panel refreshes ten times a second of real time.
             yield return new WaitForSecondsRealtime(0.4f);
             var commands = GameObject.Find("Commands");
@@ -81,7 +81,7 @@ namespace OpenKingdomsUnity.Tests
             yield return null;
             Assert.AreEqual(CommandKind.Build, root.Orders.Armed);
             root.Orders.Disarm();
-            ents.Selected.Clear();
+            mock.Select(new int[0], false);
 
             Assert.IsTrue(root.Flow.Fire(FlowEvent.Pause));
             uint pausedAt = mock.Tick;

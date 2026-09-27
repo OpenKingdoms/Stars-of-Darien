@@ -183,7 +183,7 @@ namespace OpenKingdomsUnity.Game
                     {
                         World = new WorldView(Backend);
                         World.Build(CurrentMap(), Options);
-                        input = new OrderInput(Backend, World);
+                        input = new OrderInput(Backend, World, Options.ClassicControls);
                         Flow.Fire(FlowEvent.Loaded);
                     }
                     break;

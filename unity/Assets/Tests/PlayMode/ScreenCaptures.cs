@@ -59,8 +59,11 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 90; i++) yield return null;
             // Select a few of the player's units, so rings and bars show.
             var e = root.World.Entities;
-            for (int i = 0, n = 0; i < e.UnitCount && n < 6; i++)
-                if (e.Units[i].Player == root.Backend.LocalPlayer) { e.Selected.Add(e.Units[i].Handle); n++; }
+            var pick = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < e.UnitCount && pick.Count < 6; i++)
+                if (e.Units[i].Player == root.Backend.LocalPlayer) pick.Add(e.Units[i].Handle);
+            root.Backend.Select(pick.ToArray(), false);
+            if (root.Orders != null && !root.Orders.Classic) e.Selected.UnionWith(pick);
             // Which features this map has, and what draws each, for the record.
             var feats = new FeatureState[8192];
             int fc = root.Backend.ReadFeatures(feats);

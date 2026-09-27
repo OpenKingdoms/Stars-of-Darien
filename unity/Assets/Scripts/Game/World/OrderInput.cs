@@ -1,10 +1,13 @@
-// OrderInput.cs - the mouse and keys in a running game. Left click or
-// drag selects the player's units (Shift adds). Right click on an enemy
-// attacks it and on the ground moves there in a block. A command armed
-// from the HUD or a key (M move, A attack, P patrol, G guard) waits for
-// the next left click, and a build armed from the build menu shows its
-// ghost on the ground, green where it can stand. S stops, Escape or a
-// right click disarms.
+// OrderInput.cs - the mouse and keys in a running game, in one of two
+// schemes. Classic plays like the original: the engine keeps the
+// selection and decides what a left click means (select a friend, attack
+// an enemy, move to the ground, or carry out an armed command), and a
+// right click or Escape cancels. Modern keeps the selection here, selects
+// with the left button and orders with the right, moving in a block.
+// In both, a drag selects the player's units (Shift adds), M, A, P and G
+// arm move, attack, patrol and guard, S stops, a build armed from the
+// menu shows its ghost, green where it can stand, and Ctrl with a digit
+// makes a group that the digit brings back.
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -20,136 +23,192 @@ namespace OpenKingdomsUnity.Game.World
         Vector3 dragFrom;
         bool dragging;
         Texture2D boxTex;
+        readonly int[] selectionBuffer = new int[EntityRenderer.MaxUnits];
 
-        // The command waiting for a click, if any.
+        public bool Classic = true;
+        // The command waiting for a click, if any, mirrored here for the ghost.
         public CommandKind? Armed { get; private set; }
         public int ArmedDef { get; private set; } = -1;
         public Vector3 GhostAt { get; private set; }
         public bool GhostOk { get; private set; }
 
-        public OrderInput(IGameBackend backend, WorldView world)
+        public OrderInput(IGameBackend backend, WorldView world, bool classic)
         {
             this.backend = backend;
             this.world = world;
+            Classic = classic;
         }
 
         public HashSet<int> Selected => world.Entities.Selected;
+        static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        static bool Ctrl => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
 
         public void Arm(CommandKind kind, int def = -1)
         {
             Armed = kind;
             ArmedDef = def;
+            if (Classic) backend.Arm(kind, def);
         }
 
         public void Disarm()
+        {
+            if (Armed != null && Classic) backend.Cancel();
+            Armed = null;
+            ArmedDef = -1;
+            world.Entities.Ghost = null;
+        }
+
+        void DisarmHere()
         {
             Armed = null;
             ArmedDef = -1;
             world.Entities.Ghost = null;
         }
 
-        static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        public void Stop()
+        {
+            if (Classic) backend.OrderSelection(CommandKind.Stop);
+            else foreach (var h in Selected) backend.Command(GameCommand.To(CommandKind.Stop, h, Vector3.zero));
+        }
+
+        // The selection as the engine keeps it, for the rings and panels.
+        void PullSelection()
+        {
+            int n = backend.ReadSelection(selectionBuffer);
+            Selected.Clear();
+            for (int i = 0; i < n && i < selectionBuffer.Length; i++) Selected.Add(selectionBuffer[i]);
+        }
+
+        // A selection made here, told to the engine so its rules and unit
+        // voices know it.
+        void PushSelection()
+        {
+            var list = new int[Selected.Count];
+            Selected.CopyTo(list);
+            backend.Select(list, false);
+        }
 
         public void Update()
         {
             var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
             if (cam == null) return;
+            if (Classic) PullSelection();
             bool overUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
             var m = Input.mousePosition;
             var units = world.Entities.Units;
             int count = world.Entities.UnitCount;
-            int me = backend.LocalPlayer;
-
             Keys();
-            if (Armed != null) { UpdateArmed(cam, m, overUi, units, count); return; }
+
+            bool onGround = OrderInput.GroundPoint(cam.ScreenPointToRay(m), backend, out var at);
+            UpdateGhost(onGround, at);
+
+            if (Input.GetMouseButtonDown(1) && !overUi)
+            {
+                if (Classic) { backend.Cancel(); DisarmHere(); return; }
+                if (Armed != null) { DisarmHere(); return; }
+                if (Selected.Count > 0)
+                {
+                    int enemy = Pick(cam, m, units, count, false);
+                    if (enemy >= 0) OrderAll(CommandKind.Attack, Vector3.zero, enemy);
+                    else if (onGround) MoveBlock(CommandKind.Move, at);
+                }
+            }
+            if (Input.GetKeyDown(KeyCode.Escape) && Armed != null) { Disarm(); }
 
             if (Input.GetMouseButtonDown(0) && !overUi) { dragFrom = m; dragging = true; }
-            if (Input.GetMouseButtonUp(0) && dragging)
+            if (!Input.GetMouseButtonUp(0) || !dragging) return;
+            dragging = false;
+
+            if ((m - dragFrom).magnitude > DragPixels && Armed == null)
             {
-                dragging = false;
-                if (!Shift) Selected.Clear();
-                if ((m - dragFrom).magnitude > DragPixels)
+                var box = Rect.MinMaxRect(Mathf.Min(m.x, dragFrom.x), Mathf.Min(m.y, dragFrom.y), Mathf.Max(m.x, dragFrom.x), Mathf.Max(m.y, dragFrom.y));
+                var inBox = new List<int>();
+                for (int i = 0; i < count; i++)
                 {
-                    var box = Rect.MinMaxRect(Mathf.Min(m.x, dragFrom.x), Mathf.Min(m.y, dragFrom.y), Mathf.Max(m.x, dragFrom.x), Mathf.Max(m.y, dragFrom.y));
-                    for (int i = 0; i < count; i++)
-                    {
-                        if (units[i].Player != me || (units[i].Flags & UnitFlags.Dying) != 0) continue;
-                        var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
-                        if (s.z > 0 && box.Contains(s)) Selected.Add(units[i].Handle);
-                    }
+                    if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Dying) != 0) continue;
+                    var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
+                    if (s.z > 0 && box.Contains(s)) inBox.Add(units[i].Handle);
                 }
+                if (Classic) { backend.Select(inBox.ToArray(), Shift); PullSelection(); }
                 else
                 {
-                    int hit = Pick(cam, m, units, count, true);
-                    if (hit >= 0) Selected.Add(hit);
+                    if (!Shift) Selected.Clear();
+                    Selected.UnionWith(inBox);
+                    PushSelection();
                 }
+                return;
             }
 
-            if (Input.GetMouseButtonDown(1) && !overUi && Selected.Count > 0)
+            if (Classic)
             {
-                int enemy = Pick(cam, m, units, count, false);
-                if (enemy >= 0) OrderAll(CommandKind.Attack, Vector3.zero, enemy);
-                else if (GroundPoint(cam.ScreenPointToRay(m), backend, out var at)) MoveBlock(CommandKind.Move, at);
+                int unit = Pick(cam, m, units, count, null);
+                if (unit >= 0 || onGround)
+                {
+                    if (Armed == CommandKind.Build && !GhostOk) return;
+                    backend.Click(Armed == CommandKind.Build ? GhostAt : at, Armed == CommandKind.Build ? -1 : unit, Shift);
+                    if (Armed != null && !Shift) DisarmHere();
+                    PullSelection();
+                }
+                return;
             }
 
-            // Forget units that are gone.
-            if (Time.frameCount % 30 == 0 && Selected.Count > 0)
-            {
-                var alive = new HashSet<int>();
-                for (int i = 0; i < count; i++) if ((units[i].Flags & UnitFlags.Dying) == 0) alive.Add(units[i].Handle);
-                Selected.IntersectWith(alive);
-            }
+            if (Armed != null) { CarryOut(cam, m, units, count, onGround, at); return; }
+            if (!Shift) Selected.Clear();
+            int hit = Pick(cam, m, units, count, true);
+            if (hit >= 0) Selected.Add(hit);
+            PushSelection();
         }
 
         void Keys()
         {
+            // Groups: Ctrl and a digit makes one, the digit brings it back.
+            for (int g = 0; g <= 9; g++)
+            {
+                if (!Input.GetKeyDown(KeyCode.Alpha0 + g)) continue;
+                if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); }
+                else if (backend.RecallGroup(g) > 0) PullSelection();
+            }
             if (Selected.Count == 0) return;
-            if (Input.GetKeyDown(KeyCode.S)) { Stop(); Disarm(); }
+            if (Input.GetKeyDown(KeyCode.S) && !Ctrl) { Stop(); Disarm(); }
             if (Input.GetKeyDown(KeyCode.M)) Arm(CommandKind.Move);
             if (Input.GetKeyDown(KeyCode.A)) Arm(CommandKind.Attack);
             if (Input.GetKeyDown(KeyCode.P)) Arm(CommandKind.Patrol);
             if (Input.GetKeyDown(KeyCode.G)) Arm(CommandKind.Guard);
         }
 
-        public void Stop()
+        void UpdateGhost(bool onGround, Vector3 at)
         {
-            foreach (var h in Selected) backend.Command(GameCommand.To(CommandKind.Stop, h, Vector3.zero));
+            if (Armed != CommandKind.Build) { world.Entities.Ghost = null; return; }
+            GhostOk = false;
+            if (onGround)
+            {
+                GhostOk = backend.CanBuildAt(ArmedDef, at, out var snapped);
+                GhostAt = snapped;
+            }
+            world.Entities.Ghost = onGround ? new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = GhostOk } : (EntityRenderer.GhostState?)null;
         }
 
-        void UpdateArmed(Camera cam, Vector3 m, bool overUi, UnitState[] units, int count)
+        // The modern scheme's armed command, sent unit by unit.
+        void CarryOut(Camera cam, Vector3 m, UnitState[] units, int count, bool onGround, Vector3 at)
         {
-            if (Input.GetKeyDown(KeyCode.Escape) || (Input.GetMouseButtonDown(1) && !overUi)) { Disarm(); return; }
-            bool onGround = GroundPoint(cam.ScreenPointToRay(m), backend, out var at);
-
-            if (Armed == CommandKind.Build)
-            {
-                GhostOk = false;
-                if (onGround)
-                {
-                    GhostOk = backend.CanBuildAt(ArmedDef, at, out var snapped);
-                    GhostAt = snapped;
-                }
-                world.Entities.Ghost = onGround ? new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = GhostOk } : (EntityRenderer.GhostState?)null;
-                if (Input.GetMouseButtonDown(0) && !overUi && GhostOk)
-                {
-                    foreach (var h in Selected)
-                        backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift });
-                    if (!Shift) Disarm();
-                }
-                return;
-            }
-
-            if (!Input.GetMouseButtonDown(0) || overUi) return;
             var kind = Armed.Value;
-            int target = Pick(cam, m, units, count, kind == CommandKind.Guard);
-            if (kind == CommandKind.Attack && target < 0) target = Pick(cam, m, units, count, false);
-            if (target >= 0 && (kind == CommandKind.Attack || kind == CommandKind.Guard)) OrderAll(kind, Vector3.zero, target);
-            else if (onGround)
+            if (kind == CommandKind.Build)
             {
-                if (kind == CommandKind.Attack) OrderAll(CommandKind.AttackGround, at, -1);
-                else MoveBlock(kind, at);
+                if (!GhostOk) return;
+                foreach (var h in Selected)
+                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift });
             }
-            if (!Shift) Disarm();
+            else
+            {
+                int target = Pick(cam, m, units, count, kind == CommandKind.Guard ? true : (bool?)null);
+                if (target >= 0 && (kind == CommandKind.Attack || kind == CommandKind.Guard)) OrderAll(kind, Vector3.zero, target);
+                else if (onGround)
+                {
+                    if (kind == CommandKind.Attack) OrderAll(CommandKind.AttackGround, at, -1);
+                    else MoveBlock(kind, at);
+                }
+            }
+            if (!Shift) DisarmHere();
         }
 
         void OrderAll(CommandKind kind, Vector3 at, int target)
@@ -161,6 +220,12 @@ namespace OpenKingdomsUnity.Game.World
         // Moves in a square block around the point, turned with the camera.
         public void MoveBlock(CommandKind kind, Vector3 at)
         {
+            if (Classic && kind == CommandKind.Move)
+            {
+                backend.Arm(CommandKind.Move);
+                backend.Click(at, -1, Shift);
+                return;
+            }
             int k = 0, side = Mathf.CeilToInt(Mathf.Sqrt(Selected.Count));
             foreach (var h in Selected)
             {
@@ -172,14 +237,17 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
-        int Pick(Camera cam, Vector3 m, UnitState[] units, int count, bool own)
+        // The unit nearest the pointer: the player's own, anyone else's, or
+        // either when own is null.
+        int Pick(Camera cam, Vector3 m, UnitState[] units, int count, bool? own)
         {
             int best = -1;
             float bestD = PickPixels;
             int me = backend.LocalPlayer;
             for (int i = 0; i < count; i++)
             {
-                if ((units[i].Flags & UnitFlags.Dying) != 0 || (units[i].Player == me) != own) continue;
+                if ((units[i].Flags & UnitFlags.Dying) != 0) continue;
+                if (own != null && (units[i].Player == me) != own.Value) continue;
                 var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * 0.6f);
                 if (s.z <= 0) continue;
                 float d = Vector2.Distance(s, m);

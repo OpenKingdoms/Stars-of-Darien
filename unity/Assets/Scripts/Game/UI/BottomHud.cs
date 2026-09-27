@@ -55,7 +55,7 @@ namespace OpenKingdomsUnity.Game.UI
 
             // What is selected, in the middle.
             var info = UiKit.Panel(panel, "Selection", true);
-            info.Place(0, 0, 0.5f, 1, 270, 14, -40, 18);
+            info.Place(0, 0, 0.5f, 1, 270, 14, -10, 18);
             title = UiKit.Label(info, "", 32, UiKit.Ink, TextAnchor.UpperLeft, true);
             title.GetComponent<Shadow>().enabled = false;
             title.rectTransform.Place(0, 1, 1, 1, 22, -60, 22, 14);
@@ -69,7 +69,7 @@ namespace OpenKingdomsUnity.Game.UI
             order.rectTransform.Place(0, 0, 1, 0, 22, 12, 22, -44);
 
             // Commands and builds, on the right.
-            grid = UiKit.Rect(panel, "Commands").Place(0.5f, 0, 1, 1, 0, 14, 16, 18);
+            grid = UiKit.Rect(panel, "Commands").Place(0.5f, 0, 1, 1, 24, 14, 16, 18);
             var g = grid.gameObject.AddComponent<GridLayoutGroup>();
             g.cellSize = new Vector2(150, 64);
             g.spacing = new Vector2(8, 8);
@@ -209,7 +209,19 @@ namespace OpenKingdomsUnity.Game.UI
             RefreshGrid(chosen);
         }
 
-        static string Nice(UnitDef d) => string.IsNullOrEmpty(d.Description) ? d.Name : d.Description;
+        static string Nice(UnitDef d) =>
+            !string.IsNullOrEmpty(d.Title) ? d.Title : string.IsNullOrEmpty(d.Description) ? d.Name : d.Description;
+
+        readonly Dictionary<int, Texture2D> pictures = new Dictionary<int, Texture2D>();
+
+        Texture2D Picture(int def)
+        {
+            if (pictures.TryGetValue(def, out var t)) return t;
+            t = UiKit.ToTexture(root.Backend.UnitPicture(def), true);
+            if (t != null) t.filterMode = FilterMode.Trilinear;
+            pictures[def] = t;
+            return t;
+        }
 
         static string OrderText(UnitOrder o, IGameBackend b)
         {
@@ -272,9 +284,22 @@ namespace OpenKingdomsUnity.Game.UI
                 if (option < 0 || option >= b.UnitDefs.Count) continue;
                 var od = b.UnitDefs[option];
                 int id = option;
-                var btn = UiKit.MakeButton(grid, $"{Nice(od)}\n{od.ManaCost}", null, 19);
+                var pic = Picture(id);
+                var btn = UiKit.MakeButton(grid, pic != null ? "" : $"{Nice(od)}\n{od.ManaCost}", null, 19);
                 var text = btn.GetComponentInChildren<Text>();
                 text.lineSpacing = 0.85f;
+                if (pic != null)
+                {
+                    // The game's own build picture, with the cost on it.
+                    var img = UiKit.Rect(btn.transform, "Picture").Fill(4).gameObject.AddComponent<RawImage>();
+                    img.texture = pic;
+                    img.raycastTarget = false;
+                    var fit = img.gameObject.AddComponent<AspectRatioFitter>();
+                    fit.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+                    fit.aspectRatio = (float)pic.width / pic.height;
+                    var cost = UiKit.Label(btn.transform, od.ManaCost.ToString(), 18, UiKit.GoldBright, TextAnchor.LowerRight);
+                    cost.rectTransform.Fill(6);
+                }
                 Text badge = null;
                 if (factory >= 0)
                 {
@@ -305,6 +330,7 @@ namespace OpenKingdomsUnity.Game.UI
         {
             if (mapTex != null) Object.Destroy(mapTex);
             if (dotTex != null) Object.Destroy(dotTex);
+            foreach (var t in pictures.Values) if (t != null) Object.Destroy(t);
         }
     }
 

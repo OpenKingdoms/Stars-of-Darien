@@ -15,6 +15,8 @@ namespace OpenKingdomsUnity.Game
         public int GameSpeed = 1;   // 1 normal, 2 fast
         public float Volume = 0.8f;
         public bool Music = true;
+        // Classic: left click orders, as the original. Modern: right click orders.
+        public bool ClassicControls = true;
 
         const string Prefix = "oku.";
 
@@ -29,6 +31,7 @@ namespace OpenKingdomsUnity.Game
             o.GameSpeed = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "speed", 1), 1, 2);
             o.Volume = Mathf.Clamp01(PlayerPrefs.GetFloat(Prefix + "volume", 0.8f));
             o.Music = PlayerPrefs.GetInt(Prefix + "music", 1) != 0;
+            o.ClassicControls = PlayerPrefs.GetInt(Prefix + "classic", 1) != 0;
             return o;
         }
 
@@ -42,6 +45,7 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.SetInt(Prefix + "speed", GameSpeed);
             PlayerPrefs.SetFloat(Prefix + "volume", Volume);
             PlayerPrefs.SetInt(Prefix + "music", Music ? 1 : 0);
+            PlayerPrefs.SetInt(Prefix + "classic", ClassicControls ? 1 : 0);
             PlayerPrefs.Save();
         }
 
