@@ -198,7 +198,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 15;
+        public const int ApiVersion = 16;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
         public const int NetOff = 0, NetConnecting = 1, NetLobby = 2, NetRoom = 3, NetLoading = 4,
             NetPlaying = 5, NetRefused = 6, NetGone = 7;
@@ -239,6 +239,9 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_select(int[] handles, int n, int add);
         [DllImport(Lib)] public static extern int okx_selection([Out] int[] handles, int cap);
         [DllImport(Lib)] public static extern void okx_click(float x, float z, int unit, int shift);
+        [DllImport(Lib)] public static extern int okx_cursor_at(float x, float z, int unit, out int clear);
+        [DllImport(Lib)] public static extern int okx_cursor_frame(int cursor, int frame, [Out] byte[] rgba, int cap,
+            out int w, out int h, out int hotX, out int hotY, out int ms);
         [DllImport(Lib)] public static extern void okx_cancel();
         [DllImport(Lib)] public static extern void okx_arm(int mode, int def);
         [DllImport(Lib)] public static extern int okx_armed(out int def);

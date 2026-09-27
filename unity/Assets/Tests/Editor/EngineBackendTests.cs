@@ -104,6 +104,45 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(0, backend.ReadSelection(sel));
         }
 
+        [Test, Order(6)]
+        public void ThePointerIsTheGamesPickWithItsOwnArt()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units);
+            int me = backend.LocalPlayer, mine = -1, theirs = -1;
+            for (int i = 0; i < n; i++)
+            {
+                if ((units[i].Flags & UnitFlags.Active) == 0) continue;
+                if (units[i].Player == me && mine < 0) mine = i;
+                if (units[i].Player != me && theirs < 0) theirs = i;
+            }
+            Assert.IsTrue(mine >= 0 && theirs >= 0);
+            var u = units[mine];
+            var e = units[theirs];
+            backend.Cancel();
+            backend.Cancel();
+            Assert.AreEqual(GameCursor.Select, backend.CursorAt(u.Position, u.Handle, out _));
+            backend.Select(new[] { u.Handle }, false);
+            Assert.AreEqual(GameCursor.Attack, backend.CursorAt(e.Position, e.Handle, out _));
+            backend.Arm(CommandKind.Patrol);
+            Assert.AreEqual(GameCursor.Patrol, backend.CursorAt(u.Position + new Vector3(20f, 0f, 0f), -1, out _));
+            backend.Cancel();
+            backend.Cancel();
+
+            foreach (GameCursor c in System.Enum.GetValues(typeof(GameCursor)))
+            {
+                var art = backend.CursorArt(c);
+                Assert.IsNotNull(art, c.ToString());
+                foreach (var f in art)
+                {
+                    Assert.Greater(f.Image.Width, 0);
+                    Assert.IsTrue(f.Hotspot.x >= 0 && f.Hotspot.x < f.Image.Width && f.Hotspot.y >= 0 && f.Hotspot.y < f.Image.Height, c.ToString());
+                    Assert.Greater(f.Millis, 0);
+                }
+            }
+            Assert.Greater(backend.CursorArt(GameCursor.Revive).Length, 1, "the revive pointer moves");
+        }
+
         [Test, Order(4)]
         public void ASavedGameComesBack()
         {

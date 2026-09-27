@@ -620,6 +620,30 @@ namespace OpenKingdomsUnity.Engine
 
         public void Cancel() => OkEngine.okx_cancel();
 
+        public GameCursor CursorAt(Vector3 at, int unit, out bool siteClear)
+        {
+            int c = OkEngine.okx_cursor_at(at.x / S, -at.z / S, unit, out int clear);
+            siteClear = clear != 0;
+            return (GameCursor)c;
+        }
+
+        // The engine's cursor numbers are GameCursor's.
+        public CursorFrame[] CursorArt(GameCursor cursor)
+        {
+            int frames = OkEngine.okx_cursor_frame((int)cursor, 0, null, 0, out _, out _, out _, out _, out _);
+            if (frames <= 0) return null;
+            var art = new CursorFrame[frames];
+            for (int f = 0; f < frames; f++)
+            {
+                OkEngine.okx_cursor_frame((int)cursor, f, null, 0, out int w, out int h, out _, out _, out _);
+                if (w <= 0 || h <= 0) return null;
+                var img = new RgbaImage(w, h);
+                OkEngine.okx_cursor_frame((int)cursor, f, img.Pixels, img.Pixels.Length, out w, out h, out int hx, out int hy, out int ms);
+                art[f] = new CursorFrame { Image = img, Hotspot = new Vector2Int(hx, hy), Millis = ms };
+            }
+            return art;
+        }
+
         public void Arm(CommandKind kind, int buildDef = -1)
         {
             int mode;

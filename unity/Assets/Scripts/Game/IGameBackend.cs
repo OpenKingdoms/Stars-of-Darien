@@ -103,6 +103,14 @@ namespace OpenKingdomsUnity.Game
         int ReadSelection(int[] into);
         void Click(Vector3 at, int unit, bool shift);
         void Cancel();
+        // The pointer the original shows at a ground point or over `unit`
+        // (-1 for ground), from the selection and any armed command, as the
+        // game decides it. For Place, siteClear says whether the armed
+        // building can stand there.
+        GameCursor CursorAt(Vector3 at, int unit, out bool siteClear);
+        // A cursor's frames from the game's own art, or null when the
+        // backend has none and the system pointer stays.
+        CursorFrame[] CursorArt(GameCursor cursor);
         // Arm a command button so the next Click carries it out: Move,
         // Attack, Guard, Patrol, Load, Unload, Repair, Reclaim, or Build with
         // the building's def.
@@ -161,6 +169,43 @@ namespace OpenKingdomsUnity.Game
     public enum AiDifficulty { Easy, Normal, Hard, Brutal }
 
     // The engine's command numbers, TAK_CMD_* in tak_commands.h.
+    // The original's pointers. Place is a building's ghost with the plain
+    // pointer, Cannot is the red pointer and Busy the hourglass.
+    public enum GameCursor
+    {
+        Normal, Select, Move, Attack, Guard, Patrol, Load, Unload, Repair, Reclaim,
+        Revive, Place, Cannot, Busy
+    }
+
+    public static class GameCursors
+    {
+        // The pointer an armed command shows.
+        public static GameCursor For(CommandKind kind)
+        {
+            switch (kind)
+            {
+                case CommandKind.Move: return GameCursor.Move;
+                case CommandKind.Attack: case CommandKind.AttackGround: return GameCursor.Attack;
+                case CommandKind.Guard: return GameCursor.Guard;
+                case CommandKind.Patrol: return GameCursor.Patrol;
+                case CommandKind.Load: return GameCursor.Load;
+                case CommandKind.Unload: return GameCursor.Unload;
+                case CommandKind.Repair: return GameCursor.Repair;
+                case CommandKind.Reclaim: case CommandKind.ReclaimFeature: return GameCursor.Reclaim;
+                case CommandKind.ResurrectFeature: return GameCursor.Revive;
+                case CommandKind.Build: return GameCursor.Place;
+                default: return GameCursor.Normal;
+            }
+        }
+    }
+
+    public sealed class CursorFrame
+    {
+        public RgbaImage Image;
+        public Vector2Int Hotspot;  // the pixel the pointer's position falls on, from the top left
+        public int Millis;          // how long this frame shows
+    }
+
     public enum CommandKind
     {
         Move = 1, Attack, Build, Stop, Patrol, Guard, Repair, Reclaim, Capture,

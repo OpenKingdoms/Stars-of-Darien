@@ -29,6 +29,7 @@ namespace OpenKingdomsUnity.Game
         OrderInput input;
         public OrderInput Orders => input;
         public MapEditTool Editor { get; private set; }
+        public GameCursorView Pointer { get; private set; }
         float clock;
         string pendingLoad;
         bool loadRefused;
@@ -50,6 +51,7 @@ namespace OpenKingdomsUnity.Game
             Backend = injected ?? BackendFactory?.Invoke() ?? new MockBackend();
             Options = GameOptions.Load();
             Setup = DefaultSetup(Backend);
+            Pointer = new GameCursorView(Backend.CursorArt, Options.CursorScale);
             Flow.Changed += OnFlow;
             Screens = new MenuScreens(this);
             Screens.Show(Flow.State);
@@ -221,6 +223,16 @@ namespace OpenKingdomsUnity.Game
                 if (!Application.isBatchMode) TellView();
             }
             Screens.Tick();
+            Pointer.Show(PointerCursor(), Time.unscaledTime);
+        }
+
+        // The hourglass while loading, the game's pick in a battle, and the
+        // plain pointer on every screen.
+        public GameCursor PointerCursor()
+        {
+            if (Flow.State == FlowState.Loading) return GameCursor.Busy;
+            if (Flow.State == FlowState.Playing && input != null) return input.PointerCursor();
+            return GameCursor.Normal;
         }
 
         // ---- Saved games ----
@@ -298,6 +310,7 @@ namespace OpenKingdomsUnity.Game
         {
             EndGame();
             Screens?.Dispose();
+            Pointer?.Dispose();
             Backend?.Dispose();
         }
     }

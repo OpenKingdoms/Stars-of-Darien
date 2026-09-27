@@ -46,8 +46,10 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual("Skirmish", root.Screens.Visible);
             Assert.IsTrue(root.Screens.Screen("Skirmish").activeInHierarchy);
             root.Setup.MapId = "mock_isles";
+            Assert.AreEqual(GameCursor.Normal, root.PointerCursor());
             root.Screens.StartGame();
             Assert.AreEqual(FlowState.Loading, root.Flow.State);
+            Assert.AreEqual(GameCursor.Busy, root.PointerCursor(), "the hourglass while the map loads");
 
             bool sawLoading = false;
             yield return Until(() =>

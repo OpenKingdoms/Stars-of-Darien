@@ -31,6 +31,11 @@ namespace OpenKingdomsUnity.Game.World
         public int ArmedDef { get; private set; } = -1;
         public Vector3 GhostAt { get; private set; }
         public bool GhostOk { get; private set; }
+        // What the pointer was over at the last Update.
+        public bool PointerOverUi { get; private set; } = true;
+        public bool PointerOnGround { get; private set; }
+        public Vector3 PointerAt { get; private set; }
+        public int PointerUnit { get; private set; } = -1;
 
         public OrderInput(IGameBackend backend, WorldView world, bool classic)
         {
@@ -101,6 +106,10 @@ namespace OpenKingdomsUnity.Game.World
 
             bool onGround = OrderInput.GroundPoint(cam.ScreenPointToRay(m), backend, out var at);
             UpdateGhost(onGround, at);
+            PointerOverUi = overUi;
+            PointerOnGround = onGround;
+            PointerAt = at;
+            PointerUnit = overUi ? -1 : Pick(cam, m, units, count, null);
 
             if (Input.GetMouseButtonDown(1) && !overUi)
             {
@@ -157,6 +166,16 @@ namespace OpenKingdomsUnity.Game.World
             int hit = Pick(cam, m, units, count, true);
             if (hit >= 0) Selected.Add(hit);
             PushSelection();
+        }
+
+        // The pointer for what it is over: the game decides, as in the
+        // original, except for a command armed only here by the modern
+        // scheme.
+        public GameCursor PointerCursor()
+        {
+            if (PointerOverUi || (PointerUnit < 0 && !PointerOnGround)) return GameCursor.Normal;
+            if (!Classic && Armed != null) return GameCursors.For(Armed.Value);
+            return backend.CursorAt(PointerAt, PointerUnit, out _);
         }
 
         void Keys()

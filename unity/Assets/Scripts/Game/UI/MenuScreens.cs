@@ -352,6 +352,11 @@ namespace OpenKingdomsUnity.Game.UI
                 o.ClassicControls = i == 0;
                 if (root.Orders != null) root.Orders.Classic = o.ClassicControls;
             });
+            OptionRow(rows, "Pointer size", new[] { "Fit screen", "1x", "2x", "3x", "4x" }, o.CursorScale, i =>
+            {
+                o.CursorScale = i;
+                if (root.Pointer != null) root.Pointer.ScaleSetting = i;
+            });
             var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
             int vi = 0;
             for (int k = 0; k < volumes.Length; k++) if (Mathf.Abs(volumes[k] - o.Volume) < Mathf.Abs(volumes[vi] - o.Volume)) vi = k;

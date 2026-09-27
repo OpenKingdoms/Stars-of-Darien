@@ -864,6 +864,23 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
+        // The original's rules, simply: an armed command shows its own
+        // pointer, an enemy the sword once something is selected, any other
+        // unit the select hand.
+        public GameCursor CursorAt(Vector3 at, int unit, out bool siteClear)
+        {
+            siteClear = false;
+            if (mockIsArmed)
+            {
+                if (mockArmed == CommandKind.Build) { siteClear = CanBuildAt(mockArmedDef, at, out _); return GameCursor.Place; }
+                return GameCursors.For(mockArmed);
+            }
+            if (unit < 0 || !byHandle.TryGetValue(unit, out var u) || u.Dying) return GameCursor.Normal;
+            return u.Player != LocalPlayer && mockSelection.Count > 0 ? GameCursor.Attack : GameCursor.Select;
+        }
+
+        public CursorFrame[] CursorArt(GameCursor cursor) => null;
+
         public void Cancel()
         {
             if (mockIsArmed) mockIsArmed = false;
