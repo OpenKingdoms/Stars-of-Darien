@@ -478,19 +478,27 @@ namespace OpenKingdomsUnity.Game.World
             foreach (var d in featureDraws)
                 if (!featureHidden[d.feature]) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, d.m);
 
-            // Upright quads turned about y to face the camera.
-            var fwd = cam.transform.forward;
-            fwd.y = 0;
-            var face = fwd.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fwd) : Quaternion.identity;
             foreach (var s in spriteFeatures)
             {
                 if (featureHidden[s.feature]) continue;
                 var mat = SpriteMaterial(s.sprite);
                 if (mat == null) continue;
-                float h = s.top - s.bottom;
-                var centre = s.pos + Vector3.up * (s.bottom + h * 0.5f) + face * Vector3.right * (s.w * 0.5f - s.offX);
-                billboards.Add(quad, 0, mat, Matrix4x4.TRS(centre, face, new Vector3(s.w, h, 1)));
+                billboards.Add(quad, 0, mat, CardMatrix(s.pos, s.w, s.bottom, s.top, s.offX, cam.transform));
             }
+        }
+
+        // How far a feature card is drawn toward the camera, shrunk to look
+        // the same, so rising ground behind it does not cut it.
+        public const float CardNudge = 0.5f;
+
+        // A sprite feature's card, for the centred unit quad: in the camera's
+        // plane and standing on its point, so it keeps its height at any tilt.
+        public static Matrix4x4 CardMatrix(Vector3 pos, float w, float bottom, float top, float offX, Transform cam)
+        {
+            EffectRenderer.Nudged(pos, cam, CardNudge, out var pivot, out float k);
+            float h = top - bottom;
+            var centre = pivot + (cam.up * (bottom + h * 0.5f) + cam.right * (w * 0.5f - offX)) * k;
+            return Matrix4x4.TRS(centre, cam.rotation, new Vector3(w * k, h * k, 1));
         }
 
         static bool IsWave(FeatureDef d) =>

@@ -1,5 +1,5 @@
 // EffectRenderer.cs - the engine's effects and picture projectiles, each
-// frame a quad standing on its point and turned to the camera like the
+// frame a quad in the camera's plane standing on its point, like the
 // sprite features, gathered into one mesh per strip picture and redrawn
 // every frame.
 using System.Collections.Generic;
@@ -30,25 +30,53 @@ namespace OpenKingdomsUnity.Game.World
 
         public EffectRenderer(IGameBackend backend) => this.backend = backend;
 
+        readonly Vector3[] corners = new Vector3[4];
+
+        // How far an effect is drawn toward the camera from its point, shrunk
+        // to look the same, so the ground beside it never cuts it.
+        public const float Nudge = 1f;
+
+        // An effect's picture as four corners, bottom left first and
+        // anticlockwise seen from the camera: in the camera's plane and
+        // standing on its point, so it shows its full height at any tilt.
+        public static void Corners(in EffectState e, Transform cam, Vector3[] into)
+        {
+            Nudged(e.Position, cam, Nudge, out var pivot, out float k);
+            var right = cam.right * k;
+            var up = cam.up * k;
+            var left = pivot - right * e.OffsetX;
+            var r = right * e.Width;
+            var lo = up * e.Bottom;
+            var hi = up * e.Top;
+            into[0] = left + lo; into[1] = left + r + lo; into[2] = left + r + hi; into[3] = left + hi;
+        }
+
+        // A point moved toward the camera by up to nudge, and the scale that
+        // keeps a picture drawn there the same size on screen.
+        public static void Nudged(Vector3 at, Transform cam, float nudge, out Vector3 pivot, out float scale)
+        {
+            var toCam = cam.position - at;
+            float dist = toCam.magnitude;
+            pivot = at;
+            scale = 1f;
+            if (dist < 1e-4f) return;
+            float d = Mathf.Min(nudge, dist * 0.5f);
+            pivot = at + toCam * (d / dist);
+            scale = (dist - d) / dist;
+        }
+
         public void Render(Camera cam)
         {
             foreach (var b in batches.Values) { b.V.Clear(); b.U.Clear(); b.C.Clear(); b.T.Clear(); }
             Count = Mathf.Min(backend.ReadEffects(effects), effects.Length);
-            var fwd = cam.transform.forward;
-            fwd.y = 0;
-            var face = fwd.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fwd) : Quaternion.identity;
-            var right = face * Vector3.right;
             for (int i = 0; i < Count; i++)
             {
                 var e = effects[i];
                 if (e.Width <= 0 || e.Top <= e.Bottom) continue;
                 if (!batches.TryGetValue(e.Strip, out var b)) batches[e.Strip] = b = new Batch();
-                var left = e.Position - right * e.OffsetX;
-                var r = right * e.Width;
-                var lo = Vector3.up * e.Bottom;
-                var hi = Vector3.up * e.Top;
+                Corners(e, cam.transform, corners);
                 int v = b.V.Count;
-                b.V.Add(left + lo); b.V.Add(left + r + lo); b.V.Add(left + r + hi); b.V.Add(left + hi);
+                b.V.Add(corners[0]); b.V.Add(corners[1]); b.V.Add(corners[2]); b.V.Add(corners[3]);
                 // The strip is uploaded the right way up, so row 0 is v = 1.
                 float u0 = e.UvMin.x, u1 = e.UvMax.x, vTop = 1f - e.UvMin.y, vBottom = 1f - e.UvMax.y;
                 b.U.Add(new Vector2(u0, vBottom)); b.U.Add(new Vector2(u1, vBottom)); b.U.Add(new Vector2(u1, vTop)); b.U.Add(new Vector2(u0, vTop));
