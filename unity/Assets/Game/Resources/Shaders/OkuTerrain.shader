@@ -1,5 +1,6 @@
-// The ground: its picture, lit, taking shadows, with a faint detail
-// noise up close and a wet darkening near the water line.
+// The ground: its picture, lit, taking shadows, with detail and bumps up
+// close, rock laid on three planes over cliffs, and a wet darkening near
+// the water line.
 Shader "OpenKingdoms/Presentation/Terrain"
 {
     Properties
@@ -37,6 +38,8 @@ Shader "OpenKingdoms/Presentation/Terrain"
             #pragma multi_compile_fog
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
+            TEXTURE2D(_OkuDetail); SAMPLER(sampler_OkuDetail);
+            float4 _OkuDetailParams;    // tile size, fade start and end, on
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
@@ -55,9 +58,38 @@ Shader "OpenKingdoms/Presentation/Terrain"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                half3 n = normalize(i.normalWS);
+                if (_OkuDetailParams.w > 0)
+                {
+                    float s = 1 / _OkuDetailParams.x;
+                    // The picture smears down steep faces, so there a blur of
+                    // it tints a rock pattern laid on three planes.
+                    half steep = smoothstep(0.25, 0.5, 1 - n.y);
+                    if (steep > 0)
+                    {
+                        half3 macro = SAMPLE_TEXTURE2D_LOD(_MainTex, sampler_MainTex, i.uv, 5).rgb;
+                        float3 w = pow(abs(n), 4);
+                        w /= w.x + w.y + w.z;
+                        half rock = SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.zy * s).a * w.x
+                                  + SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.xz * s).a * w.y
+                                  + SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.xy * s).a * w.z;
+                        c.rgb = lerp(c.rgb, macro * rock * 2, steep);
+                    }
+                    // Up close, lightness and bumps around the picture's own,
+                    // from two scales so the tiling does not show.
+                    float dist = distance(GetCameraPositionWS(), i.positionWS);
+                    half fade = saturate((_OkuDetailParams.z - dist) / (_OkuDetailParams.z - _OkuDetailParams.y));
+                    if (fade > 0)
+                    {
+                        float2 p = i.positionWS.xz * s;
+                        half4 d = (SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, p) + SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, p * 0.37 + 0.21)) * 0.5;
+                        c.rgb *= lerp(1, d.r * 2, fade);
+                        n = normalize(n - half3(d.g * 2 - 1, 0, d.b * 2 - 1) * fade * 0.8);
+                    }
+                }
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
                 c.rgb *= lerp(1, 0.72, wet);
-                half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, lerp(_Glossiness, 0.6, wet), 0);
+                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, lerp(_Glossiness, 0.6, wet), 0);
                 rgb *= OkuFogLight(i.positionWS) * OkuEdgeBand(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }

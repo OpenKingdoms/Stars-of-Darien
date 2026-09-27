@@ -40,6 +40,7 @@ namespace OpenKingdomsUnity.Game.World
                     regions[rx, ry] = BuildRegion(t, rx, ry);
             Apron = BuildRing(t, Chunk, Root.transform);
             Shader.SetGlobalVector("_OkuMapSize", new Vector4(t.Size.x, t.Size.y, 0, 0));
+            GroundDetail.Apply(true);
             chunkImages.Clear();
 
             if (t.SeaLevel > 0) Water = BuildWater(t, parent);

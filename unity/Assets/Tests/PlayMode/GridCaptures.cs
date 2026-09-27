@@ -134,6 +134,82 @@ namespace OpenKingdomsUnity.Tests
             Object.Destroy(root.gameObject);
         }
 
+        // The steepest slope on the map, seen from below at a low tilt, with
+        // the ground detail off and on, for judging streaks down cliffs.
+        [UnityTest]
+        public IEnumerator CaptureACliff()
+        {
+            string dir = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_DIR");
+            if (string.IsNullOrEmpty(dir)) Assert.Ignore("set OKU_CAPTURE_DIR to capture the ground");
+            Directory.CreateDirectory(dir);
+            string map = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_MAP");
+            string tag = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TAG") ?? "cliff";
+            GameRoot root;
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine")
+            {
+                if (GameRoot.BackendFactory == null) Assert.Ignore("no engine");
+                var view = GameObject.Find("OpenKingdoms");
+                if (view != null) Object.Destroy(view);
+                yield return null;
+                yield return null;
+                root = GameRoot.Boot();
+            }
+            else root = GameRoot.Boot(new MockBackend { StageSeconds = 0f });
+            yield return null;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            if (!string.IsNullOrEmpty(map)) root.Setup.MapId = map;
+            root.Setup.MapRevealed = true;
+            root.Setup.LineOfSight = false;
+            root.Screens.StartGame();
+            float deadline = Time.realtimeSinceStartup + 240f;
+            while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.AreEqual(FlowState.Playing, root.Flow.State);
+            root.Orders.Frozen = true;
+            root.World.Atmosphere.SetWeather(WeatherChoice.Off);
+            root.Screens.Screen("Hud").SetActive(false);
+
+            var t = root.Backend.Terrain;
+            Vector3 best = default;
+            Vector2 down = Vector2.up;
+            float steepest = 0;
+            for (float x = 12; x < t.Size.x - 12; x += 2)
+                for (float z = -12; z > -t.Size.y + 12; z -= 2)
+                {
+                    float gx = root.Backend.GroundHeight(x + 1, z) - root.Backend.GroundHeight(x - 1, z);
+                    float gz = root.Backend.GroundHeight(x, z + 1) - root.Backend.GroundHeight(x, z - 1);
+                    float g = Mathf.Sqrt(gx * gx + gz * gz) / 2f;
+                    if (g > steepest) { steepest = g; best = new Vector3(x, 0, z); down = -new Vector2(gx, gz).normalized; }
+                }
+            best.y = root.Backend.GroundHeight(best.x, best.z);
+            var gc = root.World.Camera;
+            var cam = gc.GetComponent<Camera>();
+            gc.focus = best;
+            gc.pitch = 35f;
+            // Stand downhill and look up the slope.
+            gc.yaw = Mathf.Atan2(-down.x, -down.y) * Mathf.Rad2Deg;
+            gc.Zoom(22f);
+            for (int i = 0; i < 40; i++) yield return null;
+            foreach (bool on in new[] { false, true })
+            {
+                GroundDetail.Apply(on);
+                var rt = RenderTexture.GetTemporary(W, H, 24);
+                var old = cam.targetTexture;
+                cam.targetTexture = rt;
+                cam.Render();
+                RenderTexture.active = rt;
+                var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
+                tex.ReadPixels(new Rect(0, 0, W, H), 0, 0);
+                tex.Apply();
+                RenderTexture.active = null;
+                cam.targetTexture = old;
+                RenderTexture.ReleaseTemporary(rt);
+                File.WriteAllBytes(Path.Combine(dir, $"{tag}-cliff-{(on ? "detail" : "plain")}.png"), tex.EncodeToPNG());
+            }
+            GroundDetail.Apply(true);
+            Debug.Log($"Cliff: {tag} on {map} at ({best.x:F0}, {best.z:F0}), slope {steepest:F2}");
+            Object.Destroy(root.gameObject);
+        }
+
         static float Luma(Color32 c) => 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
 
         // The biggest column step within two pixels of x.
