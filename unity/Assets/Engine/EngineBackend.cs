@@ -20,6 +20,7 @@ namespace OpenKingdomsUnity.Engine
         readonly List<FeatureDef> featureDefs = new List<FeatureDef>();
         readonly List<PlayerInfo> players = new List<PlayerInfo>();
         readonly Dictionary<string, int> mapIndex = new Dictionary<string, int>();
+        readonly Dictionary<int, (int def, int colour)> modelSource = new Dictionary<int, (int def, int colour)>();
         OkxProjectile[] projBuf = new OkxProjectile[256];
         readonly int[] buildBuf = new int[256];
         readonly Dictionary<int, ModelData> modelCache = new Dictionary<int, ModelData>();
@@ -143,7 +144,7 @@ namespace OpenKingdomsUnity.Engine
                     Id = i, Name = d.name, ObjectName = d.obj, Side = d.side, Category = d.category,
                     Description = d.description, MaxHealth = d.maxHealth, IsBuilding = d.isBuilding != 0,
                     Footprint = new Vector2Int(d.footprintX, d.footprintZ), ManaCost = d.buildCost,
-                    BuildOptions = Buildables(i)
+                    BuildOptions = Buildables(i), Animations = OkEngine.Scripts(i)
                 });
             }
             featureDefs.Clear();
@@ -241,6 +242,7 @@ namespace OpenKingdomsUnity.Engine
             if (status == GameStatus.Running || status == GameStatus.Victory || status == GameStatus.Defeat)
                 OkEngine.okx_end_game();
             modelCache.Clear();
+            modelSource.Clear();
             terrain = null;
             players.Clear();
             status = GameStatus.Idle;
@@ -297,6 +299,7 @@ namespace OpenKingdomsUnity.Engine
                     BuildProgress = u.building != 0 && u.maxHealth > 0 ? Mathf.Clamp01(u.health / (float)u.maxHealth) : 1f,
                     Model = u.model
                 };
+                if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
             }
             return n;
         }
@@ -364,7 +367,20 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Art ────────────────────────────────────────────────────────
 
-        public int LoadModel(string objectName, int colour) => OkEngine.okx_model_load(objectName, colour);
+        public int LoadModel(string objectName, int colour)
+        {
+            int id = OkEngine.okx_model_load(objectName, colour);
+            if (id >= 0 && !modelSource.ContainsKey(id))
+            {
+                foreach (var d in unitDefs)
+                    if (string.Equals(d.ObjectName, objectName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        modelSource[id] = (d.Id, colour);
+                        break;
+                    }
+            }
+            return id;
+        }
 
         public ModelData GetModel(int model)
         {
@@ -438,7 +454,15 @@ namespace OpenKingdomsUnity.Engine
             return img;
         }
 
-        public int PoseModel(int model, string animation, float seconds, PiecePose[] into) => 0;
+        // A pose from the unit's own script, run in an engine of its own
+        // so the battle does not move. The model stands at the origin.
+        public int PoseModel(int model, string animation, float seconds, PiecePose[] into)
+        {
+            if (!modelSource.TryGetValue(model, out var src)) return 0;
+            int ticks = Mathf.Max(0, Mathf.RoundToInt(seconds * OkEngine.okx_tick_rate()));
+            int nodes = OkEngine.okx_studio_pose(src.def, src.colour, animation ?? "", ticks, pose, hidden, 128);
+            return nodes > 0 ? WritePose(nodes, into, true) : 0;
+        }
 
         // ── Orders ─────────────────────────────────────────────────────
 

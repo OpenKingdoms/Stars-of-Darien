@@ -103,6 +103,19 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < n; i++) if (units[i].Handle == u.Handle) x = units[i].Position.x;
             Assert.Greater(x, u.Position.x + 3f);
             Assert.GreaterOrEqual(backend.ReadProjectiles(new ProjectileState[64]), 0);
+
+            // The Unit Browser: the monarch's walk, played outside the battle.
+            CollectionAssert.Contains(def.Animations, "walk");
+            uint before = backend.Tick;
+            var a = new PiecePose[128];
+            var b = new PiecePose[128];
+            int pieces = backend.PoseModel(u.Model, "walk", 1.0f, a);
+            Assert.Greater(pieces, 1);
+            Assert.AreEqual(pieces, backend.PoseModel(u.Model, "walk", 1.12f, b));
+            int moved = 0;
+            for (int i = 0; i < pieces; i++) if (a[i].Matrix != b[i].Matrix) moved++;
+            Assert.GreaterOrEqual(moved, 2, "the legs swing");
+            Assert.AreEqual(before, backend.Tick, "the battle stood still");
             var features = new FeatureState[1024];
             Assert.Greater(backend.ReadFeatures(features), 0);
         }

@@ -132,7 +132,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 2;
+        public const int ApiVersion = 3;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
@@ -147,6 +147,9 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_def_count();
         [DllImport(Lib)] public static extern int okx_def_info(int def, out OkxDefInfo info);
         [DllImport(Lib)] public static extern int okx_def_buildables(int def, [Out] int[] defs, int cap);
+        [DllImport(Lib)] static extern int okx_def_scripts(int def, [Out] byte[] names, int cap);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_studio_pose(int def, int color, string script, int ticks,
+            [Out] float[] matrices, [Out] byte[] hidden, int cap);
         [DllImport(Lib)] public static extern int okx_map_info(int index, out OkxMapInfo info);
         [DllImport(Lib)] public static extern int okx_map_preview(int index, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_players([Out] OkxPlayer[] players, int cap);
@@ -192,6 +195,15 @@ namespace OpenKingdomsUnity.Engine
             var buf = new byte[96];
             int n = okx_map_name(index, buf, buf.Length);
             return n > 0 ? Encoding.ASCII.GetString(buf, 0, n) : null;
+        }
+
+        // The def's unit script functions, or none.
+        public static string[] Scripts(int def)
+        {
+            var buf = new byte[8192];
+            int n = okx_def_scripts(def, buf, buf.Length);
+            if (n <= 0) return Array.Empty<string>();
+            return Encoding.ASCII.GetString(buf, 0, n).Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         public static string[] Maps()
