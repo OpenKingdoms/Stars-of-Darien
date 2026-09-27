@@ -252,9 +252,11 @@ def carve(r, spr):
     # smooth the blocks into a surface, then bring the count down
     rem = ob.modifiers.new("remesh", "REMESH")
     rem.mode = "VOXEL"
-    rem.voxel_size = 1.0 / RES
+    # foliage remeshes coarser than the carving grid, or its steps survive
+    # into the surface; stone keeps the finer grid and its holes
+    rem.voxel_size = (1.6 if tree else 1.0) / RES
     sm = ob.modifiers.new("smooth", "CORRECTIVE_SMOOTH")
-    sm.iterations = 6
+    sm.iterations = 18 if tree else 6
     sm.use_only_smooth = True
     dec = ob.modifiers.new("decimate", "DECIMATE")
     dec.ratio = 0.35
