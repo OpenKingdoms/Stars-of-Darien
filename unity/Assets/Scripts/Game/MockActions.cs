@@ -13,7 +13,7 @@ namespace OpenKingdomsUnity.Game
 {
     public sealed partial class MockBackend
     {
-        public enum Role { Monarch, Knight, Archer, Lodge, Mage, Healer, Wagon }
+        public enum Role { Monarch, Knight, Archer, Lodge, Mage, Healer, Wagon, Flyer }
         public enum Stance { Offensive, Defensive, Passive }
 
         readonly Dictionary<int, Role> roles = new Dictionary<int, Role>();
@@ -43,6 +43,17 @@ namespace OpenKingdomsUnity.Game
                 AddDef(p + "_healer", p + "archer", s.Id, "healer", "Healer", 150, 150, false, anims);
                 roles[unitDefs.Count] = Role.Wagon;
                 AddDef(p + "_wagon", p + "knight", s.Id, "transport", "Wagon", 300, 200, false, anims);
+            }
+            // A winged flyer for every side, after the rest so no def moves.
+            string[] flight = { "idle", "walk", "attack", "BeginFlight", "launch", "fly", "soar", "land" };
+            foreach (var s in sides)
+            {
+                roles[unitDefs.Count] = Role.Flyer;
+                AddDef(s.Id.ToLowerInvariant() + "_flyer", "mockflyer", s.Id, "air", "Flyer", 180, 160, false, flight);
+                var d = unitDefs[unitDefs.Count - 1];
+                d.CanFly = true;
+                d.CruiseAltitude = FlyerCruise;
+                d.MaxSpeed = FlyerSpeed;
             }
         }
 
@@ -207,7 +218,7 @@ namespace OpenKingdomsUnity.Game
             foreach (var o in units)
             {
                 if (o.Dying || o.Player != wagon.Player || o == wagon || unitDefs[o.Def].IsBuilding || aboard.Contains(o.Handle)) continue;
-                if (RoleOf(o.Def) == Role.Wagon) continue;
+                if (RoleOf(o.Def) == Role.Wagon || RoleOf(o.Def) == Role.Flyer) continue;
                 bool pick = area is Rect r ? r.Contains(new Vector2(o.Pos.x, o.Pos.z)) : o.Handle == unit;
                 if (!pick || list.Count >= 6) continue;
                 list.Add(o.Handle);

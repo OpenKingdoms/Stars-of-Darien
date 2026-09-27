@@ -245,6 +245,24 @@ namespace OpenKingdomsUnity.Game
                 b.Box(top, new Vector3(0, 0.8f, 0), new Vector3(1f, 0.8f, 1f), Leaf);
                 return b.Finish(obj);
             }
+            if (obj == "mockflyer")
+            {
+                // A body with two wing chains, left at +x and right at -x.
+                int root = b.AddPiece("base", -1, Vector3.zero);
+                int body = b.AddPiece("body", root, new Vector3(0, 0.6f, 0));
+                b.Box(body, Vector3.zero, new Vector3(0.45f, 0.35f, 1.1f), team);
+                int neck = b.AddPiece("head", body, new Vector3(0, 0.15f, 0.6f));
+                b.Box(neck, new Vector3(0, 0, 0.12f), new Vector3(0.25f, 0.25f, 0.3f), Leather);
+                foreach (float side in new[] { 1f, -1f })
+                {
+                    string lr = side > 0 ? "l" : "r";
+                    int w1 = b.AddPiece("wing" + lr + "1", body, new Vector3(0.22f * side, 0.1f, 0));
+                    b.Box(w1, new Vector3(0.35f * side, 0, 0), new Vector3(0.7f, 0.05f, 0.6f), Leather);
+                    int w2 = b.AddPiece("wing" + lr + "2", w1, new Vector3(0.7f * side, 0, 0));
+                    b.Box(w2, new Vector3(0.28f * side, 0, -0.05f), new Vector3(0.56f, 0.04f, 0.45f), team);
+                }
+                return b.Finish(obj);
+            }
             if (obj.EndsWith("lodge"))
             {
                 int root = b.AddPiece("base", -1, Vector3.zero);
@@ -286,6 +304,16 @@ namespace OpenKingdomsUnity.Game
             float swing = 0;
             switch (anim)
             {
+                case "fly":
+                {
+                    // A plain flap about the body's long axis, once a second.
+                    float beat = Mathf.Sin(t * 2f * Mathf.PI);
+                    if (piece == "wingl1") return Quaternion.Euler(0, 0, beat * 40f);
+                    if (piece == "wingr1") return Quaternion.Euler(0, 0, -beat * 40f);
+                    if (piece == "wingl2") return Quaternion.Euler(0, 0, beat * 15f);
+                    if (piece == "wingr2") return Quaternion.Euler(0, 0, -beat * 15f);
+                    break;
+                }
                 case "walk":
                 {
                     float w = Mathf.Sin(t * 2f * Mathf.PI) * 30f;

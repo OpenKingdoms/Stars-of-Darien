@@ -210,13 +210,19 @@ namespace OpenKingdomsUnity.Engine
             for (int i = 0; i < n; i++)
             {
                 if (OkEngine.okx_def_info(i, out var d) != 0) continue;
-                unitDefs.Add(new UnitDef
+                var def = new UnitDef
                 {
                     Id = i, Name = d.name, Title = d.displayName ?? "", ObjectName = d.obj, Side = d.side, Category = d.category,
                     Description = d.description, MaxHealth = d.maxHealth, IsBuilding = d.isBuilding != 0,
                     Footprint = new Vector2Int(d.footprintX, d.footprintZ), ManaCost = d.buildCost,
                     BuildOptions = Buildables(i), Animations = OkEngine.Scripts(i)
-                });
+                };
+                // Until the engine reports canfly: a script with a flight loop
+                // flies, and one that never begins a flight hovers.
+                bool takesOff = Array.Exists(def.Animations, a => string.Equals(a, "BeginFlight", StringComparison.OrdinalIgnoreCase));
+                def.CanFly = takesOff || Array.Exists(def.Animations, a => string.Equals(a, "FlightControl", StringComparison.OrdinalIgnoreCase));
+                def.Hovers = def.CanFly && !takesOff;
+                unitDefs.Add(def);
             }
             featureDefs.Clear();
             int nf = OkEngine.okx_feature_def_count();
@@ -323,6 +329,7 @@ namespace OpenKingdomsUnity.Engine
                 OkEngine.okx_end_game();
             modelCache.Clear();
             modelSource.Clear();
+            flights.Clear();
             terrain = null;
             players.Clear();
             status = GameStatus.Idle;
@@ -359,12 +366,41 @@ namespace OpenKingdomsUnity.Engine
             return Mathf.Repeat(d, 360f);
         }
 
+        // The engine does not report a flyer's altitude, speed or flying
+        // state yet, so they are worked out here from where it stands, tick
+        // to tick. A flyer losing height has begun to land.
+        struct Flight { public uint Tick; public float X, Z, Alt, Speed; public bool Down; }
+        readonly Dictionary<uint, Flight> flights = new Dictionary<uint, Flight>();
+        readonly List<uint> gone = new List<uint>();
+
+        void TrackFlight(in OkxUnit u, ref UnitState s, uint tick, int tps)
+        {
+            float alt = Mathf.Max(0f, u.y - OkEngine.okx_ground_height(u.x, u.z));
+            if (flights.TryGetValue(u.stableId, out var f))
+            {
+                if (tick != f.Tick)
+                {
+                    f.Speed = new Vector2(u.x - f.X, u.z - f.Z).magnitude * S * tps / Mathf.Max(1u, tick - f.Tick);
+                    if (alt < f.Alt - 0.01f) f.Down = true;
+                    else if (alt > f.Alt + 0.01f) f.Down = false;
+                    f.Tick = tick; f.X = u.x; f.Z = u.z; f.Alt = alt;
+                }
+            }
+            else f = new Flight { Tick = tick, X = u.x, Z = u.z, Alt = alt };
+            flights[u.stableId] = f;
+            s.Altitude = alt * S;
+            s.Speed = f.Speed;
+            if (s.Altitude > 0.02f && !f.Down && s.Flags == UnitFlags.Active) s.Flags |= UnitFlags.Airborne;
+        }
+
         public int ReadUnits(UnitState[] into)
         {
             int n = OkEngine.okx_units(null, 0);
             if (unitBuf.Length < n) unitBuf = new OkxUnit[Mathf.NextPowerOfTwo(n)];
             n = Mathf.Min(OkEngine.okx_units(unitBuf, unitBuf.Length), unitBuf.Length);
             int count = Mathf.Min(n, into?.Length ?? 0);
+            uint tick = Tick;
+            int tps = Mathf.Max(1, TicksPerSecond);
             for (int i = 0; i < count; i++)
             {
                 var u = unitBuf[i];
@@ -386,6 +422,14 @@ namespace OpenKingdomsUnity.Engine
                     into[i].MaxMana = Mathf.RoundToInt(maxMana);
                 }
                 if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
+                if (u.def >= 0 && u.def < unitDefs.Count && unitDefs[u.def].CanFly) TrackFlight(u, ref into[i], tick, tps);
+            }
+            // Flyers not read for ten seconds of game time are forgotten.
+            if (flights.Count > 0 && tick % 300 == 0)
+            {
+                gone.Clear();
+                foreach (var kv in flights) if (tick - kv.Value.Tick > (uint)(tps * 10)) gone.Add(kv.Key);
+                foreach (var id in gone) flights.Remove(id);
             }
             return n;
         }

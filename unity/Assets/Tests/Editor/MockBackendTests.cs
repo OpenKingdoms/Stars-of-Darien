@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(30u, b.Tick);
             var units = new UnitState[256];
             int n = b.ReadUnits(units);
-            Assert.AreEqual(24, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer and a wagon");
+            Assert.AreEqual(26, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer, a wagon and a flyer");
         }
 
         // A knight walks out and back. Ground it saw is dimmed after with
@@ -102,6 +102,45 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < n; i++)
                 if (units[i].Handle == knight.Handle)
                     Assert.Less(Vector2.Distance(new Vector2(units[i].Position.x, units[i].Position.z), new Vector2(goal.x, goal.z)), 0.5f);
+        }
+
+        [Test]
+        public void TheMockFlyerTakesOffAndLands()
+        {
+            var b = Loaded();
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units);
+            UnitState flyer = default;
+            for (int i = 0; i < n; i++)
+                if (units[i].Player == 0 && b.UnitDefs[units[i].Def].CanFly) flyer = units[i];
+            var def = b.UnitDefs[flyer.Def];
+            Assert.AreEqual("mockflyer", def.ObjectName);
+            Assert.IsFalse(def.Hovers);
+            Assert.AreEqual(0f, flyer.Altitude);
+            Assert.IsTrue(b.Command(GameCommand.To(CommandKind.Move, flyer.Handle, flyer.Position + new Vector3(12, 0, 0))));
+
+            bool rose = false, cruised = false, landed = false;
+            float last = 0f;
+            for (int tick = 0; tick < 30 * MockBackend.Tps && !landed; tick++)
+            {
+                b.Advance(1);
+                n = b.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                {
+                    if (units[i].Handle != flyer.Handle) continue;
+                    var u = units[i];
+                    bool airborne = (u.Flags & UnitFlags.Airborne) != 0;
+                    Assert.AreEqual(b.GroundHeight(u.Position.x, u.Position.z) + u.Altitude, u.Position.y, 1e-4f);
+                    Assert.LessOrEqual(Mathf.Abs(u.Altitude - last), def.MaxSpeed / MockBackend.Tps + 1e-4f, "it climbs and descends at top speed");
+                    if (airborne && u.Altitude > last) rose = true;
+                    if (airborne && u.Altitude >= def.CruiseAltitude - 1e-4f) cruised = true;
+                    if (cruised && !airborne && u.Altitude == 0f) landed = true;
+                    last = u.Altitude;
+                }
+            }
+            Assert.IsTrue(rose, "it took off");
+            Assert.IsTrue(cruised, "it reached its cruise height");
+            Assert.IsTrue(landed, "it landed once there");
         }
 
         [Test]

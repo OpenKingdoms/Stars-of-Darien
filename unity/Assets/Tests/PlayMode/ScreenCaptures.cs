@@ -184,7 +184,7 @@ namespace OpenKingdomsUnity.Tests
             Object.Destroy(root.gameObject);
         }
 
-        static IEnumerator View(OpenKingdomsUnity.Game.World.GameCamera c, float distance, float pitch, float yaw)
+        internal static IEnumerator View(OpenKingdomsUnity.Game.World.GameCamera c, float distance, float pitch, float yaw)
         {
             c.pitch = pitch;
             c.yaw = yaw;
@@ -195,7 +195,7 @@ namespace OpenKingdomsUnity.Tests
         static int W => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_W"), out int w) ? w : 1920;
         static int H => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_H"), out int h) ? h : 1080;
 
-        static IEnumerator Shoot(Camera cam, Canvas canvas, string path)
+        internal static IEnumerator Shoot(Camera cam, Canvas canvas, string path)
         {
             yield return null;
             var rt = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.ARGB32);
