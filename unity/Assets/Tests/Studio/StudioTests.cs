@@ -28,7 +28,7 @@ namespace OpenKingdomsUnity.Tests
         [Test]
         public void EveryWindowOpensAndCloses()
         {
-            foreach (var w in new EditorWindow[] { EditorWindow.GetWindow<UnitBrowser>(), EditorWindow.GetWindow<MapBrowser>(), EditorWindow.GetWindow<SpriteReplacement>() })
+            foreach (var w in new EditorWindow[] { EditorWindow.GetWindow<UnitBrowser>(), EditorWindow.GetWindow<MapBrowser>(), EditorWindow.GetWindow<SpriteReplacement>(), EditorWindow.GetWindow<AnimationEditor>() })
             {
                 Assert.IsNotNull(w);
                 w.Repaint();
