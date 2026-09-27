@@ -128,6 +128,26 @@ namespace OpenKingdomsUnity.Game
         // 2 in sight now. Returns the byte count, and with into null or
         // too small only reports the size. Read it a few times a second.
         int ReadFog(byte[] into, out int width, out int height);
+
+        // The map editor. Heights are the map's own bytes, one a cell, and
+        // the battle ground (Terrain, GroundHeight) follows an edit at once.
+        // Returns the byte count, and with into null or too small only
+        // reports the size.
+        int ReadCells(byte[] into, out int width, out int height);
+        bool EditCells(int x0, int z0, int w, int h, byte[] values);
+        // Ground pictures from the game's whole library, by id. PaintBlocks
+        // gives each block in a rectangle a library chunk and the square in
+        // it (in BlockTexels units), and Terrain.Blocks follows.
+        uint[] ChunkLibrary();
+        RgbaImage ChunkPicture(uint id);
+        bool PaintBlocks(int bx, int by, int w, int h, uint[] chunkIds, byte[] texX, byte[] texY);
+        // A feature at a cell, returning its index for ReadFeatures, and
+        // taking one away by that index.
+        int PlaceFeature(int def, int cx, int cz);
+        bool RemoveFeature(int index);
+        // Saves the map being edited as a new map under that name, which
+        // then appears in Maps and plays in a skirmish.
+        bool SaveMap(string name);
     }
 
     public enum GameStatus { Idle, Loading, Running, Victory, Defeat, Failed }

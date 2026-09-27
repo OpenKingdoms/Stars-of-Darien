@@ -21,6 +21,8 @@ namespace OpenKingdomsUnity.Game.UI
         // Skirmish setup parts that change.
         RawImage preview, loadingBackdrop;
         Text saveNote, loadEmpty;
+        BottomHud bottom;
+        EditorScreens editor;
         RectTransform saveItems;
         Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, hudMana, hudClock, hudSelection, resultTitle, resultInfo, setupError;
         Image loadingFill, manaFill;
@@ -53,6 +55,7 @@ namespace OpenKingdomsUnity.Game.UI
             BuildPause();
             BuildResult();
             BuildLoadList();
+            editor = new EditorScreens(root, this);
         }
 
         public GameObject Screen(string name) => screens.TryGetValue(name, out var s) ? s : null;
@@ -69,6 +72,8 @@ namespace OpenKingdomsUnity.Game.UI
                 case FlowState.Playing: on = new[] { "Hud" }; break;
                 case FlowState.Paused: on = new[] { "Hud", "Pause" }; saveNote.text = ""; break;
                 case FlowState.LoadList: on = new[] { "Load" }; RefreshLoadList(); break;
+                case FlowState.EditorSetup: on = new[] { "EditorSetup" }; editor.RefreshSetup(); break;
+                case FlowState.Editing: on = new[] { "Editor" }; editor.RefreshTools(); break;
                 case FlowState.Victory:
                 case FlowState.Defeat: on = new[] { "Hud", "Result" }; RefreshResult(state == FlowState.Victory); break;
                 default: on = new string[0]; break;
@@ -80,6 +85,7 @@ namespace OpenKingdomsUnity.Game.UI
         public void Tick()
         {
             if (!canvas) return;
+            if (root.Flow.State == FlowState.Editing) editor.Tick();
             var b = root.Backend;
             switch (root.Flow.State)
             {
@@ -98,6 +104,7 @@ namespace OpenKingdomsUnity.Game.UI
                     UiKit.SetBar(manaFill, e.Storage > 0 ? e.Mana / e.Storage : 0);
                     int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
                     hudClock.text = $"{secs / 60:00}:{secs % 60:00}";
+                    bottom.Tick();
                     int sel = root.World != null ? root.World.Entities.Selected.Count : 0;
                     hudSelection.text = sel > 0 ? (sel == 1 ? "1 unit selected" : sel + " units selected") : "";
                     break;
@@ -105,6 +112,9 @@ namespace OpenKingdomsUnity.Game.UI
         }
 
         // ---- Screens ----
+
+        public RectTransform NewScreenFor(string name, bool backdrop) => NewScreen(name, backdrop);
+        public Texture2D PreviewFor(string mapId) => Preview(mapId);
 
         RectTransform NewScreen(string name, bool backdrop)
         {
@@ -137,10 +147,11 @@ namespace OpenKingdomsUnity.Game.UI
             var rule = UiKit.Picture(s, "Rule", UiKit.BarFill, new Color(1, 1, 1, 0.8f), true);
             rule.rectTransform.Place(0.5f, 0.59f, 0.5f, 0.59f, -260, -2, -260, -2);
 
-            var col = UiKit.Rect(s, "Buttons").Place(0.5f, 0.12f, 0.5f, 0.55f, -230, 0, -230, 0);
-            UiKit.Column(col, 22);
+            var col = UiKit.Rect(s, "Buttons").Place(0.5f, 0.06f, 0.5f, 0.56f, -230, 0, -230, 0);
+            UiKit.Column(col, 18);
             UiKit.MakeButton(col, "Skirmish", () => root.Flow.Fire(FlowEvent.OpenSkirmish), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Load game", () => root.Flow.Fire(FlowEvent.OpenLoad), 38).GetComponent<RectTransform>().Size(460, 84);
+            UiKit.MakeButton(col, "Map editor", () => root.Flow.Fire(FlowEvent.OpenEditor), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Quit", () => root.Flow.Fire(FlowEvent.Exit), 38).GetComponent<RectTransform>().Size(460, 84);
 
@@ -157,16 +168,9 @@ namespace OpenKingdomsUnity.Game.UI
             var list = UiKit.Panel(s, "Maps", false).Place(0, 0, 0, 1, 60, 130, -440, 150);
             var listTitle = UiKit.Label(list, "Maps", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
             listTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
-            var items = UiKit.ScrollList(list, "Items", 10);
-            ((RectTransform)items.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 80);
-            foreach (var m in root.Backend.Maps)
-            {
-                var id = m.Id;
-                var b = UiKit.MakeButton(items, m.Name, () => { root.Setup.MapId = id; RefreshSkirmish(); }, 28);
-                b.GetComponent<RectTransform>().Size(0, 62);
-                b.name = "Map " + id;
-                mapButtons.Add(b);
-            }
+            mapItems = UiKit.ScrollList(list, "Items", 10);
+            ((RectTransform)mapItems.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 80);
+            FillMapList();
 
             // Preview and details.
             var pv = UiKit.Panel(s, "Preview", false).Place(0, 0, 0, 1, 470, 130, -1010, 150);
@@ -207,6 +211,24 @@ namespace OpenKingdomsUnity.Game.UI
             var start = UiKit.MakeButton(s, "Start", StartGame, 36);
             start.name = "Start";
             start.GetComponent<RectTransform>().Place(1, 0, 1, 0, -360, 40, 60, -110);
+        }
+
+        RectTransform mapItems;
+
+        // The map buttons, made again when the backend's list grows, as it
+        // does when the editor saves a map.
+        void FillMapList()
+        {
+            for (int i = mapItems.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(mapItems.GetChild(i).gameObject);
+            mapButtons.Clear();
+            foreach (var m in root.Backend.Maps)
+            {
+                var id = m.Id;
+                var b = UiKit.MakeButton(mapItems, m.Name, () => { root.Setup.MapId = id; RefreshSkirmish(); }, 28);
+                b.GetComponent<RectTransform>().Size(0, 62);
+                b.name = "Map " + id;
+                mapButtons.Add(b);
+            }
         }
 
         public void StartGame()
@@ -271,6 +293,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         void RefreshSkirmish()
         {
+            if (mapButtons.Count != root.Backend.Maps.Count) FillMapList();
             var map = root.CurrentMap();
             if (map == null) return;
             root.Setup.MapId = map.Id;
@@ -303,8 +326,8 @@ namespace OpenKingdomsUnity.Game.UI
             var s = NewScreen("Options", false);
             var dim = UiKit.Picture(s, "Dim", UiKit.White, new Color(0, 0, 0, 0.55f));
             dim.rectTransform.Fill();
-            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -420, -440, -420, -440);
-            Heading(p, "Options", 60, 0.86f, 0.98f);
+            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -420, -480, -420, -480);
+            Heading(p, "Options", 60, 0.87f, 0.98f);
             var rows = UiKit.Rect(p, "Rows").Place(0, 0, 1, 1, 60, 150, 60, 150);
             UiKit.Column(rows, 14);
             var o = root.Options;
@@ -324,6 +347,11 @@ namespace OpenKingdomsUnity.Game.UI
                 if (root.World != null) root.World.Atmosphere.SetPostEffects(o.PostEffects, root.World.Camera != null ? root.World.Camera.GetComponent<Camera>() : null);
             });
             OptionRow(rows, "Game speed", new[] { "Normal", "Fast" }, o.GameSpeed - 1, i => o.GameSpeed = i + 1);
+            OptionRow(rows, "Controls", new[] { "Classic", "Modern" }, o.ClassicControls ? 0 : 1, i =>
+            {
+                o.ClassicControls = i == 0;
+                if (root.Orders != null) root.Orders.Classic = o.ClassicControls;
+            });
             var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
             int vi = 0;
             for (int k = 0; k < volumes.Length; k++) if (Mathf.Abs(volumes[k] - o.Volume) < Mathf.Abs(volumes[vi] - o.Volume)) vi = k;
@@ -392,6 +420,8 @@ namespace OpenKingdomsUnity.Game.UI
             menu.GetComponent<RectTransform>().Place(1, 0, 1, 1, -170, 6, 14, 6);
             hudSelection = UiKit.Label(s, "", 26, UiKit.Pale, TextAnchor.LowerLeft);
             hudSelection.rectTransform.Place(0, 0, 0.5f, 0, 24, 18, 0, -60);
+            hudSelection.gameObject.SetActive(false);
+            bottom = new BottomHud(root, s);
         }
 
         void BuildPause()
@@ -472,6 +502,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void Dispose()
         {
+            bottom?.Dispose();
             foreach (var o in owned) World.Looks.Release(o);
             owned.Clear();
             if (canvas) World.Looks.Release(canvas.gameObject);

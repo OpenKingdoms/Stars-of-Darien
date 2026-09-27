@@ -38,6 +38,99 @@ namespace OpenKingdomsUnity.Game.World
         readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, bool flat)> featureDraws = new List<(Mesh, int, Material, Matrix4x4, bool)>();
         readonly List<(int sprite, Vector3 pos, float w, float bottom, float top, float offX)> spriteFeatures = new List<(int, Vector3, float, float, float, float)>();
 
+        // A building being placed: its model at rest and its footprint,
+        // green where it can stand and red where it cannot.
+        public struct GhostState
+        {
+            public int Def;
+            public Vector3 At;
+            public bool Ok;
+        }
+        public GhostState? Ghost;
+
+        // The map editor's brush on the ground: a ring, or a square for paint.
+        public struct BrushState
+        {
+            public Vector3 At;
+            public float Radius;
+            public EditTool Tool;
+        }
+        public BrushState? Brush;
+        Material brushMat;
+
+        void AddBrush()
+        {
+            if (Brush == null) return;
+            var b = Brush.Value;
+            var at = b.At + Vector3.up * 0.1f;
+            if (b.Tool == EditTool.Paint)
+                overlay.Add(flat, 0, brushMat, Matrix4x4.TRS(at, Quaternion.identity, new Vector3(b.Radius * 2, 1, b.Radius * 2)));
+            else
+                overlay.Add(ring, 0, brushMat, Matrix4x4.TRS(at, Quaternion.identity, new Vector3(b.Radius, 1, b.Radius)));
+        }
+        // Units not to draw, such as enemies out of sight.
+        public System.Func<UnitState, bool> Hidden;
+        Mesh flat;
+        Material ghostGood, ghostBad;
+
+        // Lines from selected units to where their orders take them.
+        Material lineMove, lineAttack, lineBuild, linePatrol;
+        readonly Dictionary<int, Vector3> positions = new Dictionary<int, Vector3>();
+
+        void AddOrderLines()
+        {
+            if (Selected.Count == 0 || Selected.Count > 60) return;
+            positions.Clear();
+            for (int i = 0; i < UnitCount; i++) positions[Units[i].Handle] = Units[i].Position;
+            foreach (int h in Selected)
+            {
+                if (!positions.TryGetValue(h, out var from)) continue;
+                var o = backend.ReadOrder(h);
+                Material mat;
+                switch (o.Kind)
+                {
+                    case OrderKind.Move: mat = lineMove; break;
+                    case OrderKind.Attack: case OrderKind.AttackGround: mat = lineAttack; break;
+                    case OrderKind.Build: case OrderKind.Repair: mat = lineBuild; break;
+                    case OrderKind.Patrol: case OrderKind.Guard: mat = linePatrol; break;
+                    default: continue;
+                }
+                Vector3 to = o.Target;
+                if (o.TargetUnit >= 0 && positions.TryGetValue(o.TargetUnit, out var tp)) to = tp;
+                else if (o.Building >= 0 && positions.TryGetValue(o.Building, out var bp)) to = bp;
+                var d = to - from;
+                d.y = 0;
+                if (d.magnitude < 0.5f) continue;
+                var mid = (from + to) * 0.5f + Vector3.up * 0.08f;
+                overlay.Add(flat, 0, mat, Matrix4x4.TRS(mid, Quaternion.LookRotation(d.normalized), new Vector3(0.08f, 1, d.magnitude)));
+                overlay.Add(ring, 0, mat, Matrix4x4.TRS(to + Vector3.up * 0.08f, Quaternion.identity, new Vector3(0.35f, 1, 0.35f)));
+            }
+        }
+
+        void AddGhost()
+        {
+            if (Ghost == null) return;
+            var g = Ghost.Value;
+            if (g.Def < 0 || g.Def >= backend.UnitDefs.Count) return;
+            var def = backend.UnitDefs[g.Def];
+            var fp = new Vector3(Mathf.Max(1, def.Footprint.x), 1, Mathf.Max(1, def.Footprint.y));
+            overlay.Add(flat, 0, g.Ok ? ghostGood : ghostBad, Matrix4x4.TRS(g.At + Vector3.up * 0.06f, Quaternion.identity, fp));
+            int id = backend.LoadModel(def.ObjectName, backend.Players.Count > 0 ? backend.Players[backend.LocalPlayer].Colour : 0);
+            var model = models.Get(id);
+            if (model == null) return;
+            var d = model.Data;
+            var rest = new Matrix4x4[d.Pieces.Length];
+            for (int p = 0; p < d.Pieces.Length; p++)
+            {
+                var m = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+                int parent = d.Pieces[p].Parent;
+                rest[p] = parent >= 0 && parent < p ? rest[parent] * m : m;
+                if (model.Pieces[p] == null) continue;
+                var at = Matrix4x4.Translate(g.At) * rest[p];
+                for (int s = 0; s < model.Materials[p].Length; s++) billboards.Add(model.Pieces[p], s, model.Materials[p][s], at);
+            }
+        }
+
         public EntityRenderer(IGameBackend backend, ModelCache models)
         {
             this.backend = backend;
@@ -53,6 +146,14 @@ namespace OpenKingdomsUnity.Game.World
             barGood = Keep(Looks.Overlay(new Color(0.3f, 0.95f, 0.3f, 1f)));
             barMid = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.2f, 1f)));
             barLow = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 1f)));
+            flat = Keep(FlatQuad());
+            ghostGood = Keep(Looks.Overlay(new Color(0.3f, 1f, 0.35f, 0.35f)));
+            ghostBad = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 0.4f)));
+            brushMat = Keep(Looks.Overlay(new Color(1f, 0.9f, 0.5f, 0.45f)));
+            lineMove = Keep(Looks.Overlay(new Color(0.4f, 1f, 0.4f, 0.55f)));
+            lineAttack = Keep(Looks.Overlay(new Color(1f, 0.3f, 0.25f, 0.6f)));
+            lineBuild = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.3f, 0.6f)));
+            linePatrol = Keep(Looks.Overlay(new Color(0.4f, 0.7f, 1f, 0.55f)));
             shaftMat = Keep(Looks.Model(null));
             shaftMat.color = new Color(0.35f, 0.25f, 0.15f);
         }
@@ -80,6 +181,9 @@ namespace OpenKingdomsUnity.Game.World
                 solid.Add(shaft, 0, shaftMat, Matrix4x4.TRS(s.Position, Quaternion.LookRotation(dir), Vector3.one));
             }
 
+            AddGhost();
+            AddOrderLines();
+            AddBrush();
             solid.Draw();
             billboards.Draw();
             overlay.Draw();
@@ -87,6 +191,7 @@ namespace OpenKingdomsUnity.Game.World
 
         void AddUnit(ref UnitState u, Camera cam)
         {
+            if (Hidden != null && Hidden(u)) return;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
             float height = 1.5f, radius = 0.6f;
@@ -243,6 +348,17 @@ namespace OpenKingdomsUnity.Game.World
             m.normals = new[] { Vector3.back, Vector3.back, Vector3.back, Vector3.back };
             m.colors32 = new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255) };
             m.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+            return m;
+        }
+
+        // A unit square lying on the ground, centred, facing up.
+        static Mesh FlatQuad()
+        {
+            var m = new Mesh { name = "flat" };
+            m.vertices = new[] { new Vector3(-0.5f, 0, -0.5f), new Vector3(-0.5f, 0, 0.5f), new Vector3(0.5f, 0, 0.5f), new Vector3(0.5f, 0, -0.5f) };
+            m.colors32 = new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255) };
+            m.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+            m.triangles = new[] { 0, 1, 2, 0, 2, 3 };
             return m;
         }
 

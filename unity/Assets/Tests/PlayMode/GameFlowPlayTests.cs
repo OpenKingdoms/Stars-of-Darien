@@ -68,6 +68,21 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(18, root.World.Entities.UnitCount);
             Assert.Greater(root.World.Entities.Drawn, 100, "unit pieces, trees and sprites were drawn");
 
+            // Selecting the monarch fills the command and build buttons.
+            var ents = root.World.Entities;
+            for (int i = 0; i < ents.UnitCount; i++)
+                if (ents.Units[i].Player == 0 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) mock.Select(new[] { ents.Units[i].Handle }, false);
+            // The panel refreshes ten times a second of real time.
+            yield return new WaitForSecondsRealtime(0.4f);
+            var commands = GameObject.Find("Commands");
+            Assert.IsNotNull(commands, "the bottom panel has a command grid");
+            Assert.AreEqual(5 + 3, commands.transform.childCount, "five commands and three things to build");
+            root.Orders.Arm(CommandKind.Build, mock.UnitDefs[0].BuildOptions[2]);
+            yield return null;
+            Assert.AreEqual(CommandKind.Build, root.Orders.Armed);
+            root.Orders.Disarm();
+            mock.Select(new int[0], false);
+
             Assert.IsTrue(root.Flow.Fire(FlowEvent.Pause));
             uint pausedAt = mock.Tick;
             for (int i = 0; i < 10; i++) yield return null;

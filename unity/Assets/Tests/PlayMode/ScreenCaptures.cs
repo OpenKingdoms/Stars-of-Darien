@@ -59,8 +59,11 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 90; i++) yield return null;
             // Select a few of the player's units, so rings and bars show.
             var e = root.World.Entities;
-            for (int i = 0, n = 0; i < e.UnitCount && n < 6; i++)
-                if (e.Units[i].Player == root.Backend.LocalPlayer) { e.Selected.Add(e.Units[i].Handle); n++; }
+            var pick = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < e.UnitCount && pick.Count < 6; i++)
+                if (e.Units[i].Player == root.Backend.LocalPlayer) pick.Add(e.Units[i].Handle);
+            root.Backend.Select(pick.ToArray(), false);
+            if (root.Orders != null && !root.Orders.Classic) e.Selected.UnionWith(pick);
             // Which features this map has, and what draws each, for the record.
             var feats = new FeatureState[8192];
             int fc = root.Backend.ReadFeatures(feats);
@@ -77,6 +80,31 @@ namespace OpenKingdomsUnity.Tests
             foreach (var kv in seen) lines.Add(kv.Value + " x " + kv.Key);
             File.WriteAllLines(Path.Combine(dir, "features.txt"), lines);
             var cam3 = root.World.Camera;
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TREES") == "1")
+            {
+                // Close over the thickest stand of trees, with the fog off.
+                OpenKingdomsUnity.Game.World.FogView.Disabled = true;
+                root.World.Fog.Update(true);
+                root.World.Atmosphere.SetWeather(WeatherChoice.Off);
+                Vector3 best = cam3.focus;
+                int bestCount = -1;
+                for (int i = 0; i < fc; i++)
+                {
+                    var d = root.Backend.FeatureDefs[feats[i].Def];
+                    if (d.Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    int near = 0;
+                    for (int j = 0; j < fc; j++)
+                        if ((feats[j].Position - feats[i].Position).sqrMagnitude < 64f &&
+                            root.Backend.FeatureDefs[feats[j].Def].Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) >= 0) near++;
+                    if (near > bestCount) { bestCount = near; best = feats[i].Position; }
+                }
+                cam3.focus = best;
+                yield return View(cam3, 22f, 34f, 20f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-close.png"));
+                yield return View(cam3, 40f, 45f, -30f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-mid.png"));
+                OpenKingdomsUnity.Game.World.FogView.Disabled = false;
+            }
             // The classic view, then close and low, then far and wide.
             yield return Shoot(cam, canvas, Path.Combine(dir, "4-classic.png"));
             yield return View(cam3, 14f, 38f, 25f);
@@ -98,10 +126,13 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 20; i++) yield return null;
         }
 
+        static int W => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_W"), out int w) ? w : 1920;
+        static int H => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_H"), out int h) ? h : 1080;
+
         static IEnumerator Shoot(Camera cam, Canvas canvas, string path)
         {
             yield return null;
-            var rt = RenderTexture.GetTemporary(1920, 1080, 24, RenderTextureFormat.ARGB32);
+            var rt = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.ARGB32);
             var mode = canvas.renderMode;
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
             canvas.worldCamera = cam;
@@ -111,8 +142,8 @@ namespace OpenKingdomsUnity.Tests
             Canvas.ForceUpdateCanvases();
             cam.Render();
             RenderTexture.active = rt;
-            var tex = new Texture2D(1920, 1080, TextureFormat.RGB24, false);
-            tex.ReadPixels(new Rect(0, 0, 1920, 1080), 0, 0);
+            var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, W, H), 0, 0);
             tex.Apply();
             RenderTexture.active = null;
             cam.targetTexture = old;
