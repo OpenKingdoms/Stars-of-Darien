@@ -74,7 +74,7 @@ namespace OpenKingdomsUnity.Tests
             int n = b.ReadUnits(units);
             UnitState flyer = default;
             for (int i = 0; i < n; i++)
-                if (units[i].Player == 0 && b.UnitDefs[units[i].Def].CanFly) flyer = units[i];
+                if (units[i].Player == b.LocalPlayer && b.UnitDefs[units[i].Def].CanFly) flyer = units[i];
             var def = b.UnitDefs[flyer.Def];
             Assert.AreEqual("mockflyer", def.ObjectName);
             Assert.IsFalse(def.Hovers);
