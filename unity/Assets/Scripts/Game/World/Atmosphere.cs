@@ -129,8 +129,8 @@ namespace OpenKingdomsUnity.Game.World
                     main.startLifetime = 14f;
                     main.startSpeed = 0;
                     main.startSize = new ParticleSystem.MinMaxCurve(10f, 18f);
-                    main.startColor = new Color(0.85f, 0.87f, 0.9f, 0.12f);
-                    emission.rateOverTime = 40;
+                    main.startColor = new Color(0.85f, 0.87f, 0.9f, 0.06f);
+                    emission.rateOverTime = 18;
                     vel.x = Wind.x * 0.3f; vel.y = 0; vel.z = Wind.z * 0.3f;
                     shape.scale = new Vector3(110, 4, 110);
                     r.renderMode = ParticleSystemRenderMode.Billboard;
@@ -140,8 +140,15 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // Keeps the weather box over what the camera looks at.
-        public void Follow(Vector3 focus, float cameraHeight)
+        public void Follow(Vector3 focus, float cameraHeight, float cameraDistance)
         {
+            // Fog thickens past what the camera frames, however far out it is.
+            if (RenderSettings.fog)
+            {
+                bool fog = Weather == WeatherChoice.Fog;
+                RenderSettings.fogStartDistance = cameraDistance * (fog ? 0.8f : 1.4f);
+                RenderSettings.fogEndDistance = cameraDistance * (fog ? 3.2f : 6f) + 40f;
+            }
             if (particles == null) return;
             float lift = Weather == WeatherChoice.Fog ? 2f : Mathf.Min(cameraHeight, 30f) + 4f;
             particles.transform.position = new Vector3(focus.x, focus.y + lift, focus.z);

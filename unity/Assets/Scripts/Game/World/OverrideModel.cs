@@ -72,6 +72,7 @@ namespace OpenKingdomsUnity.Game.World
             public Material Material;
             public Matrix4x4 NodeToRoot;
             public int Piece;           // -1 to ride the model root
+            public bool Flat;           // a decal on the ground, which casts no shadow
         }
 
         public string Path;
@@ -100,10 +101,24 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     var mat = s < mats.Length ? mats[s] : mats.Length > 0 ? mats[mats.Length - 1] : null;
                     if (mat == null) continue;
-                    o.Parts.Add(new Part { Mesh = mesh, Submesh = s, Material = mat, NodeToRoot = toRoot * r.transform.localToWorldMatrix, Piece = piece });
+                    var toModel = toRoot * r.transform.localToWorldMatrix;
+                    o.Parts.Add(new Part { Mesh = mesh, Submesh = s, Material = mat, NodeToRoot = toModel, Piece = piece, Flat = Height(mesh.bounds, toModel) < 0.1f });
                 }
             }
             return o;
+        }
+
+        static float Height(Bounds b, Matrix4x4 m)
+        {
+            float lo = float.MaxValue, hi = float.MinValue;
+            for (int i = 0; i < 8; i++)
+            {
+                var c = new Vector3((i & 1) == 0 ? b.min.x : b.max.x, (i & 2) == 0 ? b.min.y : b.max.y, (i & 4) == 0 ? b.min.z : b.max.z);
+                float y = m.MultiplyPoint3x4(c).y;
+                lo = Mathf.Min(lo, y);
+                hi = Mathf.Max(hi, y);
+            }
+            return hi - lo;
         }
 
         // Inverse rest transform of each piece, offsets scaled to world units.

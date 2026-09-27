@@ -20,6 +20,7 @@ namespace OpenKingdomsUnity.Tests
             Directory.CreateDirectory(dir);
             bool engine = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine";
             string map = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_MAP");
+            if (string.IsNullOrEmpty(map)) map = null;
             GameRoot root;
             if (engine)
             {
@@ -34,6 +35,9 @@ namespace OpenKingdomsUnity.Tests
             }
             else root = GameRoot.Boot(new MockBackend { StageSeconds = 0.3f });
             if (string.IsNullOrEmpty(map)) map = root.Backend.Maps[0].Id;
+            var mapLines = new System.Collections.Generic.List<string>();
+            foreach (var m in root.Backend.Maps) mapLines.Add($"{m.Id}	{m.Climate}	{m.Size.x}x{m.Size.y}	{m.MaxPlayers}");
+            File.WriteAllLines(Path.Combine(dir, "maps.txt"), mapLines);
             yield return null;
             var cam = Camera.main;
             if (cam == null) { cam = new GameObject("Main Camera").AddComponent<Camera>(); cam.tag = "MainCamera"; }
@@ -57,6 +61,21 @@ namespace OpenKingdomsUnity.Tests
             var e = root.World.Entities;
             for (int i = 0, n = 0; i < e.UnitCount && n < 6; i++)
                 if (e.Units[i].Player == root.Backend.LocalPlayer) { e.Selected.Add(e.Units[i].Handle); n++; }
+            // Which features this map has, and what draws each, for the record.
+            var feats = new FeatureState[8192];
+            int fc = root.Backend.ReadFeatures(feats);
+            var seen = new System.Collections.Generic.SortedDictionary<string, int>();
+            for (int i = 0; i < fc; i++)
+            {
+                var d = root.Backend.FeatureDefs[feats[i].Def];
+                string how = feats[i].Model >= 0 ? "model" : feats[i].Sprite >= 0 ? "sprite" : "none";
+                string over = OpenKingdomsUnity.Game.World.OverrideLoader.EnsureIndex().Find(OverrideKind.Feature, d.Name, d.SequenceName, d.ObjectName);
+                string key = $"{d.Name} {how} {(over ?? "-")}";
+                seen[key] = seen.TryGetValue(key, out int c) ? c + 1 : 1;
+            }
+            var lines = new System.Collections.Generic.List<string> { "map " + map };
+            foreach (var kv in seen) lines.Add(kv.Value + " x " + kv.Key);
+            File.WriteAllLines(Path.Combine(dir, "features.txt"), lines);
             var cam3 = root.World.Camera;
             // The classic view, then close and low, then far and wide.
             yield return Shoot(cam, canvas, Path.Combine(dir, "4-classic.png"));

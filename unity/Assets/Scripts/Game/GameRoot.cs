@@ -117,6 +117,7 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Loading:
                     LastError = null;
                     Loading = default;
+                    ApplyAudio();
                     Backend.StartSkirmish(Setup);
                     break;
                 case FlowState.Playing:
@@ -183,8 +184,28 @@ namespace OpenKingdomsUnity.Game
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
                     break;
             }
-            if (World != null) World.Render();
+            if (World != null)
+            {
+                World.Render();
+                if (!Application.isBatchMode) TellView();
+            }
             Screens.Tick();
+        }
+
+        // Sound follows the options. Batch runs stay quiet.
+        public void ApplyAudio()
+        {
+            if (Application.isBatchMode) return;
+            Backend.SetAudio(Options.Volume, Options.Music);
+        }
+
+        void TellView()
+        {
+            var cam = World.Camera;
+            var c = cam != null ? cam.GetComponent<Camera>() : null;
+            if (c == null) return;
+            float wide = 2f * cam.distance * Mathf.Tan(c.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            Backend.SetView(cam.focus, wide * c.aspect, wide / Mathf.Max(0.2f, Mathf.Sin(cam.pitch * Mathf.Deg2Rad)));
         }
 
         void RunSim(float dt)
