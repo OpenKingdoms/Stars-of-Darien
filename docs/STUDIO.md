@@ -46,6 +46,14 @@ The Map Browser lists every map with its overview picture, size, player count an
 
 The Sprite Replacement window is the work list for the 3D replacements. It reads `catalog.json` and the `sprites` folder that `tools/sprite-replace/extract.py` writes from your own game files, by default in `D:/OKReplace`, and shows every sprite-only feature with how many maps use it and whether it has a model yet, hand-made or generated. The bar at the top counts progress. The selected feature shows its sprite beside its model on a turntable. Open Blender template starts Blender on `tools/sprite-replace/template.py` with the feature's name, its sprite, the path of the hand-made model to save (`Assets/Overrides/Features/<feature>.glb`) and its footprint and height. The Blender and template paths are fields in the window.
 
+## Map editor
+
+The map editor is part of the game rather than the Unity editor, so it works in a built game too. Pick Map editor on the main menu, choose a map, and Open brings it up through the loading screen with the world held still.
+
+The panel on the left holds the tools. Raise, Lower, Flatten and Smooth work on the ground's heights under a round brush while the left button is held. Flatten levels toward the height where the stroke began. Paint gives the blocks under a square brush a picture from the game's own library, which the panel shows a page at a time, tiled so neighbouring blocks show neighbouring parts of it. Features places the feature picked from the list, which can be searched, and Erase takes away the feature nearest the pointer. Brush sets the size in cells and Strength how hard each stroke works. Only the patches of ground under a stroke are rebuilt, so edits show at once.
+
+Save as new map in the bar on top saves the map under the name in the field, and it then shows in the skirmish list. It never replaces a map. A name that any map already has is refused, and the field offers the next free one. Saved maps go to the player's own maps folder, never into the game's files.
+
 ## Later tools
 
-The map editor and the animation editor come later. The Unit Browser's preview and the backend's `PoseModel` call are the seam the animation editor builds on, and the Map Browser's Play button is the seam for testing an edited map.
+The animation editor comes later. The Unit Browser's preview and the backend's `PoseModel` call are the seam it builds on.
