@@ -22,6 +22,7 @@ import bpy
 from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import arch  # noqa: E402
 import carve  # noqa: E402
 
 
@@ -60,6 +61,13 @@ def main():
     os.makedirs(os.path.join(out, "models"), exist_ok=True)
     os.makedirs(os.path.join(out, "thumbs"), exist_ok=True)
     rows = [r for r in json.load(open(os.path.join(catalog, "catalog.json"))) if r.get("sprite")]
+    names = os.environ.get("ONLY_NAMES")
+    if names:
+        keep = set(names.split(","))
+        rows = [r for r in rows if r["name"] in keep]
+    only = os.environ.get("ONLY_ARCH")
+    if only:
+        rows = [r for r in rows if arch.kind_of(r)]
     done = failed = 0
     t0 = time.time()
     for r in rows[first:first + count]:
@@ -70,7 +78,8 @@ def main():
         try:
             bpy.ops.wm.read_factory_settings(use_empty=True)
             spr = carve.Sprite(os.path.join(catalog, "sprites", name + ".png"))
-            ob, _ = carve.carve(r, spr)
+            kind = arch.kind_of(r)
+            ob = arch.build(r, kind, spr) if kind else carve.carve(r, spr)[0]
             carve.paint(ob, r, spr)
             thumbs(ob, out, name)
             bpy.ops.object.select_all(action="DESELECT")

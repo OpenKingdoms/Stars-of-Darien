@@ -108,7 +108,10 @@ def carve(r, spr):
         y0, y1 = -fz / 2 - 0.25, fz / 2 + 0.25
     H = r["height"] / CELL if r["height"] else (hy / (CELL * TILT))
     # Never taller than the sprite can show, even from the back edge.
-    H = min(H, (hy + y1 * CELL) / (CELL * TILT))
+    # Never taller than the sprite can show. A point at depth y and height
+    # z lands on row hy - 16 y - 8 z, so the tallest reachable point is at
+    # the front of the box, where -y is largest.
+    H = min(H, (hy - y0 * CELL) / (CELL * TILT))
     nx = max(1, int(math.ceil((x1 - x0) * RES)))
     ny = max(1, int(math.ceil((y1 - y0) * RES)))
     nz = max(1, int(math.ceil(H * RES)))
