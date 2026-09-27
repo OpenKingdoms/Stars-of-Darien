@@ -79,6 +79,31 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(backend.Players[1].IsComputer);
         }
 
+        [Test, Order(5)]
+        public void TheGamesOwnClickSelectsAndOrders()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units);
+            int me = backend.LocalPlayer, mine = -1;
+            for (int i = 0; i < n && mine < 0; i++)
+                if (units[i].Player == me && (units[i].Flags & UnitFlags.Active) != 0) mine = i;
+            Assert.GreaterOrEqual(mine, 0);
+            var u = units[mine];
+            backend.Cancel();
+            backend.Click(u.Position, u.Handle, false);
+            var sel = new int[8];
+            Assert.AreEqual(1, backend.ReadSelection(sel));
+            Assert.AreEqual(u.Handle, sel[0]);
+            backend.Click(u.Position + new Vector3(18f, 0f, 0f), -1, false);
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.Move, backend.ReadOrder(u.Handle).Kind);
+            Assert.IsTrue(backend.OrderSelection(CommandKind.Stop));
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.None, backend.ReadOrder(u.Handle).Kind);
+            backend.Cancel();
+            Assert.AreEqual(0, backend.ReadSelection(sel));
+        }
+
         [Test, Order(4)]
         public void ASavedGameComesBack()
         {

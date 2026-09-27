@@ -556,6 +556,49 @@ namespace OpenKingdomsUnity.Engine
 
         public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
 
+        // Not in IGameBackend yet: the game's own controls. The engine keeps
+        // the selection, and Click is the original's left click, so the
+        // game decides what it means and the units answer in their voices.
+        readonly int[] selectionBuf = new int[128];
+
+        public void Select(int[] handles, bool add) => OkEngine.okx_select(handles, handles?.Length ?? 0, add ? 1 : 0);
+
+        public int ReadSelection(int[] into)
+        {
+            int n = OkEngine.okx_selection(selectionBuf, selectionBuf.Length);
+            int count = Mathf.Min(n, into?.Length ?? 0);
+            if (count > 0) Array.Copy(selectionBuf, into, count);
+            return n;
+        }
+
+        public void Click(Vector3 at, int unit, bool shift) => OkEngine.okx_click(at.x / S, -at.z / S, unit, shift ? 1 : 0);
+
+        public void Cancel() => OkEngine.okx_cancel();
+
+        public void Arm(CommandKind kind, int buildDef = -1)
+        {
+            int mode;
+            switch (kind)
+            {
+                case CommandKind.Move: mode = OkEngine.ArmMove; break;
+                case CommandKind.Attack: mode = OkEngine.ArmAttack; break;
+                case CommandKind.Guard: mode = OkEngine.ArmGuard; break;
+                case CommandKind.Patrol: mode = OkEngine.ArmPatrol; break;
+                case CommandKind.Load: mode = OkEngine.ArmLoad; break;
+                case CommandKind.Unload: mode = OkEngine.ArmUnload; break;
+                case CommandKind.Repair: mode = OkEngine.ArmHeal; break;
+                case CommandKind.Reclaim: mode = OkEngine.ArmClear; break;
+                case CommandKind.Build: mode = OkEngine.ArmBuild; break;
+                default: mode = OkEngine.ArmNone; break;
+            }
+            OkEngine.okx_arm(mode, buildDef);
+        }
+
+        public bool OrderSelection(CommandKind kind, int arg = 0) => OkEngine.okx_order_selection((int)kind, arg) == 0;
+
+        public void AssignGroup(int group) => OkEngine.okx_group_assign(group);
+        public int RecallGroup(int group) => OkEngine.okx_group_recall(group);
+
         public UnitOrder ReadOrder(int handle)
         {
             if (OkEngine.okx_unit_order(handle, out var o) != 0)

@@ -169,7 +169,9 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 9;
+        public const int ApiVersion = 10;
+        public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
+            ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
         public const int EffectImpact = 0, EffectProjectile = 1;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
@@ -200,6 +202,15 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
         [DllImport(Lib)] public static extern int okx_unit_order(int handle, out OkxOrder order);
         [DllImport(Lib)] public static extern int okx_fog([Out] byte[] cells, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_select(int[] handles, int n, int add);
+        [DllImport(Lib)] public static extern int okx_selection([Out] int[] handles, int cap);
+        [DllImport(Lib)] public static extern void okx_click(float x, float z, int unit, int shift);
+        [DllImport(Lib)] public static extern void okx_cancel();
+        [DllImport(Lib)] public static extern void okx_arm(int mode, int def);
+        [DllImport(Lib)] public static extern int okx_armed(out int def);
+        [DllImport(Lib)] public static extern int okx_order_selection(int type, int arg);
+        [DllImport(Lib)] public static extern void okx_group_assign(int group);
+        [DllImport(Lib)] public static extern int okx_group_recall(int group);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
         [DllImport(Lib)] public static extern int okx_load_begin(ref OkxSkirmish cfg);
