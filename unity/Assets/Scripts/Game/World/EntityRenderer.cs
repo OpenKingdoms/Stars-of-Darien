@@ -47,6 +47,27 @@ namespace OpenKingdomsUnity.Game.World
             public bool Ok;
         }
         public GhostState? Ghost;
+
+        // The map editor's brush on the ground: a ring, or a square for paint.
+        public struct BrushState
+        {
+            public Vector3 At;
+            public float Radius;
+            public EditTool Tool;
+        }
+        public BrushState? Brush;
+        Material brushMat;
+
+        void AddBrush()
+        {
+            if (Brush == null) return;
+            var b = Brush.Value;
+            var at = b.At + Vector3.up * 0.1f;
+            if (b.Tool == EditTool.Paint)
+                overlay.Add(flat, 0, brushMat, Matrix4x4.TRS(at, Quaternion.identity, new Vector3(b.Radius * 2, 1, b.Radius * 2)));
+            else
+                overlay.Add(ring, 0, brushMat, Matrix4x4.TRS(at, Quaternion.identity, new Vector3(b.Radius, 1, b.Radius)));
+        }
         // Units not to draw, such as enemies out of sight.
         public System.Func<UnitState, bool> Hidden;
         Mesh flat;
@@ -128,6 +149,7 @@ namespace OpenKingdomsUnity.Game.World
             flat = Keep(FlatQuad());
             ghostGood = Keep(Looks.Overlay(new Color(0.3f, 1f, 0.35f, 0.35f)));
             ghostBad = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 0.4f)));
+            brushMat = Keep(Looks.Overlay(new Color(1f, 0.9f, 0.5f, 0.45f)));
             lineMove = Keep(Looks.Overlay(new Color(0.4f, 1f, 0.4f, 0.55f)));
             lineAttack = Keep(Looks.Overlay(new Color(1f, 0.3f, 0.25f, 0.6f)));
             lineBuild = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.3f, 0.6f)));
@@ -161,6 +183,7 @@ namespace OpenKingdomsUnity.Game.World
 
             AddGhost();
             AddOrderLines();
+            AddBrush();
             solid.Draw();
             billboards.Draw();
             overlay.Draw();

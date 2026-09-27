@@ -86,6 +86,21 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void TheMapEditorLoadsIntoEditingAndLeavesToTheMenu()
+        {
+            var f = new GameFlow();
+            Assert.IsTrue(f.Fire(FlowEvent.OpenEditor));
+            Assert.IsTrue(f.Fire(FlowEvent.Start));
+            Assert.IsTrue(f.Fire(FlowEvent.Loaded));
+            Assert.AreEqual(FlowState.Editing, f.State, "an editor load opens the editor, not a battle");
+            Assert.IsTrue(f.InGameNow);
+            Assert.IsFalse(f.Fire(FlowEvent.Won), "nobody wins in the editor");
+            Assert.IsTrue(f.Fire(FlowEvent.ToMenu));
+            f.Fire(FlowEvent.OpenSkirmish); f.Fire(FlowEvent.Start); f.Fire(FlowEvent.Loaded);
+            Assert.AreEqual(FlowState.Playing, f.State, "a skirmish load still plays");
+        }
+
+        [Test]
         public void NonsenseEventsAreRefused()
         {
             var f = new GameFlow();

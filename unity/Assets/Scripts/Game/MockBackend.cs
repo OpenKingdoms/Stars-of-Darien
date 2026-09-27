@@ -192,8 +192,18 @@ namespace OpenKingdomsUnity.Game
                 switch (loadStage)
                 {
                     case 0: MakePlayers(); break;
-                    case 1: Terrain = new MockTerrainGen(map).Build(); break;
-                    case 2: PlantFeatures(); break;
+                    case 1:
+                        if (savedMaps.TryGetValue(map.Id, out var saved))
+                        {
+                            Terrain = Clone(saved.terrain);
+                            foreach (var kv in saved.library) libraryChunk[kv.Key] = kv.Value;
+                        }
+                        else Terrain = new MockTerrainGen(map).Build();
+                        break;
+                    case 2:
+                        if (savedMaps.TryGetValue(map.Id, out var sf)) features.AddRange(sf.features);
+                        else PlantFeatures();
+                        break;
                     case 3: SpawnArmies(); break;
                 }
                 loadStage++;
@@ -218,6 +228,7 @@ namespace OpenKingdomsUnity.Game
             players.Clear();
             economy.Clear();
             chunks.Clear();
+            libraryChunk.Clear();
             Terrain = null;
             Tick = 0;
             Status = GameStatus.Idle;
@@ -496,13 +507,138 @@ namespace OpenKingdomsUnity.Game
 
         public float GroundHeight(float x, float z) => Terrain != null ? Terrain.Sample(x, z) : 0f;
 
+        // ---- Map editing ----
+
+        // The mock stores a height as ten bytes a unit.
+        const float BytesPerUnit = 10f;
+        static readonly uint[] Library = { 9001, 9002, 9003, 9004 };
+        readonly Dictionary<uint, int> libraryChunk = new Dictionary<uint, int>();
+        readonly Dictionary<string, (MapTerrain terrain, List<Feature> features, Dictionary<uint, int> library)> savedMaps =
+            new Dictionary<string, (MapTerrain, List<Feature>, Dictionary<uint, int>)>();
+
+        public int ReadCells(byte[] into, out int width, out int height)
+        {
+            width = height = 0;
+            if (Terrain == null) return 0;
+            width = Terrain.HeightsW;
+            height = Terrain.HeightsH;
+            int n = width * height;
+            if (into == null || into.Length < n) return n;
+            for (int i = 0; i < n; i++) into[i] = (byte)Mathf.Clamp(Mathf.RoundToInt(Terrain.Heights[i] * BytesPerUnit), 0, 255);
+            return n;
+        }
+
+        public bool EditCells(int x0, int z0, int w, int h, byte[] values)
+        {
+            if (Terrain == null || values == null || values.Length < w * h) return false;
+            for (int z = 0; z < h; z++)
+                for (int x = 0; x < w; x++)
+                {
+                    int cx = x0 + x, cz = z0 + z;
+                    if (cx < 0 || cz < 0 || cx >= Terrain.HeightsW || cz >= Terrain.HeightsH) continue;
+                    Terrain.Heights[cz * Terrain.HeightsW + cx] = values[z * w + x] / BytesPerUnit;
+                }
+            chunks.Clear();
+            return true;
+        }
+
+        public uint[] ChunkLibrary() => (uint[])Library.Clone();
+
+        public RgbaImage ChunkPicture(uint id)
+        {
+            int k = Array.IndexOf(Library, id);
+            if (k < 0) return null;
+            Color[] tints = { new Color(0.3f, 0.5f, 0.2f), new Color(0.82f, 0.72f, 0.5f), new Color(0.5f, 0.48f, 0.45f), new Color(0.9f, 0.92f, 0.95f) };
+            const int S = MockTerrainGen.ChunkBlocks * MockTerrainGen.BlockTexels;
+            var img = new RgbaImage(S, S);
+            for (int y = 0; y < S; y++)
+                for (int x = 0; x < S; x++)
+                    Put(img, x, y, (Color32)(tints[k] * (0.8f + 0.4f * MockNoise.Value(x * 0.2f, y * 0.2f, k + 3))));
+            return img;
+        }
+
+        public bool PaintBlocks(int bx, int by, int w, int h, uint[] chunkIds, byte[] texX, byte[] texY)
+        {
+            var t = Terrain;
+            if (t == null || chunkIds == null || chunkIds.Length < w * h) return false;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int cx = bx + x, cy = by + y;
+                    if (cx < 0 || cy < 0 || cx >= t.BlocksW || cy >= t.BlocksH) continue;
+                    uint id = chunkIds[y * w + x];
+                    if (!libraryChunk.TryGetValue(id, out int chunk))
+                    {
+                        var pic = ChunkPicture(id);
+                        if (pic == null) return false;
+                        chunk = t.ChunkCount++;
+                        libraryChunk[id] = chunk;
+                        chunks[chunk] = pic;
+                    }
+                    int b = cy * t.BlocksW + cx;
+                    t.Blocks[3 * b] = chunk;
+                    t.Blocks[3 * b + 1] = (texX != null ? texX[y * w + x] : 0) * t.BlockTexels;
+                    t.Blocks[3 * b + 2] = (texY != null ? texY[y * w + x] : 0) * t.BlockTexels;
+                }
+            return true;
+        }
+
+        public int PlaceFeature(int def, int cx, int cz)
+        {
+            if (Terrain == null || def < 0 || def >= featureDefs.Count) return -1;
+            float x = cx * Terrain.CellSize, z = -cz * Terrain.CellSize;
+            features.Add(new Feature
+            {
+                Def = def, Pos = new Vector3(x, Terrain.Sample(x, z), z), Heading = 0,
+                Model = def == 0 ? LoadModel("mocktree", 0) : -1, Sprite = def == 0 ? -1 : def - 1,
+            });
+            return features.Count - 1;
+        }
+
+        public bool RemoveFeature(int index)
+        {
+            if (index < 0 || index >= features.Count) return false;
+            features.RemoveAt(index);
+            return true;
+        }
+
+        // The mock keeps a saved map for the session: its ground, features
+        // and a new entry in Maps.
+        public bool SaveMap(string name)
+        {
+            if (Terrain == null || string.IsNullOrWhiteSpace(name)) return false;
+            var t = Terrain;
+            var copy = new MapTerrain
+            {
+                HeightsW = t.HeightsW, HeightsH = t.HeightsH, CellSize = t.CellSize, Heights = (float[])t.Heights.Clone(),
+                SeaLevel = t.SeaLevel, BlocksW = t.BlocksW, BlocksH = t.BlocksH, BlockSize = t.BlockSize,
+                BlockTexels = t.BlockTexels, ChunkCount = t.ChunkCount, Blocks = (int[])t.Blocks.Clone(),
+            };
+            var info = new MapInfo { Id = name, Name = name, Description = "Made in the map editor.", MaxPlayers = map.MaxPlayers, Size = map.Size, Climate = map.Climate };
+            savedMaps[name] = (copy, new List<Feature>(features), new Dictionary<uint, int>(libraryChunk));
+            maps.RemoveAll(m => m.Id == name);
+            maps.Add(info);
+            return true;
+        }
+
         public RgbaImage TerrainChunk(int chunk)
         {
             if (Terrain == null || chunk < 0 || chunk >= Terrain.ChunkCount) return null;
             if (!chunks.TryGetValue(chunk, out var img))
+            {
+                // A painted chunk comes from the library, the rest from the land.
+                foreach (var kv in libraryChunk) if (kv.Value == chunk) return chunks[chunk] = ChunkPicture(kv.Key);
                 chunks[chunk] = img = new MockTerrainGen(map).Chunk(Terrain, chunk);
+            }
             return img;
         }
+
+        static MapTerrain Clone(MapTerrain t) => new MapTerrain
+        {
+            HeightsW = t.HeightsW, HeightsH = t.HeightsH, CellSize = t.CellSize, Heights = (float[])t.Heights.Clone(),
+            SeaLevel = t.SeaLevel, BlocksW = t.BlocksW, BlocksH = t.BlocksH, BlockSize = t.BlockSize,
+            BlockTexels = t.BlockTexels, ChunkCount = t.ChunkCount, Blocks = (int[])t.Blocks.Clone(),
+        };
 
         public int ReadUnits(UnitState[] into)
         {

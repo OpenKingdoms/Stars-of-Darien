@@ -28,6 +28,7 @@ namespace OpenKingdomsUnity.Game
         public MenuScreens Screens { get; private set; }
         OrderInput input;
         public OrderInput Orders => input;
+        public MapEditTool Editor { get; private set; }
         float clock;
         string pendingLoad;
         bool loadRefused;
@@ -134,6 +135,9 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Playing:
                     clock = 0;
                     break;
+                case FlowState.Editing:
+                    Editor = new MapEditTool(Backend, World);
+                    break;
                 case FlowState.MainMenu:
                 case FlowState.Skirmish:
                     if (now == FlowState.MainMenu) LastError = null;
@@ -153,6 +157,8 @@ namespace OpenKingdomsUnity.Game
 
         void EndGame()
         {
+            Editor = null;
+            if (World != null) World.Entities.Brush = null;
             World?.Dispose();
             World = null;
             input = null;
@@ -198,9 +204,14 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Paused:
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Resume);
                     break;
+                case FlowState.Editing:
+                    // The world stands still while it is edited.
+                    Editor?.Update();
+                    break;
                 case FlowState.Options:
                 case FlowState.Skirmish:
                 case FlowState.LoadList:
+                case FlowState.EditorSetup:
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
                     break;
             }

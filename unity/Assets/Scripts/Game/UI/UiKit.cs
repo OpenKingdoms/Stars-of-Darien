@@ -312,6 +312,29 @@ namespace OpenKingdomsUnity.Game.UI
             return content;
         }
 
+        // A text field on parchment, with a faint hint while empty.
+        public static InputField Input(Transform parent, string placeholder, int fontSize)
+        {
+            var img = Picture(parent, "Input", Parchment, Color.white);
+            var trim = Picture(img.transform, "Trim", Frame, Color.white, true);
+            trim.rectTransform.Fill(-4);
+            trim.raycastTarget = false;
+            var field = img.gameObject.AddComponent<InputField>();
+            var text = Label(img.transform, "", fontSize, Ink, TextAnchor.MiddleLeft);
+            text.GetComponent<Shadow>().enabled = false;
+            text.rectTransform.Fill(10);
+            text.supportRichText = false;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var hint = Label(img.transform, placeholder, fontSize, new Color(Ink.r, Ink.g, Ink.b, 0.45f), TextAnchor.MiddleLeft);
+            hint.GetComponent<Shadow>().enabled = false;
+            hint.rectTransform.Fill(10);
+            field.textComponent = text;
+            field.placeholder = hint;
+            field.caretColor = Ink;
+            field.lineType = InputField.LineType.SingleLine;
+            return field;
+        }
+
         public static HorizontalLayoutGroup Row(RectTransform rt, float spacing, int pad = 0)
         {
             var h = rt.gameObject.AddComponent<HorizontalLayoutGroup>();

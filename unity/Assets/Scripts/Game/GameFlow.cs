@@ -7,11 +7,11 @@ using System.Collections.Generic;
 
 namespace OpenKingdomsUnity.Game
 {
-    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit, LoadList }
+    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit, LoadList, EditorSetup, Editing }
 
     public enum FlowEvent
     {
-        OpenSkirmish, OpenOptions, Back, Start, Loaded, LoadFailed, OpenLoad,
+        OpenSkirmish, OpenOptions, Back, Start, Loaded, LoadFailed, OpenLoad, OpenEditor,
         Pause, Resume, Won, Lost, ToMenu, Exit,
     }
 
@@ -30,6 +30,10 @@ namespace OpenKingdomsUnity.Game
             { (FlowState.MainMenu, FlowEvent.OpenOptions), FlowState.Options },
             { (FlowState.MainMenu, FlowEvent.Exit), FlowState.Quit },
             { (FlowState.MainMenu, FlowEvent.OpenLoad), FlowState.LoadList },
+            { (FlowState.MainMenu, FlowEvent.OpenEditor), FlowState.EditorSetup },
+            { (FlowState.EditorSetup, FlowEvent.Back), FlowState.MainMenu },
+            { (FlowState.EditorSetup, FlowEvent.Start), FlowState.Loading },
+            { (FlowState.Editing, FlowEvent.ToMenu), FlowState.MainMenu },
             { (FlowState.LoadList, FlowEvent.Back), FlowState.MainMenu },
             { (FlowState.LoadList, FlowEvent.Start), FlowState.Loading },
             { (FlowState.Skirmish, FlowEvent.Back), FlowState.MainMenu },
@@ -59,6 +63,7 @@ namespace OpenKingdomsUnity.Game
             FlowState next;
             if (State == FlowState.Options && e == FlowEvent.Back) next = OptionsReturn;
             else if (State == FlowState.Loading && e == FlowEvent.LoadFailed) next = LoadingFrom;
+            else if (State == FlowState.Loading && e == FlowEvent.Loaded && LoadingFrom == FlowState.EditorSetup) next = FlowState.Editing;
             else if (!Table.TryGetValue((State, e), out next)) return false;
             if (next == FlowState.Loading) LoadingFrom = State;
             if (next == FlowState.Options) OptionsReturn = State;
@@ -70,7 +75,7 @@ namespace OpenKingdomsUnity.Game
 
         // A game is on the table: the world exists in these states.
         public static bool InGame(FlowState s) =>
-            s == FlowState.Playing || s == FlowState.Paused || s == FlowState.Victory || s == FlowState.Defeat;
+            s == FlowState.Playing || s == FlowState.Paused || s == FlowState.Victory || s == FlowState.Defeat || s == FlowState.Editing;
 
         public bool InGameNow => InGame(State) || (State == FlowState.Options && OptionsReturn == FlowState.Paused);
     }
