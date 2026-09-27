@@ -122,6 +122,16 @@ namespace OpenKingdomsUnity.Engine
         public int def, player, color, state;
         public float x, y, z, heading, pitch, roll;
         public int health, maxHealth, building, model;
+        public int facing;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxHudCommand
+    {
+        public int id, kind, group, enabled, active, manaCost, why, hotkey, weaponSlot;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string label;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string weapon;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -198,7 +208,9 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 16;
+        public const int ApiVersion = 17;
+        public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;
+        public const int WhyOk = 0, WhyMana = 1, WhyUnsupported = 2;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
         public const int NetOff = 0, NetConnecting = 1, NetLobby = 2, NetRoom = 3, NetLoading = 4,
             NetPlaying = 5, NetRefused = 6, NetGone = 7;
@@ -306,6 +318,16 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_texture(int texture, [Out] byte[] rgba, int cap, out int w, out int h);
 
         [DllImport(Lib)] public static extern int okx_units([Out] OkxUnit[] units, int cap);
+        [DllImport(Lib)] public static extern int okx_unit(int handle, out OkxUnit unit);
+        [DllImport(Lib)] public static extern int okx_unit_mana(int handle, out float mana, out float max);
+        [DllImport(Lib)] public static extern uint okx_sim_hash();
+        [DllImport(Lib)] public static extern int okx_build_site_facing(int def, int facing, int x, int y, out int sx, out int sy);
+        [DllImport(Lib)] public static extern int okx_def_can_turn(int def);
+        [DllImport(Lib)] public static extern void okx_set_build_facing(int facing);
+        [DllImport(Lib)] public static extern int okx_hud_commands([Out] OkxHudCommand[] cmds, int cap);
+        [DllImport(Lib)] public static extern int okx_hud_command_art(int id, int state, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_hud_do(int id);
+        [DllImport(Lib)] public static extern void okx_drag(float x0, float z0, float x1, float z1, int shift);
         [DllImport(Lib)] public static extern int okx_unit_pose(int handle, [Out] float[] matrices, [Out] byte[] hidden, int cap);
         [DllImport(Lib)] public static extern int okx_unit_anim(int handle, [Out] byte[] running, int cap);
         [DllImport(Lib)] public static extern int okx_features([Out] OkxFeature[] features, int cap);

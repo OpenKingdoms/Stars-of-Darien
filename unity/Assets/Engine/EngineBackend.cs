@@ -377,7 +377,8 @@ namespace OpenKingdomsUnity.Engine
                     Heading = Heading(u.heading), Pitch = u.pitch * Mathf.Rad2Deg, Roll = u.roll * Mathf.Rad2Deg,
                     Health = u.health, MaxHealth = u.maxHealth,
                     BuildProgress = u.building != 0 && u.maxHealth > 0 ? Mathf.Clamp01(u.health / (float)u.maxHealth) : 1f,
-                    Model = u.model
+                    Model = u.model,
+                    Facing = u.facing
                 };
                 if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
             }
@@ -585,19 +586,19 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Orders ─────────────────────────────────────────────────────
 
+        // A build order's arg is its facing.
         public bool Command(in GameCommand c)
         {
             float x = c.Target.x / S, z = -c.Target.z / S;
-            return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, c.Arg) == 0;
+            int arg = c.Kind == CommandKind.Build ? (c.Facing & 3) : c.Arg;
+            return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, arg) == 0;
         }
 
-        // The facing waits for okengine API 17. Until then every site is judged at 0.
-        public bool CanRotate(int def) =>
-            def >= 0 && def < unitDefs.Count && unitDefs[def].Name.IndexOf("LODE", StringComparison.OrdinalIgnoreCase) < 0;
+        public bool CanRotate(int def) => OkEngine.okx_def_can_turn(def) != 0;
 
         public bool CanBuildAt(int def, Vector3 at, int facing, out Vector3 snapped)
         {
-            int ok = OkEngine.okx_build_site(def, (int)(at.x / S), (int)(-at.z / S), out int sx, out int sy);
+            int ok = OkEngine.okx_build_site_facing(def, facing & 3, (int)(at.x / S), (int)(-at.z / S), out int sx, out int sy);
             snapped = new Vector3(sx * S, 0f, -sy * S);
             snapped.y = GroundHeight(snapped.x, snapped.z);
             return ok != 0;
@@ -665,6 +666,7 @@ namespace OpenKingdomsUnity.Engine
                 default: mode = OkEngine.ArmNone; break;
             }
             OkEngine.okx_arm(mode, buildDef);
+            if (kind == CommandKind.Build) OkEngine.okx_set_build_facing(facing & 3);
         }
 
         public bool OrderSelection(CommandKind kind, int arg = 0) => OkEngine.okx_order_selection((int)kind, arg) == 0;

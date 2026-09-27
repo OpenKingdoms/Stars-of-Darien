@@ -104,6 +104,48 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(0, backend.ReadSelection(sel));
         }
 
+        [Test, Order(7)]
+        public void ABuildingPlacedTurnedStandsTurned()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, king = -1;
+            for (int i = 0; i < n && king < 0; i++)
+                if (units[i].Player == me && backend.UnitDefs[units[i].Def].BuildOptions.Length > 0) king = i;
+            Assert.GreaterOrEqual(king, 0);
+            var u = units[king];
+            int hall = -1, lode = -1;
+            foreach (int opt in backend.UnitDefs[u.Def].BuildOptions)
+            {
+                var d = backend.UnitDefs[opt];
+                if (!d.IsBuilding) continue;
+                if (!backend.CanRotate(opt)) { if (lode < 0) lode = opt; }
+                else if (hall < 0 && d.Footprint.x != d.Footprint.y) hall = opt;
+            }
+            Assert.GreaterOrEqual(hall, 0, "a building with two side lengths");
+            Assert.GreaterOrEqual(lode, 0, "a lodestone, which never turns");
+
+            Vector3 site = default;
+            bool found = false;
+            for (int r = 6; r <= 40 && !found; r += 2)
+                for (int k = 0; k < 8 && !found; k++)
+                    found = backend.CanBuildAt(hall, u.Position + Quaternion.Euler(0, k * 45f, 0) * new Vector3(r, 0, 0), 1, out site);
+            Assert.IsTrue(found);
+            var c = new GameCommand { Kind = CommandKind.Build, Unit = u.Handle, Target = site, TargetUnit = -1, BuildDef = hall, Facing = 1 };
+            Assert.IsTrue(backend.Command(c));
+            backend.Advance(5);
+            Assert.IsFalse(backend.CanBuildAt(hall, site, 1, out _), "the turned frame holds its site");
+            // A frame is drawn from half built, so build until it shows.
+            int facing = -1;
+            for (int t = 0; t < 60 * 90 && facing < 0; t += 60)
+            {
+                backend.Advance(60);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                    if (units[i].Def == hall && units[i].Player == me) facing = units[i].Facing;
+            }
+            Assert.AreEqual(1, facing);
+        }
+
         [Test, Order(6)]
         public void ThePointerIsTheGamesPickWithItsOwnArt()
         {
