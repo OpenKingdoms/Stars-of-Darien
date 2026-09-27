@@ -147,7 +147,7 @@ namespace OpenKingdomsUnity.Game.UI
         void BuildMainMenu()
         {
             var s = NewScreen("Menu", true);
-            Heading(s, "OpenKingdoms", 120, 0.66f, 0.86f);
+            Heading(s, GameRoot.Title, 120, 0.66f, 0.86f);
             var sub = UiKit.Label(s, "A remaster of Total Annihilation: Kingdoms", 34, UiKit.Pale);
             sub.rectTransform.Place(0, 0.6f, 1, 0.67f);
             var rule = UiKit.Picture(s, "Rule", UiKit.BarFill, new Color(1, 1, 1, 0.8f), true);
@@ -161,7 +161,9 @@ namespace OpenKingdomsUnity.Game.UI
             UiKit.MakeButton(col, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), 38).GetComponent<RectTransform>().Size(460, 84);
             UiKit.MakeButton(col, "Quit", () => root.Flow.Fire(FlowEvent.Exit), 38).GetComponent<RectTransform>().Size(460, 84);
 
-            var foot = UiKit.Label(s, $"Engine: {root.Backend.Name}.   Free and open, played with your own game files.", 24, UiKit.Dim);
+            string engine = root.Backend is MockBackend ? "Mock engine, made-up maps" : "Engine: " + root.Backend.Name;
+            string why = string.IsNullOrEmpty(root.BackendProblem) ? "" : "   " + root.BackendProblem;
+            var foot = UiKit.Label(s, $"{engine}.{why}   Free and open, played with your own game files.", 24, string.IsNullOrEmpty(why) ? UiKit.Dim : new Color(1f, 0.6f, 0.45f));
             foot.rectTransform.Place(0, 0, 1, 0, 0, 20, 0, -60);
         }
 
@@ -399,6 +401,8 @@ namespace OpenKingdomsUnity.Game.UI
             shade.rectTransform.Place(0, -0.6f, 1, 0.55f);
             loadingTitle = UiKit.Label(s, "", 80, UiKit.Gold, TextAnchor.MiddleCenter, true);
             loadingTitle.rectTransform.Place(0, 0.3f, 1, 0.42f);
+            var name = UiKit.Label(s, GameRoot.Title, 40, UiKit.Dim, TextAnchor.MiddleCenter, true);
+            name.rectTransform.Place(0, 0.86f, 1, 0.95f);
             var bar = UiKit.Bar(s, "Progress", out loadingFill);
             bar.rectTransform.Place(0.5f, 0.2f, 0.5f, 0.2f, -520, -16, -520, -16);
             loadingStage = UiKit.Label(s, "", 30, UiKit.Pale);

@@ -45,10 +45,35 @@ namespace OpenKingdomsUnity.Game
             return root;
         }
 
+        public const string Title = "Darien Reforged";
+
+        // Saves and maps made before the game had its name lived under
+        // DefaultCompany/unity. They move to the new folder once.
+        static void MoveOldData()
+        {
+            try
+            {
+                string now = Application.persistentDataPath;
+                string parent = Path.GetDirectoryName(Path.GetDirectoryName(now));
+                string old = Path.Combine(parent, "DefaultCompany", "unity");
+                if (!Directory.Exists(old) || string.Equals(Path.GetFullPath(old), Path.GetFullPath(now), StringComparison.OrdinalIgnoreCase)) return;
+                foreach (var file in Directory.GetFiles(old, "*", SearchOption.AllDirectories))
+                {
+                    string to = Path.Combine(now, file.Substring(old.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    if (File.Exists(to)) continue;
+                    Directory.CreateDirectory(Path.GetDirectoryName(to));
+                    File.Move(file, to);
+                }
+                File.WriteAllText(Path.Combine(old, "MOVED.txt"), "Moved to " + now);
+            }
+            catch (Exception e) { Debug.LogWarning("The old saves were not moved: " + e.Message); }
+        }
+
         void Awake()
         {
+            MoveOldData();
             TakeOverScene();
-            Backend = injected ?? BackendFactory?.Invoke() ?? new MockBackend();
+            Backend = injected ?? StartBackend();
             Options = GameOptions.Load();
             Setup = DefaultSetup(Backend);
             Pointer = new GameCursorView(Backend.CursorArt, Options.CursorScale);
@@ -98,6 +123,28 @@ namespace OpenKingdomsUnity.Game
                 return;
             }
             Debug.LogWarning("Map Browser asked for " + map + ", which this engine does not have.");
+        }
+
+        // Why the engine did not start, shown on the main menu, or null.
+        public string BackendProblem { get; private set; }
+
+        // The engine when it starts, the mock with the reason when it does
+        // not, so a failed start never leaves the game without its menus.
+        IGameBackend StartBackend()
+        {
+            if (BackendFactory == null) return new MockBackend();
+            try
+            {
+                var b = BackendFactory();
+                if (b != null) return b;
+                BackendProblem = "The engine did not start.";
+            }
+            catch (Exception e)
+            {
+                BackendProblem = "The engine did not start: " + (e.InnerException ?? e).Message;
+                Debug.LogWarning(BackendProblem);
+            }
+            return new MockBackend();
         }
 
         public static SkirmishSetup DefaultSetup(IGameBackend b)
@@ -170,6 +217,17 @@ namespace OpenKingdomsUnity.Game
 
         void Update()
         {
+            // Scripts reloaded during Play leave this component without its
+            // parts. Stop cleanly, once, rather than fail every frame.
+            if (Screens == null || Backend == null || Flow == null)
+            {
+                Debug.LogWarning(Title + ": scripts were reloaded during Play, so the game stops. Press Play again.");
+                enabled = false;
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+#endif
+                return;
+            }
             switch (Flow.State)
             {
                 case FlowState.Loading:
