@@ -43,9 +43,9 @@ namespace OpenKingdomsUnity.Game
         int Advance(int n);
 
         // The ground, valid once loading is done.
-        TerrainData Terrain { get; }
+        MapTerrain Terrain { get; }
         float GroundHeight(float x, float z);
-        // A ground picture that TerrainData.Blocks points into.
+        // A ground picture that MapTerrain.Blocks points into.
         RgbaImage TerrainChunk(int chunk);
 
         // Snapshots, each filling a caller's buffer and returning the count.
@@ -189,7 +189,7 @@ namespace OpenKingdomsUnity.Game
         public bool IsLocal, IsComputer, Alive;
     }
 
-    public sealed class TerrainData
+    public sealed class MapTerrain
     {
         public int HeightsW, HeightsH;
         public float CellSize;      // world units between height samples

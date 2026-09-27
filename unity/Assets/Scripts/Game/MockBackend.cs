@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Game
         public IReadOnlyList<PlayerInfo> Players => players;
         public int TicksPerSecond => Tps;
         public uint Tick { get; private set; }
-        public TerrainData Terrain { get; private set; }
+        public MapTerrain Terrain { get; private set; }
 
         public static readonly Color32[] Palette =
         {

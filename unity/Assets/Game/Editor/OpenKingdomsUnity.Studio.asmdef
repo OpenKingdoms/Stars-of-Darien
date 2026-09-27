@@ -1,0 +1,12 @@
+{
+    "name": "OpenKingdomsUnity.Studio",
+    "rootNamespace": "OpenKingdomsUnity.Studio",
+    "references": [
+        "OpenKingdomsUnity",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "autoReferenced": false
+}
