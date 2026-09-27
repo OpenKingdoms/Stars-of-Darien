@@ -641,9 +641,16 @@ namespace OpenKingdomsUnity.Game
                     u.Home = new Vector2(u.Pos.x, u.Pos.z);
                     return true;
                 case CommandKind.Build:
+                case CommandKind.FactoryEnqueue:
+                    // One thing at a time: a new order replaces the last.
                     if (Array.IndexOf(def.BuildOptions, c.BuildDef) < 0) return false;
                     u.BuildDef = c.BuildDef;
                     u.BuildLeft = 5f;
+                    return true;
+                case CommandKind.FactoryDequeue:
+                case CommandKind.FactoryCancel:
+                    if (c.BuildDef >= 0 && u.BuildDef != c.BuildDef) return false;
+                    u.BuildDef = -1;
                     return true;
                 default:
                     return false;

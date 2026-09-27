@@ -27,6 +27,7 @@ namespace OpenKingdomsUnity.Game
         public int FramesPlayed { get; private set; }
         public MenuScreens Screens { get; private set; }
         OrderInput input;
+        public OrderInput Orders => input;
         float clock;
         string pendingLoad;
         bool loadRefused;

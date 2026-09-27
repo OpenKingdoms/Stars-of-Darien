@@ -38,6 +38,42 @@ namespace OpenKingdomsUnity.Game.World
         readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, bool flat)> featureDraws = new List<(Mesh, int, Material, Matrix4x4, bool)>();
         readonly List<(int sprite, Vector3 pos, float w, float bottom, float top, float offX)> spriteFeatures = new List<(int, Vector3, float, float, float, float)>();
 
+        // A building being placed: its model at rest and its footprint,
+        // green where it can stand and red where it cannot.
+        public struct GhostState
+        {
+            public int Def;
+            public Vector3 At;
+            public bool Ok;
+        }
+        public GhostState? Ghost;
+        Mesh flat;
+        Material ghostGood, ghostBad;
+
+        void AddGhost()
+        {
+            if (Ghost == null) return;
+            var g = Ghost.Value;
+            if (g.Def < 0 || g.Def >= backend.UnitDefs.Count) return;
+            var def = backend.UnitDefs[g.Def];
+            var fp = new Vector3(Mathf.Max(1, def.Footprint.x), 1, Mathf.Max(1, def.Footprint.y));
+            overlay.Add(flat, 0, g.Ok ? ghostGood : ghostBad, Matrix4x4.TRS(g.At + Vector3.up * 0.06f, Quaternion.identity, fp));
+            int id = backend.LoadModel(def.ObjectName, backend.Players.Count > 0 ? backend.Players[backend.LocalPlayer].Colour : 0);
+            var model = models.Get(id);
+            if (model == null) return;
+            var d = model.Data;
+            var rest = new Matrix4x4[d.Pieces.Length];
+            for (int p = 0; p < d.Pieces.Length; p++)
+            {
+                var m = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+                int parent = d.Pieces[p].Parent;
+                rest[p] = parent >= 0 && parent < p ? rest[parent] * m : m;
+                if (model.Pieces[p] == null) continue;
+                var at = Matrix4x4.Translate(g.At) * rest[p];
+                for (int s = 0; s < model.Materials[p].Length; s++) billboards.Add(model.Pieces[p], s, model.Materials[p][s], at);
+            }
+        }
+
         public EntityRenderer(IGameBackend backend, ModelCache models)
         {
             this.backend = backend;
@@ -53,6 +89,9 @@ namespace OpenKingdomsUnity.Game.World
             barGood = Keep(Looks.Overlay(new Color(0.3f, 0.95f, 0.3f, 1f)));
             barMid = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.2f, 1f)));
             barLow = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 1f)));
+            flat = Keep(FlatQuad());
+            ghostGood = Keep(Looks.Overlay(new Color(0.3f, 1f, 0.35f, 0.35f)));
+            ghostBad = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 0.4f)));
             shaftMat = Keep(Looks.Model(null));
             shaftMat.color = new Color(0.35f, 0.25f, 0.15f);
         }
@@ -80,6 +119,7 @@ namespace OpenKingdomsUnity.Game.World
                 solid.Add(shaft, 0, shaftMat, Matrix4x4.TRS(s.Position, Quaternion.LookRotation(dir), Vector3.one));
             }
 
+            AddGhost();
             solid.Draw();
             billboards.Draw();
             overlay.Draw();
@@ -243,6 +283,17 @@ namespace OpenKingdomsUnity.Game.World
             m.normals = new[] { Vector3.back, Vector3.back, Vector3.back, Vector3.back };
             m.colors32 = new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255) };
             m.triangles = new[] { 0, 2, 1, 0, 3, 2 };
+            return m;
+        }
+
+        // A unit square lying on the ground, centred, facing up.
+        static Mesh FlatQuad()
+        {
+            var m = new Mesh { name = "flat" };
+            m.vertices = new[] { new Vector3(-0.5f, 0, -0.5f), new Vector3(-0.5f, 0, 0.5f), new Vector3(0.5f, 0, 0.5f), new Vector3(0.5f, 0, -0.5f) };
+            m.colors32 = new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 255) };
+            m.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
+            m.triangles = new[] { 0, 1, 2, 0, 2, 3 };
             return m;
         }
 

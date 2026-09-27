@@ -21,6 +21,7 @@ namespace OpenKingdomsUnity.Game.UI
         // Skirmish setup parts that change.
         RawImage preview, loadingBackdrop;
         Text saveNote, loadEmpty;
+        BottomHud bottom;
         RectTransform saveItems;
         Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, hudMana, hudClock, hudSelection, resultTitle, resultInfo, setupError;
         Image loadingFill, manaFill;
@@ -98,6 +99,7 @@ namespace OpenKingdomsUnity.Game.UI
                     UiKit.SetBar(manaFill, e.Storage > 0 ? e.Mana / e.Storage : 0);
                     int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
                     hudClock.text = $"{secs / 60:00}:{secs % 60:00}";
+                    bottom.Tick();
                     int sel = root.World != null ? root.World.Entities.Selected.Count : 0;
                     hudSelection.text = sel > 0 ? (sel == 1 ? "1 unit selected" : sel + " units selected") : "";
                     break;
@@ -392,6 +394,8 @@ namespace OpenKingdomsUnity.Game.UI
             menu.GetComponent<RectTransform>().Place(1, 0, 1, 1, -170, 6, 14, 6);
             hudSelection = UiKit.Label(s, "", 26, UiKit.Pale, TextAnchor.LowerLeft);
             hudSelection.rectTransform.Place(0, 0, 0.5f, 0, 24, 18, 0, -60);
+            hudSelection.gameObject.SetActive(false);
+            bottom = new BottomHud(root, s);
         }
 
         void BuildPause()
@@ -472,6 +476,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void Dispose()
         {
+            bottom?.Dispose();
             foreach (var o in owned) World.Looks.Release(o);
             owned.Clear();
             if (canvas) World.Looks.Release(canvas.gameObject);
