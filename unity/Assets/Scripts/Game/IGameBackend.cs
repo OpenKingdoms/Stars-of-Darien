@@ -52,6 +52,9 @@ namespace OpenKingdomsUnity.Game
         int ReadUnits(UnitState[] into);
         int ReadFeatures(FeatureState[] into);
         int ReadProjectiles(ProjectileState[] into);
+        // Explosions, sparks, blood and smoke, and shots drawn as pictures,
+        // each at its current frame. Returns the full count.
+        int ReadEffects(EffectState[] into);
         // Each piece's transform, piece space to world, for a unit (by
         // handle) or a model feature (by index). Returns the piece count.
         int ReadUnitPose(int handle, PiecePose[] into);
@@ -63,6 +66,8 @@ namespace OpenKingdomsUnity.Game
         ModelData GetModel(int model);
         RgbaImage Texture(int texture);
         RgbaImage Sprite(int sprite);
+        // An effect's frames side by side, for EffectState.Strip.
+        RgbaImage EffectStrip(int strip);
         // A pose of a model outside any game, in model space, for the
         // studio. The animation is one of UnitDef.Animations. Returns the
         // piece count, or 0 when the backend cannot pose it.
@@ -301,6 +306,20 @@ namespace OpenKingdomsUnity.Game
         public int Kind;            // weapon id, for the look
         public Vector3 Position, Velocity;
         public int Model;           // -1 to draw a streak
+    }
+
+    public struct EffectState
+    {
+        public int Id;              // stable while it lives
+        public int Strip;           // for EffectStrip()
+        public bool IsProjectile;   // a shot in flight drawn as a picture, else an impact effect
+        public Vector3 Position;    // world
+        // The current frame as a camera-facing quad, like the sprite
+        // features: from Bottom to Top above Position.y, Width wide with its
+        // anchor OffsetX from the left, sampling the strip from UvMin.x to
+        // UvMax.x across and 0 to UvMax.y down (row 0 at the top).
+        public float Top, Bottom, OffsetX, Width;
+        public Vector2 UvMin, UvMax;
     }
 
     public struct PiecePose

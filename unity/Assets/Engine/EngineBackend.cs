@@ -21,6 +21,7 @@ namespace OpenKingdomsUnity.Engine
         readonly Dictionary<string, int> mapIndex = new Dictionary<string, int>();
         readonly Dictionary<int, (int def, int colour)> modelSource = new Dictionary<int, (int def, int colour)>();
         OkxProjectile[] projBuf = new OkxProjectile[256];
+        OkxEffect[] effectBuf = new OkxEffect[256];
         readonly int[] buildBuf = new int[256];
         readonly Dictionary<int, ModelData> modelCache = new Dictionary<int, ModelData>();
         OkxUnit[] unitBuf = new OkxUnit[1024];
@@ -541,6 +542,37 @@ namespace OpenKingdomsUnity.Engine
 
         public void SetView(Vector3 centre, float width, float depth) =>
             OkEngine.okx_set_view((int)(centre.x / S), (int)(-centre.z / S), (int)(width / S), (int)(depth / S));
+
+        public int ReadEffects(EffectState[] into)
+        {
+            int n = OkEngine.okx_effects(null, 0);
+            if (effectBuf.Length < n) effectBuf = new OkxEffect[Mathf.NextPowerOfTwo(n)];
+            n = Mathf.Min(OkEngine.okx_effects(effectBuf, effectBuf.Length), effectBuf.Length);
+            int count = Mathf.Min(n, into?.Length ?? 0);
+            for (int i = 0; i < count; i++)
+            {
+                var e = effectBuf[i];
+                into[i] = new EffectState
+                {
+                    Id = e.kind == OkEngine.EffectProjectile ? -1 - e.id : e.id,
+                    Strip = e.sprite, IsProjectile = e.kind == OkEngine.EffectProjectile,
+                    Position = EngineSettings.ToUnity(e.x, e.y, e.z),
+                    Top = (e.top - e.y) * S, Bottom = (e.bottom - e.y) * S,
+                    OffsetX = e.offX * S, Width = e.w * S,
+                    UvMin = new Vector2(e.u0, 0f), UvMax = new Vector2(e.u1, e.v1)
+                };
+            }
+            return n;
+        }
+
+        public RgbaImage EffectStrip(int strip)
+        {
+            int need = OkEngine.okx_effect_strip(strip, null, 0, out int w, out int h);
+            if (need <= 0) return null;
+            var img = new RgbaImage(w, h);
+            OkEngine.okx_effect_strip(strip, img.Pixels, need, out w, out h);
+            return img;
+        }
 
         public Economy ReadEconomy(int player)
         {

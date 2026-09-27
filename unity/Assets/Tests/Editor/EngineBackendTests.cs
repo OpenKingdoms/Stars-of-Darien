@@ -149,6 +149,14 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < pieces; i++) if (a[i].Matrix != b[i].Matrix) moved++;
             Assert.GreaterOrEqual(moved, 2, "the legs swing");
             Assert.AreEqual(before, backend.Tick, "the battle stood still");
+            var effects = new EffectState[256];
+            int ne = backend.ReadEffects(effects);
+            for (int i = 0; i < Mathf.Min(ne, effects.Length); i++)
+            {
+                Assert.Greater(effects[i].Top, effects[i].Bottom);
+                Assert.Greater(effects[i].UvMax.x, effects[i].UvMin.x);
+                Assert.IsNotNull(backend.EffectStrip(effects[i].Strip));
+            }
             var features = new FeatureState[1024];
             Assert.Greater(backend.ReadFeatures(features), 0);
         }

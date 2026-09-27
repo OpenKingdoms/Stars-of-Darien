@@ -656,6 +656,9 @@ namespace OpenKingdomsUnity.Game
 
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
+        public int ReadEffects(EffectState[] into) => 0;
+        public RgbaImage EffectStrip(int strip) => null;
+
         // ---- HUD helpers ----
 
         public bool CanBuildAt(int def, Vector3 at, out Vector3 snapped)
