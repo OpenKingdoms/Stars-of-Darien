@@ -23,27 +23,34 @@ DECAL_WORDS = ("smudge", "groundcover", "grass", "sand", "scorch", "puddle", "mo
 
 
 def is_decal(r):
-    """Things that lie flat on the ground: stains, ground cover, sand."""
-    text = (r["name"] + " " + r["description"] + " " + r["category"]).lower()
+    """Things that lie flat on the ground: stains, ground cover, sand. Not
+    by category: 'grasses' holds the desert ferns."""
+    text = (r["name"] + " " + r["description"]).lower()
     return any(w in text for w in DECAL_WORDS)
 
 
-def build_decal(r, spr):
+def build_decal(r, spr, relief=False):
     """A flat patch on the ground, a hair above it, painted with the
-    sprite with its transparency kept."""
+    sprite with its transparency kept. With relief, for ground cover, it
+    rises up to 0.3 cell where the leaves are thickest."""
     hx, hy = r["sprite"]["hotspot"]
     x0, x1 = -hx / carve.CELL, (spr.w - hx) / carve.CELL
     # rows below the anchor reach toward the viewer, rows above away
     y_near = -(spr.h - hy) / carve.CELL
     y_far = hy / carve.CELL
     bm = bmesh.new()
-    n = 16
+    n, m = (max(16, spr.w // 3), max(16, spr.h // 3)) if relief else (16, 16)
+    cover = _cover(spr) if relief else None
     vs = {}
     for i in range(n + 1):
-        for j in range(n + 1):
-            vs[(i, j)] = bm.verts.new((x0 + (x1 - x0) * i / n, y_near + (y_far - y_near) * j / n, 0.03))
+        for j in range(m + 1):
+            x, y, z = x0 + (x1 - x0) * i / n, y_near + (y_far - y_near) * j / m, 0.03
+            if relief:
+                px, py = carve.screen(hx, hy, x, y, 0.0)
+                z += 0.3 * float(cover[min(spr.h - 1, max(0, int(py))), min(spr.w - 1, max(0, int(px)))])
+            vs[(i, j)] = bm.verts.new((x, y, z))
     for i in range(n):
-        for j in range(n):
+        for j in range(m):
             bm.faces.new([vs[(i, j)], vs[(i + 1, j)], vs[(i + 1, j + 1)], vs[(i, j + 1)]])
     me = bpy.data.meshes.new(r["name"])
     bm.to_mesh(me)
@@ -51,7 +58,19 @@ def build_decal(r, spr):
     ob = bpy.data.objects.new(r["name"], me)
     bpy.context.collection.objects.link(ob)
     ob["box"] = (x0, x1, y_near, y_far)
+    if relief:
+        ob["relief"] = 1
     return ob
+
+
+def _cover(spr):
+    """How much of the neighbourhood of each pixel is drawn, 0 to 1."""
+    import numpy as np
+    k = np.exp(-0.5 * (np.arange(-9, 10) / 3.0) ** 2)
+    k /= k.sum()
+    a = np.array(spr.alpha, np.float32)
+    a = np.apply_along_axis(lambda v: np.convolve(v, k, "same"), 0, a)
+    return np.apply_along_axis(lambda v: np.convolve(v, k, "same"), 1, a)
 
 
 def is_frond(r, spr):
@@ -91,18 +110,25 @@ def build(r, spr):
     crown_mid_row = (top + (crown_rows[-1] if crown_rows else top)) / 2.0
     crown_z = max(1.0, (hy - crown_mid_row) / (carve.CELL * carve.TILT))
     words = (r["description"] + " " + r["category"]).lower()
-    if r.get("shape") == "fern" or ("tree" not in words and "palm" not in words and r.get("shape") != "palm"):
+    palm = not (r.get("shape") == "fern" or ("tree" not in words and "palm" not in words and r.get("shape") != "palm"))
+    if not palm:
         # a plant, not a tree: it sits low, with barely a stem
         crown_z = min(crown_z, 0.4 + 0.35 * radius)
     crown_x = (cx_px - hx) / carve.CELL
     bm = bmesh.new()
     # trunk: from the anchor up to the crown's middle, leaning if the crown sits off to one side
     seg = 10
-    trunk_r = 0.12
+    trunk_r, base_x = 0.12, 0.0
+    if palm:
+        # a palm's trunk as thick as drawn just above the anchor, in bark
+        run = _run(spr, hx, hy - 2) or _run(spr, hx, hy - 6)
+        if run:
+            trunk_r = min(0.45, max(0.12, (run[1] - run[0] + 1) / 2 / carve.CELL))
+            base_x = ((run[0] + run[1] + 1) / 2 - hx) / carve.CELL
     rings = []
     for k in range(seg + 1):
         t = k / seg
-        x = crown_x * t * t
+        x = base_x + (crown_x - base_x) * t * t
         z = crown_z * t
         ring = []
         for i in range(6):
@@ -113,7 +139,10 @@ def build(r, spr):
         for i in range(6):
             a, b = rings[k][i], rings[k][(i + 1) % 6]
             c, d = rings[k + 1][(i + 1) % 6], rings[k + 1][i]
-            bm.faces.new((a, b, c, d))
+            bm.faces.new((a, b, c, d)).material_index = 1 if palm else 0
+    if palm:
+        # closed at the top, where it shows through gaps in the fronds
+        bm.faces.new(rings[-1]).material_index = 1
     # umbrella: a grid over the crown's disc, drooping toward the rim
     n = 24
     grid = {}
@@ -138,7 +167,22 @@ def build(r, spr):
     bpy.context.collection.objects.link(ob)
     ob["box"] = (crown_x - radius, crown_x + radius, -radius, radius)
     ob["frond"] = 1
+    if palm:
+        ob["bark"] = 1
     return ob
+
+
+def _run(spr, hx, y):
+    """The unbroken run of drawn pixels on row y nearest column hx."""
+    if not 0 <= y < spr.h or not any(spr.alpha[y]):
+        return None
+    x = min((x for x in range(spr.w) if spr.alpha[y][x]), key=lambda x: abs(x - hx))
+    a, b = x, x
+    while a > 0 and spr.alpha[y][a - 1]:
+        a -= 1
+    while b < spr.w - 1 and spr.alpha[y][b + 1]:
+        b += 1
+    return a, b
 
 
 def cut_out(ob):
@@ -148,7 +192,10 @@ def cut_out(ob):
         mat = slot.material
         nt = mat.node_tree
         bsdf = nt.nodes["Principled BSDF"]
-        tex = next(nd for nd in nt.nodes if nd.type == "TEX_IMAGE")
+        tex = next((nd for nd in nt.nodes if nd.type == "TEX_IMAGE"), None)
+        if tex is None:
+            # a palm's bark is solid
+            continue
         gt = nt.nodes.new("ShaderNodeMath")
         gt.operation = "GREATER_THAN"
         gt.inputs[1].default_value = 0.5

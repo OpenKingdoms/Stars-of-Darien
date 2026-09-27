@@ -30,7 +30,8 @@ CELL = 16.0
 RES = 8  # voxels per cell
 ALBEDO_GAIN = 1.3
 STONE_TOP = 1.4  # the thickest a lying stone gets, in cells
-STONE_SLOPE = 0.12  # cells of thickness per pixel in from the edge
+STONE_SLOPE = 0.09  # cells of thickness per pixel in from the edge
+LUMP = 0.15  # how far a canopy's bright leaf clusters push out, and its dark gaps in
 ROUND_WORDS = ("tree", "bush", "plant", "shrub", "groundcover", "grass", "corn", "crops", "mushroom")
 
 
@@ -49,22 +50,45 @@ class Sprite:
         w, h = self.w, self.h
         # alpha as rows top-down, for lookups by sprite row
         self.alpha = [[px[((h - 1 - y) * w + x) * 4 + 3] > 0.5 for x in range(w)] for y in range(h)]
+        import numpy as np
+        # the drawn colours, rows top-down, for reading the drawing's parts
+        self.rgb = np.array(px, dtype=np.float32).reshape(h, w, 4)[::-1, :, :3].copy()
         self.bleed(px)
 
-    def bleed(self, px, passes=12):
-        """Spread edge colours into the clear pixels, alpha untouched, so
-        filtering and faces just past the silhouette never pick up black."""
+    def copy(self, keep=None):
+        """This sprite on a texture of its own with its alpha, cleared where
+        keep (rows top-down) is false."""
+        import copy
+        import numpy as np
+        c = copy.copy(self)
+        a = np.array(self.img.pixels[:], dtype=np.float32).reshape(self.h, self.w, 4)
+        if keep is not None:
+            a[..., 3] *= keep[::-1]
+        c.img = bpy.data.images.new(self.img.name + "_copy", self.w, self.h, alpha=True)
+        c.img.pixels[:] = a.ravel()
+        c.alpha = (a[::-1, :, 3] > 0.5).tolist()
+        return c
+
+    def bleed(self, px):
+        """Spread edge colours into every clear pixel, alpha untouched, so
+        filtering and faces past the silhouette never pick up black."""
         import numpy as np
         a = np.array(px, dtype=np.float32).reshape(self.h, self.w, 4)
         rgb, known = a[..., :3].copy(), a[..., 3] > 0.5
-        for _ in range(passes):
-            if known.all():
-                break
+
+        def shift(arr, dy, dx):
+            # like np.roll, but nothing wraps round from the far edge
+            out = np.zeros_like(arr)
+            h, w = arr.shape[:2]
+            out[max(dy, 0):h + min(dy, 0), max(dx, 0):w + min(dx, 0)] = \
+                arr[max(-dy, 0):h + min(-dy, 0), max(-dx, 0):w + min(-dx, 0)]
+            return out
+        while known.any() and not known.all():
             acc = np.zeros_like(rgb)
             cnt = np.zeros(known.shape, np.float32)
             for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-                k = np.roll(known, (dy, dx), (0, 1))
-                acc += np.roll(rgb, (dy, dx), (0, 1)) * k[..., None]
+                k = shift(known, dy, dx)
+                acc += shift(rgb, dy, dx) * k[..., None]
                 cnt += k
             grow = ~known & (cnt > 0)
             rgb[grow] = acc[grow] / cnt[grow][:, None]
@@ -72,6 +96,24 @@ class Sprite:
         # the sprite has its light painted in and the game lights the model
         # again: lift the colour so the lit model lands near the original
         a[..., :3] = np.clip(rgb * ALBEDO_GAIN, 0.0, 1.0)
+        self.img.pixels[:] = a.ravel()
+
+    def opaque(self):
+        """Alpha 1 everywhere, for solid models: the game alpha-tests every
+        texture, so a face painted from outside the silhouette would be a hole."""
+        import numpy as np
+        a = np.array(self.img.pixels[:], dtype=np.float32).reshape(-1, 4)
+        a[:, 3] = 1.0
+        self.img.pixels[:] = a.ravel()
+
+    def clear_border(self):
+        """Alpha 0 on the image's outer pixels, for cut-out models: a face
+        past the image repeats its edge (glTF clamps), which would stretch a
+        drawn edge pixel into a spike."""
+        import numpy as np
+        a = np.array(self.img.pixels[:], dtype=np.float32).reshape(self.h, self.w, 4)
+        a[[0, -1], :, 3] = 0.0
+        a[:, [0, -1], 3] = 0.0
         self.img.pixels[:] = a.ravel()
 
     def edge_distance(self):
@@ -113,7 +155,75 @@ def screen(hx, hy, x, y, z):
     return hx + x * CELL, hy + (-y) * CELL - z * CELL * TILT
 
 
-def carve(r, spr):
+# the classic camera looks along (0, 1, -2): toward it is (0, -1, 2)
+CAM = (0.0, -1 / math.sqrt(5), 2 / math.sqrt(5))
+
+
+def globe(spr, hx, hy, crown, zscale, x, y, z):
+    """A crown is painted like a globe seen from the classic camera: each
+    point takes the sprite pixel at its angle from the view axis, spaced
+    evenly out to the rim, the far side mirrored onto the near, so round
+    sides wrap the painting instead of smearing it. A rim sample past the
+    silhouette walks in until it lands on the drawing."""
+    cx, cy, cz, r, h = crown
+    d = [(x - cx) / r, (y - cy) / r, (z - cz) / max(h, 1e-3)]
+    n = math.sqrt(sum(c * c for c in d)) or 1.0
+    d = [c / n for c in d]
+    dot = sum(a * b for a, b in zip(d, CAM))
+    if dot < 0:
+        d = [a - 2 * dot * b for a, b in zip(d, CAM)]
+        dot = -dot
+    e = [a - dot * b for a, b in zip(d, CAM)]
+    s = math.sqrt(sum(c * c for c in e))
+    theta = math.acos(max(-1.0, min(1.0, dot)))
+    k = (theta / (math.pi / 2)) / s if s > 1e-4 else 0.0
+    ox = e[0] * k * r
+    oy, oz = e[1] * k * r, e[2] * k * h * zscale
+    sx0, sy0 = screen(hx, hy, cx, cy, cz * zscale)
+    sx, sy = sx0 + ox * CELL, sy0 - oy * CELL - oz * CELL * TILT
+    for _ in range(40):
+        if spr.inside(sx, sy):
+            break
+        sx, sy = sx0 + (sx - sx0) * 0.95, sy0 + (sy - sy0) * 0.95
+    return sx, sy
+
+
+def leaf_light(spr):
+    """Each pixel's luminance, blurred to the size of a leaf cluster and
+    scaled to -1..1 over the drawing: bright clusters high, gaps low."""
+    import numpy as np
+    lum = spr.rgb @ np.array([0.299, 0.587, 0.114], np.float32)
+    a = np.array(spr.alpha, np.float32)
+    k = np.exp(-0.5 * (np.arange(-6, 7) / 2.5) ** 2)
+    k /= k.sum()
+
+    def blur(m):
+        m = np.apply_along_axis(lambda v: np.convolve(v, k, "same"), 0, m)
+        return np.apply_along_axis(lambda v: np.convolve(v, k, "same"), 1, m)
+    b = blur(lum * a) / np.maximum(blur(a), 1e-3)
+    on = a > 0.5
+    mu, sd = b[on].mean(), b[on].std() + 1e-3
+    return np.clip((b - mu) / (2 * sd), -1.0, 1.0)
+
+
+def boulder(spr, hx, hy, top):
+    """(x, y, rx, ry, h) of a dome lying on the ground, as wide as the rock
+    is drawn. A dome ry deep and h tall shows 16 ry + sqrt((16 ry)^2 + (8 h)^2)
+    rows, which barely depends on h, so h is 0.8 of the half width and the
+    drawn height sets the depth. Its foot's front edge stands on the
+    sprite's bottom row."""
+    cols = [x for x in range(spr.w) if any(spr.alpha[y][x] for y in range(spr.h))]
+    rows = [y for y in range(spr.h) if any(spr.alpha[y])]
+    rx = (cols[-1] + 1 - cols[0]) / 2 / CELL
+    h = min(top, 0.8 * rx)
+    drawn = rows[-1] + 1 - rows[0]
+    ry = max(0.35 * rx, (drawn ** 2 - (CELL * TILT * h) ** 2) / (2 * CELL * drawn))
+    return ((cols[0] + cols[-1] + 1) / 2 - hx) / CELL, (hy - rows[-1] - 1) / CELL + ry, rx, ry, h
+
+
+def carve(r, spr, hull=None):
+    """With hull, a height in cells: every point the sprite covers up to that
+    height, as deep as the footprint, for cutting a ruin to its outline."""
     hx, hy = r["sprite"]["hotspot"]
     fx, fz = r["footprint"]
     words = (r["description"] + " " + r["category"]).lower()
@@ -123,12 +233,14 @@ def carve(r, spr):
     # keeps thin branches, carved like any other object.
     tree = "tree" in words and "dead" not in words
     shape = r.get("shape")
-    if shape in ("crown", "poplar", "bush"):
+    if shape in ("crown", "poplar", "bush", "conifer"):
         tree, rounded = True, True
     if shape == "lode":
         rounded = True
-    if "dead" in words:
+    if "dead" in words or hull:
         rounded = False
+    if hull:
+        tree = False
     # The box: east-west from the sprite itself (things overhang their
     # footprint), north-south from the footprint, or as deep as wide for
     # plants, and up to the feature's height.
@@ -136,18 +248,34 @@ def carve(r, spr):
     if rounded:
         half = (x1 - x0) / 2
         y0, y1 = -half, half
+    elif hull:
+        # room for a sibling drawn wider than the ruin's footprint
+        y0, y1 = -max(fx, fz) / 2 - 0.5, max(fx, fz) / 2 + 0.5
     else:
         y0, y1 = -fz / 2 - 0.25, fz / 2 + 0.25
-    H = r["height"] / CELL if r["height"] else (hy / (CELL * TILT))
+    # no height: something lying low, never the hotspot's full reach
+    H = r["height"] / CELL if r["height"] else min(0.5, hy / (CELL * TILT))
+    if hull:
+        H = hull
+    # A rock is a boulder: its height comes from the drawing, not the TDF
+    rock = None
+    if not hull and r["category"].lower() == "rocks":
+        rock = boulder(spr, hx, hy, H)
+        H = rock[4]
+        y0, y1 = rock[1] - rock[3] - 0.25, rock[1] + rock[3] + 0.25
     # Never taller than the sprite can show, even from the back edge.
     # Never taller than the sprite can show. A point at depth y and height
     # z lands on row hy - 16 y - 8 z, so the tallest reachable point is at
     # the front of the box, where -y is largest.
     H = min(H, (hy - y0 * CELL) / (CELL * TILT))
+    # leafy canopies get lumps, with room for them toward and away from the camera
+    lumpy = tree and shape in ("crown", "poplar", "conifer")
+    if lumpy:
+        y0, y1 = y0 * (1 + LUMP), y1 * (1 + LUMP)
     # Stones are mostly fallen slabs seen from above: every pixel of the
     # sprite is the top of a block lying on the ground, thicker away from
     # the silhouette's edge, so they lie down and have no holes.
-    stone = "standing stones" in words or shape == "stone"
+    stone = not hull and ("standing stones" in words or shape == "stone")
     if stone:
         tree = rounded = False
         H = min(H, STONE_TOP)
@@ -177,38 +305,56 @@ def carve(r, spr):
         crown_r = (x1 - x0) / 2
         crown_c = (trunk_top * 0.7 + H) / 2
         crown_h = (H - trunk_top * 0.7) / 2
+        if shape in ("crown", "poplar", "conifer"):
+            # thick enough to outlast the remesh below
+            trunk_r = min(0.45, max(trunk_r, crown_r * 0.12, 1.6 / RES))
         if shape == "crown":
-            # a round crown on a short trunk, the tree no taller than
-            # its crown is wide and a bit
+            # a round crown reaching down to a fifth of the tree, the tree
+            # no taller than its crown is wide and a bit
             low = min(H, crown_r * 2.5)
             zscale = H / low
-            crown_h = min(crown_h, crown_r * 0.8)
-            crown_c = low - crown_h
-            trunk_top = max(0.3, crown_c - crown_h * 0.8)
-            trunk_r = min(0.45, max(trunk_r, crown_r * 0.11))
+            trunk_top = 0.2 * low
+            crown_c, crown_h = 0.6 * low, 0.4 * low
+        elif shape == "conifer":
+            # a cone narrowing to its tip, on a short trunk
+            trunk_top = 0.15 * H
+            crown_c, crown_h = (trunk_top + H) / 2, (H - trunk_top) / 2
         elif shape == "bush":
             # a low dome from the ground, no trunk
             crown_h = min(H * 0.5, crown_r * 0.7)
             crown_c = crown_h * 0.9
             trunk_top = 0.0
-    if not rounded:
+    if not rounded and not hull and not rock:
         spr.edge_distance()
+    if lumpy:
+        leaf = leaf_light(spr)
+        crown = ((x0 + x1) / 2, (y0 + y1) / 2, crown_c, crown_r, crown_h)
+
+        def lump(x, y, z):
+            sx, sy = globe(spr, hx, hy, crown, zscale, x, y, z)
+            xi = min(spr.w - 1, max(0, int(sx)))
+            return 1.0 + LUMP * float(leaf[min(spr.h - 1, max(0, int(sy))), xi])
 
     def idx(i, j, k):
         return (k * ny + j) * nx + i
 
     if stone:
-        for py in range(spr.h):
-            for px in range(spr.w):
-                if not spr.alpha[py][px]:
+        for px in range(spr.w):
+            i = int((((px + 0.5) - hx) / CELL - x0) * RES)
+            prev = None
+            for py in range(spr.h):
+                if not spr.alpha[py][px] or not 0 <= i < nx:
+                    prev = None
                     continue
                 t = min(H, max(1.0 / RES, spr.dist[py][px] * STONE_SLOPE))
-                i = int((((px + 0.5) - hx) / CELL - x0) * RES)
                 j = int(((hy - (py + 0.5) - CELL * TILT * t) / CELL - y0) * RES)
-                for jj in (j, j + 1):
-                    if 0 <= i < nx and 0 <= jj < ny:
-                        for k in range(min(nz, max(1, int(round(t * RES))))):
-                            solid[idx(i, jj, k)] = 1
+                # a column's pixels are one run of ground, however the
+                # thickening pulls them toward the camera
+                lo, hi, tt = (j, j + 1, t) if prev is None else (min(j, prev[0]), max(j + 1, prev[0]), max(t, prev[1]))
+                for jj in range(max(0, lo), min(ny, hi + 1)):
+                    for k in range(min(nz, max(1, int(round(tt * RES))))):
+                        solid[idx(i, jj, k)] = 1
+                prev = (j, t)
 
     for k in range(0 if stone else nz):
         for j in range(ny):
@@ -224,8 +370,16 @@ def carve(r, spr):
                     continue
                 if tree:
                     # the crown: a rounded mass, as wide as the sprite
-                    f = 1.0 - ((z - crown_c) / crown_h) ** 2
-                    if f <= 0 or (x - (x0 + x1) / 2) ** 2 + (y - ymid) ** 2 > crown_r * crown_r * f:
+                    rr = (x - (x0 + x1) / 2) ** 2 + (y - ymid) ** 2
+                    if shape == "conifer":
+                        e = math.sqrt(rr) / max(1e-3, crown_r * (H - z) / (H - trunk_top))
+                    else:
+                        e = math.sqrt(rr / crown_r ** 2 + ((z - crown_c) / crown_h) ** 2)
+                    if e > (lump(x, y, z) if lumpy and abs(e - 1) < LUMP else 1.0):
+                        continue
+                elif rock:
+                    bx, by, rx, ry, _ = rock
+                    if ((x - bx) / rx) ** 2 + ((y - by) / ry) ** 2 + (z / H) ** 2 > 1:
                         continue
                 elif rounded:
                     # the width of the silhouette at this height, seen at the
@@ -238,7 +392,7 @@ def carve(r, spr):
                     cy = (y0 + y1) / 2
                     if (x - cxs) ** 2 + (y - cy) ** 2 > rad * rad:
                         continue
-                else:
+                elif not hull:
                     # as deep as the painting is wide here, within the footprint
                     half = min((y1 - y0) / 2, max(0.25, spr.depth_at(sx, sy) * 1.2 / CELL))
                     if abs(y - ymid) > half:
@@ -300,12 +454,20 @@ def carve(r, spr):
     bpy.ops.object.convert(target="MESH")
     for p in ob.data.polygons:
         p.use_smooth = True
+    lo = min(v.co.z for v in ob.data.vertices) if tree else 0.0
+    if 0 < lo < 0.5:
+        # smoothing lifts a trunk's foot off the ground: stretch it back down
+        for v in ob.data.vertices:
+            if v.co.z < 0.5:
+                v.co.z -= lo * (0.5 - v.co.z) / (0.5 - lo)
     ob["box"] = (x0, x1, y0, y1)
     ob["zscale"] = zscale
     if tree and trunk_top > 0:
         ob["trunk"] = (trunk_x, ymid, trunk_r, trunk_top)
     if tree:
         ob["crown"] = ((x0 + x1) / 2, ymid, crown_c, crown_r, crown_h)
+    if rock:
+        ob["dome"] = (rock[0], rock[1], 0.0, rock[2], H)
     return ob, (nx * ny * nz, faces)
 
 
@@ -320,43 +482,22 @@ def paint(ob, r, spr):
     zscale = ob.get("zscale", 1.0)
     trunk = tuple(ob["trunk"]) if "trunk" in ob else None
     crown = tuple(ob["crown"]) if "crown" in ob else None
+    # a boulder's hidden faces are painted as a globe's, so they land on the rock
+    dome = tuple(ob["dome"]) if "dome" in ob else None
     site_top = ob.get("site_top")
 
     def in_trunk(x, y, z):
         return trunk is not None and z < trunk[3] - 0.05 and             (x - trunk[0]) ** 2 + (y - trunk[1]) ** 2 < (trunk[2] * 1.8) ** 2
 
-    # the classic camera looks along (0, 1, -2): toward it is (0, -1, 2)
-    cam = (0.0, -1 / math.sqrt(5), 2 / math.sqrt(5))
-
-    def crown_point(x, y, z):
-        """A crown is painted like a globe seen from the classic camera:
-        each point takes the sprite pixel at its angle from the view axis,
-        spaced evenly out to the rim, the far side mirrored onto the near,
-        so round sides wrap the painting instead of smearing it."""
-        cx, cy, cz, r, h = crown
-        d = [(x - cx) / r, (y - cy) / r, (z - cz) / max(h, 1e-3)]
-        n = math.sqrt(sum(c * c for c in d)) or 1.0
-        d = [c / n for c in d]
-        dot = sum(a * b for a, b in zip(d, cam))
-        if dot < 0:
-            d = [a - 2 * dot * b for a, b in zip(d, cam)]
-            dot = -dot
-        e = [a - dot * b for a, b in zip(d, cam)]
-        s = math.sqrt(sum(c * c for c in e))
-        theta = math.acos(max(-1.0, min(1.0, dot)))
-        k = (theta / (math.pi / 2)) / s if s > 1e-4 else 0.0
-        ox = e[0] * k * r
-        oy, oz = e[1] * k * r, e[2] * k * h * zscale
-        sx0, sy0 = screen(hx, hy, cx, cy, cz * zscale)
-        return sx0 + ox * CELL, sy0 - oy * CELL - oz * CELL * TILT
     for poly in me.polygons:
         n = poly.normal
         for li in poly.loop_indices:
             x, y, z = me.vertices[me.loops[li].vertex_index].co
+            seen = n.z >= -0.3 and (n.y <= -0.3 or n.z > 0.6 or ob.get("relief"))
             if n.z < -0.3:
                 # undersides: the painting turned under, as for the sides
                 px, py, pz = xc + (y - yc) * stretch, yc, z
-            elif n.y <= -0.3 or n.z > 0.6:
+            elif n.y <= -0.3 or n.z > 0.6 or ob.get("relief"):
                 # faces the classic camera saw: the sprite exactly
                 px, py, pz = x, y, z
             elif abs(n.y) >= abs(n.x):
@@ -368,16 +509,13 @@ def paint(ob, r, spr):
                 px, py, pz = xc + side * (y - yc) * stretch, yc, z
             if site_top is not None:
                 # the site art lies on the plinth's top as it lay on the
-                # ground; the plinth's sides take the stone at the rim
-                if n.z > 0.6:
-                    px, py, pz = x, y, 0.0
-                else:
-                    d = math.hypot(x, y) or 1.0
-                    rim = min(ob["box"][1], (spr.w - hx) / CELL) * 0.92
-                    px, py, pz = x / d * rim, y / d * rim, 0.0
-                sx, sy = screen(hx, hy, px, py, pz)
+                # ground, scaled out to the rim; the rest is plain stone
+                k = ob["site_art"]
+                sx, sy = screen(hx, hy, x * k, y * k, 0.0)
             elif crown and not in_trunk(x, y, z):
-                sx, sy = crown_point(x, y, z)
+                sx, sy = globe(spr, hx, hy, crown, zscale, x, y, z)
+            elif dome and not seen:
+                sx, sy = globe(spr, hx, hy, dome, 1.0, x, y, z)
             else:
                 sx, sy = screen(hx, hy, px, py, pz * zscale)
             uv.data[li].uv = (sx / spr.w, 1.0 - sy / spr.h)
@@ -394,34 +532,68 @@ def paint(ob, r, spr):
     # Plain lit colour: in the game the sun and shadows light it like
     # everything else.
     me.materials.append(mat)
-    if trunk:
+    if trunk or ob.get("bark"):
+        # a frond's trunk faces come marked for the bark already
         bark = bpy.data.materials.new(r["name"] + "_bark")
         bark.use_nodes = True
         bb = bark.node_tree.nodes["Principled BSDF"]
-        bb.inputs["Base Color"].default_value = (*bark_colour(spr, hx, hy), 1.0)
+        bb.inputs["Base Color"].default_value = (*bark_colour(spr, hx, hy, bool(ob.get("bark"))), 1.0)
         bb.inputs["Roughness"].default_value = 1.0
         me.materials.append(bark)
-        for poly in me.polygons:
+        for poly in me.polygons if trunk else ():
             if all(in_trunk(*me.vertices[vi].co) for vi in poly.vertices):
                 poly.material_index = 1
+    if site_top is not None:
+        rim = bpy.data.materials.new(r["name"] + "_rim")
+        rim.use_nodes = True
+        rb = rim.node_tree.nodes["Principled BSDF"]
+        rb.inputs["Base Color"].default_value = (*rim_colour(spr, hx, hy), 1.0)
+        rb.inputs["Roughness"].default_value = 1.0
+        me.materials.append(rim)
+        for poly in me.polygons:
+            top = poly.normal.z > 0.6 and min(me.vertices[vi].co.z for vi in poly.vertices) > site_top - 1e-3
+            poly.material_index = 0 if top else 1
     spr.img.pack()
 
 
-def bark_colour(spr, hx, hy):
-    """The brownest pixels near where the tree meets the ground, or a
-    plain bark brown when the sprite shows none."""
+def rim_colour(spr, hx, hy):
+    """The median colour of a site's outer ring of art, made linear as a
+    material colour is (the image holds sRGB values)."""
+    import numpy as np
+    a = np.array(spr.img.pixels[:], dtype=np.float32).reshape(spr.h, spr.w, 4)[::-1]
+    yy, xx = np.mgrid[0:spr.h, 0:spr.w]
+    d = np.hypot(xx + 0.5 - hx, yy + 0.5 - hy) / (spr.w / 2.0)
+    ring = (d > 0.75) & (d < 1.0) & np.array(spr.alpha)
+    if ring.sum() < 4:
+        return (0.07, 0.06, 0.055)
+    c = np.median(a[ring][:, :3], 0)
+    return tuple(float(v) for v in np.where(c > 0.04045, ((c + 0.055) / 1.055) ** 2.4, c / 12.92))
+
+
+def bark_colour(spr, hx, hy, drawn_ok=False):
+    """The brownest pixels near where the tree meets the ground, made
+    linear as a material colour is, or a plain bark brown when the sprite
+    shows none. With drawn_ok, for a palm whose trunk is drawn bare, the
+    median colour there stands in when none is brown (grey bark)."""
     px = spr.img.pixels[:]
     w, h = spr.w, spr.h
-    picks = []
+    picks, drawn = [], []
     for y in range(max(0, hy - 10), min(h, hy + 4)):
         for x in range(max(0, hx - 12), min(w, hx + 12)):
             i = ((h - 1 - y) * w + x) * 4
-            rr, gg, bb, aa = px[i:i + 4]
-            if aa > 0.5 and rr > gg * 1.05 and rr > bb * 1.2 and 0.08 < rr < 0.8:
-                picks.append((rr, gg, bb))
+            rr, gg, bb = px[i:i + 3]
+            # the mask, not the texture's alpha, which opaque() may have set
+            if spr.alpha[y][x]:
+                drawn.append((rr, gg, bb))
+                if rr > gg * 1.05 and rr > bb * 1.2 and 0.08 < rr < 0.8:
+                    picks.append((rr, gg, bb))
     if len(picks) < 4:
-        return (0.20, 0.13, 0.07)
-    return tuple(sum(c[k] for c in picks) / len(picks) for k in range(3))
+        if len(drawn) < 4 or not drawn_ok:
+            return (0.20, 0.13, 0.07)
+        drawn.sort(key=sum)
+        picks = [drawn[len(drawn) // 2]]
+    c = [sum(c[k] for c in picks) / len(picks) for k in range(3)]
+    return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c)
 
 
 def render(ob, out, name):
