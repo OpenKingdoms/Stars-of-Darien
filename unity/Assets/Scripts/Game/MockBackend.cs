@@ -431,10 +431,10 @@ namespace OpenKingdomsUnity.Game
                 int e = NearestEnemy(u, 1000f);
                 if (e >= 0) u.Goal = new Vector2(byHandle[e].Pos.x, byHandle[e].Pos.z);
             }
-            else if (u.Goal == null && rng.NextDouble() < 0.01)
+            else if (u.Goal == null && !d.CanFly && rng.NextDouble() < 0.01)
             {
-                float r = d.CanFly ? 12f : 4f;
-                u.Goal = u.Home + new Vector2((float)rng.NextDouble() * 2 * r - r, (float)rng.NextDouble() * 2 * r - r);
+                // Idle soldiers wander. A flyer stays down until it has an order.
+                u.Goal = u.Home + new Vector2((float)rng.NextDouble() * 8 - 4, (float)rng.NextDouble() * 8 - 4);
             }
 
             if (moveTo is Vector2 goal)

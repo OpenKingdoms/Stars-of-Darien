@@ -53,7 +53,7 @@ namespace OpenKingdomsUnity.Tests
             int handle = -1, model = -1;
             uint id = 0;
             for (int i = 0; i < ents.UnitCount; i++)
-                if (ents.Units[i].Player == 0 && mock.UnitDefs[ents.Units[i].Def].CanFly)
+                if (ents.Units[i].Player == mock.LocalPlayer && mock.UnitDefs[ents.Units[i].Def].CanFly)
                 {
                     handle = ents.Units[i].Handle;
                     id = ents.Units[i].StableId;
