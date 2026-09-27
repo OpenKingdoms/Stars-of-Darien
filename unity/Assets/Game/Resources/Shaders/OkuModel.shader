@@ -10,10 +10,12 @@ Shader "OpenKingdoms/Presentation/Model"
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _Glossiness ("Smoothness", Range(0, 1)) = 0.2
         _Rim ("Rim light", Range(0, 1)) = 0.3
+        [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
     }
     SubShader
     {
         Tags { "RenderType" = "TransparentCutout" "Queue" = "AlphaTest" }
+        Cull [_Cull]
         CGPROGRAM
         #pragma surface surf Standard fullforwardshadows addshadow alphatest:_Cutoff
         #pragma multi_compile_instancing

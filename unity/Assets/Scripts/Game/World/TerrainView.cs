@@ -75,7 +75,8 @@ namespace OpenKingdomsUnity.Game.World
         // skirt of ground sloping away and down, in the colour of the edge.
         GameObject BuildApron(MapTerrain t, System.Func<int, RgbaImage> chunk, Transform parent)
         {
-            const float reach = 140f, step = 4f;
+            const float reach = 140f;
+            float step = t.CellSize;
             var size = t.Size;
             var ring = new List<Vector2>();
             for (float x = 0; x < size.x; x += step) ring.Add(new Vector2(x, 0));
@@ -93,20 +94,34 @@ namespace OpenKingdomsUnity.Game.World
             {
                 var out2 = p - centre;
                 out2 = new Vector2(Mathf.Abs(out2.x) >= size.x / 2 - 0.01f ? Mathf.Sign(out2.x) : 0, Mathf.Abs(out2.y) >= size.y / 2 - 0.01f ? Mathf.Sign(out2.y) : 0).normalized;
-                var c = EdgeColour(t, chunk, p);
-                verts.Add(new Vector3(p.x, t.Sample(p.x, p.y), p.y));
-                verts.Add(new Vector3(p.x + out2.x * reach, farY, p.y + out2.y * reach));
+                // Feathered along the edge: this block and the two beside it.
+                var along = new Vector2(-out2.y, out2.x) * t.BlockSize;
+                Color c = ((Color)EdgeColour(t, chunk, p) * 2 + EdgeColour(t, chunk, p + along) + EdgeColour(t, chunk, p - along)) / 4f;
+                // The inner edge tucks under the map's own edge, so no seam shows.
+                var tuck = p - out2 * (t.CellSize * 0.5f);
+                float edgeY = t.Sample(tuck.x, tuck.y) - 0.04f;
+                // A shore at the edge drops under the sea at once, so the
+                // water hides the join. Higher land eases down.
+                bool shore = t.SeaLevel > 0 && edgeY < t.SeaLevel + 1.5f;
+                float midY = shore ? Mathf.Min(edgeY - 0.5f, t.SeaLevel - 2.5f) : edgeY - 1f;
+                verts.Add(new Vector3(tuck.x, edgeY, tuck.y));
+                verts.Add(new Vector3(p.x + out2.x * 6f, midY, p.y + out2.y * 6f));
+                verts.Add(new Vector3(p.x + out2.x * reach, Mathf.Min(farY, midY - 1f), p.y + out2.y * reach));
                 cols.Add(c);
-                cols.Add(Color32.Lerp(c, new Color32(90, 95, 85, 255), 0.5f));
+                cols.Add(c * 0.95f);
+                cols.Add(c * 0.85f);
             }
             int n = ring.Count;
             for (int i = 0; i < n; i++)
             {
-                int a = 2 * i, b = 2 * ((i + 1) % n);
+                for (int k = 0; k < 2; k++)
+                {
+                    int a = 3 * i + k, b = 3 * ((i + 1) % n) + k;
                 // The ring runs clockwise seen from above, and the outer edge
                 // lies outside it, so this order faces up.
-                tris.Add(a); tris.Add(b + 1); tris.Add(b);
-                tris.Add(a); tris.Add(a + 1); tris.Add(b + 1);
+                    tris.Add(a); tris.Add(b + 1); tris.Add(b);
+                    tris.Add(a); tris.Add(a + 1); tris.Add(b + 1);
+                }
             }
             var mesh = new Mesh { name = "apron" };
             mesh.SetVertices(verts);

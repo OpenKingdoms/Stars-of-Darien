@@ -9,27 +9,54 @@ namespace OpenKingdomsUnity.Game.World
 {
     public static class OverrideLoader
     {
-        // Set by the editor: which overrides exist, and how to load one.
-        // A player build has neither yet, and draws the originals.
+        // Which overrides exist. Scanned from the project folder the first
+        // time it is needed, and again after Reset.
         public static OverrideIndex Index;
-        public static Func<string, GameObject> Load;
+        // Loads what the runtime cannot, .fbx and .prefab, set by the editor.
+        public static Func<string, GameObject> EditorLoad;
+        public static int Loaded => templates.Count;
 
         static readonly Dictionary<string, OverrideModel> plain = new Dictionary<string, OverrideModel>();
+        static readonly Dictionary<string, GameObject> templates = new Dictionary<string, GameObject>();
 
-        public static void Reset(OverrideIndex index)
+        public static string ProjectDir => System.IO.Path.GetDirectoryName(Application.dataPath);
+
+        public static void Reset(OverrideIndex index = null)
         {
             Index = index;
             plain.Clear();
+            foreach (var t in templates.Values) if (t != null) Looks.Release(t);
+            templates.Clear();
+        }
+
+        public static OverrideIndex EnsureIndex()
+        {
+            if (Index == null) Index = OverrideIndex.Scan(ProjectDir);
+            return Index;
+        }
+
+        // The model for a path in the index: a glb is read here, anything
+        // else goes to the editor. Kept for the session.
+        public static GameObject Template(string path)
+        {
+            if (templates.TryGetValue(path, out var go)) return go;
+            if (path.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
+            {
+                go = GlbLoader.Load(System.IO.Path.Combine(ProjectDir, path), out var error);
+                if (go == null) Debug.LogWarning($"Override {path} was not read: {error}");
+            }
+            else if (EditorLoad != null) go = EditorLoad(path);
+            templates[path] = go;
+            return go;
         }
 
         // Pieceless lookups (sprite features) are cached by path.
         public static OverrideModel Find(OverrideKind kind, PieceInfo[] pieces, params string[] names)
         {
-            if (Index == null || Load == null) return null;
-            string path = Index.Find(kind, names);
+            string path = EnsureIndex().Find(kind, names);
             if (path == null) return null;
             if (pieces == null && plain.TryGetValue(path, out var cached)) return cached;
-            var go = Load(path);
+            var go = Template(path);
             var o = go != null ? OverrideModel.From(go, pieces, path) : null;
             if (pieces == null) plain[path] = o;
             return o;
