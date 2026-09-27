@@ -1,8 +1,12 @@
-# openkingdoms-unity
+# Darien Reforged
 
-A working name. The game will get its own name once the trademark search is done.
+A remaster of Total Annihilation: Kingdoms in Unity, running on the [OpenKingdoms](https://github.com/OpenKingdoms/OpenKingdoms) engine. The engine plays the game by the original's rules, and Unity draws it with modern light, shadows, water and weather, a new interface in the spirit of the original, and 3D models in place of the sprite-only scenery. It is free and open, and nothing is sold.
 
-This is a new real-time strategy game built in Unity. The simulation, pathfinding, networking and determinism come from a C core that started as the general parts of [OpenKingdoms](https://github.com/OpenKingdoms/OpenKingdoms). The world, art, units and rules are new. Nothing here uses Total Annihilation: Kingdoms data, names or story, and nothing may.
+You bring your own game. Darien Reforged contains none of the original's data, and it never will. It reads the maps, units, models, sounds and music from your own installed copy of Total Annihilation: Kingdoms. Without one it runs on a mock engine with made-up maps, which is enough to work on the menus, the world view and the tools.
+
+`docs/ROADMAP.md` has the plan, `docs/ITERATE.md` how to build, test and play, and `docs/STUDIO.md` the studio and the drop-in models.
+
+The small capsule demo on the C core in `core/`, described below, stays in the project as a fallback scene.
 
 ## What the MVP shows
 
@@ -34,9 +38,9 @@ A small real-time battle on a 64 by 64 map, with every rule decided by the C cor
 - The C side owns all game state and all randomness. Unity draws, takes input, runs the UI and plays sound, and never feeds rendering results back into the sim.
 - `ok_sim_hash` must match on every platform. `test_the_script_hash_is_pinned` holds the value, and CI checks it on Windows and Linux. A change to the rules moves the pin on purpose, in the same commit.
 - A change to a function or struct in `ok_sim.h`, `ok_turn.h` or `ok_ai.h` bumps `OK_SIM_ABI_VERSION` and `OkNative.AbiVersion` together.
-- Nothing from the original game: no data files, names, factions, characters, logos, or art traced from its models or sprites.
+- Nothing from the original game is ever committed: no data files, sprites, models, sounds or anything extracted from them. The game reads them from the player's own copy at run time.
 - No code arrives from anyone but Zach until a contributor agreement is in place.
 
 ## License
 
-Private and proprietary. See `LICENSE`.
+Darien Reforged is free software under the GNU General Public License, version 3 or any later version, in `LICENSE`, with an additional permission to combine it with the Unity engine, in `LICENSE.unity-exception`. The repository is private for now.
