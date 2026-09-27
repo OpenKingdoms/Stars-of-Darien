@@ -66,7 +66,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.GreaterOrEqual(root.FramesPlayed, 300);
             Assert.Greater(mock.Tick, startTick, "the simulation advanced");
             Assert.AreEqual(18, root.World.Entities.UnitCount);
-            Assert.Greater(root.World.Entities.Drawn, 100, "unit pieces, trees and sprites were drawn");
+            // Nine own units of seven pieces each at least, whatever the fog hides.
+            Assert.Greater(root.World.Entities.Drawn, 60, "unit pieces, trees and sprites were drawn");
 
             // Selecting the monarch fills the command and build buttons.
             var ents = root.World.Entities;

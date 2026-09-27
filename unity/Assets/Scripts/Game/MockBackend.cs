@@ -607,6 +607,8 @@ namespace OpenKingdomsUnity.Game
         public bool SaveMap(string name)
         {
             if (Terrain == null || string.IsNullOrWhiteSpace(name)) return false;
+            // A shipped map is never replaced, only the mock's own saves.
+            if (maps.Exists(m => string.Equals(m.Id, name, StringComparison.OrdinalIgnoreCase)) && !savedMaps.ContainsKey(name)) return false;
             var t = Terrain;
             var copy = new MapTerrain
             {
