@@ -139,7 +139,9 @@ namespace OpenKingdomsUnity.Game.UI
             {
                 // No overview: a picture of the ground from its chunks.
                 var t = root.Backend.Terrain;
-                var img = TerrainBuilder.BakeRegion(t, 0, 0, 128, c => root.Backend.TerrainChunk(c));
+                var chunks = new System.Collections.Generic.Dictionary<int, RgbaImage>();
+                RgbaImage Chunk(int c) => chunks.TryGetValue(c, out var i) ? i : chunks[c] = root.Backend.TerrainChunk(c);
+                var img = TerrainView.WholeMap(t, Chunk, 256);
                 mapTex = UiKit.ToTexture(img, true);
             }
             minimap.texture = mapTex;

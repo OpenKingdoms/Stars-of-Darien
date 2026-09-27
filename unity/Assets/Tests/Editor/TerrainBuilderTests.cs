@@ -1,6 +1,6 @@
-// TerrainBuilderTests.cs - the ground meshes sit on the height grid, point
-// into the right chunk squares, and the coarse level and its baked picture
-// agree with the detail.
+// TerrainBuilderTests.cs - the ground meshes sit on the height grid, the
+// region's picture takes each block's chunk square, and neighbouring
+// blocks meet with no seam.
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.World;
@@ -52,10 +52,10 @@ namespace OpenKingdomsUnity.Tests
         [Test]
         public void DetailVerticesSitOnTheHeights()
         {
-            var t = Small(out var chunks);
-            var d = TerrainBuilder.Detail(t, 0, 0, c => new Vector2Int(chunks[c].Width, chunks[c].Height));
-            // 16 by 12 blocks in region 0, each a 3 by 3 grid of vertices.
-            Assert.AreEqual(16 * 12 * 9, d.Vertices.Count);
+            var t = Small(out _);
+            var d = TerrainBuilder.Detail(t, 0, 0);
+            // Region 0 is 16 by 12 blocks, samples 0..32 by 0..24.
+            Assert.AreEqual(33 * 25, d.Vertices.Count);
             foreach (var v in d.Vertices)
             {
                 int x = Mathf.RoundToInt(v.x), z = Mathf.RoundToInt(-v.z);
@@ -63,21 +63,16 @@ namespace OpenKingdomsUnity.Tests
                 Assert.LessOrEqual(v.z, 0f, "the map lies at z <= 0");
             }
             foreach (var uv in d.Uvs) { Assert.That(uv.x, Is.InRange(0f, 1f)); Assert.That(uv.y, Is.InRange(0f, 1f)); }
-            int tris = 0;
-            foreach (var kv in d.Triangles)
-            {
-                Assert.That(kv.Key, Is.InRange(0, t.ChunkCount - 1));
-                foreach (int i in kv.Value) Assert.That(i, Is.InRange(0, d.Vertices.Count - 1));
-                tris += kv.Value.Count / 3;
-            }
-            Assert.AreEqual(16 * 12 * 8, tris);
+            Assert.AreEqual(1, d.Triangles.Count, "one picture for the region");
+            foreach (int i in d.Triangles[-1]) Assert.That(i, Is.InRange(0, d.Vertices.Count - 1));
+            Assert.AreEqual(32 * 24 * 2, d.Triangles[-1].Count / 3);
         }
 
         [Test]
         public void DetailTrianglesFaceUp()
         {
-            var t = Small(out var chunks);
-            var d = TerrainBuilder.Detail(t, 1, 0, c => new Vector2Int(32, 32));
+            var t = Small(out _);
+            var d = TerrainBuilder.Detail(t, 1, 0);
             foreach (var kv in d.Triangles)
                 for (int i = 0; i < kv.Value.Count; i += 3)
                 {
@@ -88,16 +83,17 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void ABlockSamplesItsOwnSquare()
+        public void TextureCoordinatesRunStraightAcrossBlocks()
         {
-            var t = Small(out var chunks);
-            var d = TerrainBuilder.Detail(t, 0, 0, c => new Vector2Int(32, 32));
-            // Block (5, 6) is in chunk (1, 1) at texel (8, 16); its first vertex
-            // is the square's north-west corner.
-            int blockIndexInRegion = 6 * 16 + 5;
-            var uv = d.Uvs[blockIndexInRegion * 9];
-            Assert.AreEqual((8 + 0.5f) / 32f, uv.x, 1e-5f);
-            Assert.AreEqual(1f - (16 + 0.5f) / 32f, uv.y, 1e-5f);
+            var t = Small(out _);
+            var d = TerrainBuilder.Detail(t, 0, 0);
+            // A region is 16 blocks of 2 samples, 32 samples across. Sample
+            // (10, 12) sits on a block corner, at texel (40, 48) of 128.
+            int row = 33;
+            var uv = d.Uvs[12 * row + 10];
+            Assert.AreEqual(10f / 32f, uv.x, 1e-6f);
+            Assert.AreEqual(1f - 12f / 32f, uv.y, 1e-6f);
+            Assert.AreEqual(40f / TerrainBuilder.RegionTexels(t), uv.x, 1e-6f, "a block edge falls on a texel edge");
         }
 
         [Test]
@@ -119,15 +115,35 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void TheBakedPictureTakesEachBlocksChunk()
+        public void TheRegionPictureTakesEachBlocksSquare()
         {
             var t = Small(out var chunks);
-            var img = TerrainBuilder.BakeRegion(t, 1, 0, 32, c => chunks[c]);
-            // Region 1 starts at block 16, chunk column 4. Pixel (1, 1) is
-            // block (16, 0), chunk 4; pixel (9, 17) is block (20, 8), off the map.
-            Assert.AreEqual(40, img.Pixels[(1 * 32 + 1) * 4]);
-            Assert.AreEqual(0, img.Pixels[(17 * 32 + 9) * 4 + 3], "past the map edge stays clear");
-            Assert.AreEqual(4 * 10 + 5 * 10 * 1, img.Pixels[(9 * 32 + 1) * 4], "block (16, 4) is chunk 9");
+            var img = TerrainBuilder.RegionPicture(t, 1, 0, c => chunks[c]);
+            int size = TerrainBuilder.RegionTexels(t);
+            Assert.AreEqual(16 * 8, size);
+            Assert.AreEqual(size, img.Width);
+            // Region 1 starts at block 16, chunk column 4. Texel (1, 1) is
+            // block (16, 0), chunk 4, and texel (1, 33) is block (16, 4), chunk 9.
+            Assert.AreEqual(40, img.Pixels[(1 * size + 1) * 4]);
+            Assert.AreEqual(90, img.Pixels[(33 * size + 1) * 4]);
+            // Region 1 holds only 4 blocks across. Past them the edge repeats.
+            Assert.AreEqual(img.Pixels[(1 * size + 31) * 4], img.Pixels[(1 * size + 100) * 4]);
+            Assert.AreEqual(255, img.Pixels[(100 * size + 100) * 4 + 3], "past the map is never clear");
+        }
+
+        [Test]
+        public void NeighbouringSquaresJoinWithNoSeam()
+        {
+            // Two blocks side by side from neighbouring squares of one chunk
+            // whose red counts texels: the picture counts straight through.
+            var t = new MapTerrain { HeightsW = 5, HeightsH = 3, CellSize = 1, BlockSize = 2, BlockTexels = 8, BlocksW = 2, BlocksH = 1, ChunkCount = 1 };
+            t.Heights = new float[t.HeightsW * t.HeightsH];
+            t.Blocks = new[] { 0, 8, 0, 0, 16, 0 };
+            var chunk = new RgbaImage(32, 8);
+            for (int y = 0; y < 8; y++)
+                for (int x = 0; x < 32; x++) { chunk.Pixels[(y * 32 + x) * 4] = (byte)x; chunk.Pixels[(y * 32 + x) * 4 + 3] = 255; }
+            var img = TerrainBuilder.RegionPicture(t, 0, 0, c => chunk);
+            for (int x = 0; x < 16; x++) Assert.AreEqual(8 + x, img.Pixels[(3 * img.Width + x) * 4], $"texel {x}");
         }
     }
 }

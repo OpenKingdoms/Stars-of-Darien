@@ -8,7 +8,6 @@ namespace OpenKingdomsUnity.Game.World
 {
     public sealed class TerrainView
     {
-        public const int BakeSize = 256;
         public const int CoarseStep = 4;
 
         public GameObject Root { get; private set; }
@@ -16,7 +15,6 @@ namespace OpenKingdomsUnity.Game.World
         public GameObject Apron { get; private set; }
         public int Regions { get; private set; }
         readonly List<Object> owned = new List<Object>();
-        readonly Dictionary<int, Material> chunkMats = new Dictionary<int, Material>();
         readonly Dictionary<int, RgbaImage> chunkImages = new Dictionary<int, RgbaImage>();
 
         IGameBackend backend;
@@ -27,12 +25,6 @@ namespace OpenKingdomsUnity.Game.World
         {
             if (!chunkImages.TryGetValue(c, out var img)) chunkImages[c] = img = backend.TerrainChunk(c);
             return img;
-        }
-
-        Vector2Int Size(int c)
-        {
-            var img = Chunk(c);
-            return img != null ? new Vector2Int(img.Width, img.Height) : Vector2Int.zero;
         }
 
         public void Build(IGameBackend backend, Transform parent)
@@ -60,21 +52,18 @@ namespace OpenKingdomsUnity.Game.World
             var mine = new List<Object>();
             regionOwned[region] = mine;
 
-            var detail = TerrainBuilder.Detail(t, rx, ry, Size);
-            var order = new List<int>(detail.Triangles.Keys);
-            var near = Child(region, "LOD0", TerrainBuilder.ToMesh(detail, $"terrain {rx},{ry}", order), mine);
-            var mats = new Material[order.Count];
-            for (int i = 0; i < order.Count; i++) mats[i] = ChunkMaterial(order[i], Chunk, t.SeaLevel);
-            near.sharedMaterials = mats;
+            // One picture of the region's ground, near and far alike.
+            var picture = RegionTexture(t, rx, ry);
+            mine.Add(picture);
+            var mat = Looks.Terrain(picture, t.SeaLevel);
+            mine.Add(mat);
+            var only = new List<int> { -1 };
+            var near = Child(region, "LOD0", TerrainBuilder.ToMesh(TerrainBuilder.Detail(t, rx, ry), $"terrain {rx},{ry}", only), mine);
+            near.sharedMaterial = mat;
 
             var coarse = TerrainBuilder.Coarse(t, rx, ry, CoarseStep);
-            var far = Child(region, "LOD1", TerrainBuilder.ToMesh(coarse, $"terrain far {rx},{ry}", new List<int> { -1 }), mine);
-            var baked = UI.UiKit.ToTexture(TerrainBuilder.BakeRegion(t, rx, ry, BakeSize, Chunk), true);
-            baked.wrapMode = TextureWrapMode.Clamp;
-            mine.Add(baked);
-            var farMat = Looks.Terrain(baked, t.SeaLevel);
-            mine.Add(farMat);
-            far.sharedMaterial = farMat;
+            var far = Child(region, "LOD1", TerrainBuilder.ToMesh(coarse, $"terrain far {rx},{ry}", only), mine);
+            far.sharedMaterial = mat;
             far.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             var lod = region.AddComponent<LODGroup>();
@@ -162,7 +151,7 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // A picture of the whole map, at most size pixels across.
-        static RgbaImage WholeMap(MapTerrain t, System.Func<int, RgbaImage> chunk, int size)
+        public static RgbaImage WholeMap(MapTerrain t, System.Func<int, RgbaImage> chunk, int size)
         {
             var mapSize = t.Size;
             int w = size, h = Mathf.Max(1, Mathf.RoundToInt(size * mapSize.y / mapSize.x));
@@ -213,15 +202,18 @@ namespace OpenKingdomsUnity.Game.World
             return go.AddComponent<MeshRenderer>();
         }
 
-        Material ChunkMaterial(int chunk, System.Func<int, RgbaImage> images, float sea)
+        // The region's picture, mipmapped and compressed where the
+        // hardware can, with no copy kept in memory.
+        Texture2D RegionTexture(MapTerrain t, int rx, int ry)
         {
-            if (chunkMats.TryGetValue(chunk, out var m)) return m;
-            var tex = UI.UiKit.ToTexture(images(chunk), true);
-            if (tex != null) { tex.anisoLevel = 4; owned.Add(tex); }
-            m = Looks.Terrain(tex, sea);
-            owned.Add(m);
-            chunkMats[chunk] = m;
-            return m;
+            var tex = UI.UiKit.ToTexture(TerrainBuilder.RegionPicture(t, rx, ry, Chunk), true);
+            tex.name = $"ground {rx},{ry}";
+            tex.wrapMode = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Trilinear;
+            tex.anisoLevel = 8;
+            if (SystemInfo.SupportsTextureFormat(TextureFormat.DXT1)) tex.Compress(false);
+            tex.Apply(false, true);
+            return tex;
         }
 
         GameObject BuildWater(MapTerrain t, Transform parent)
@@ -291,7 +283,6 @@ namespace OpenKingdomsUnity.Game.World
             owned.Clear();
             foreach (var list in regionOwned.Values) foreach (var o in list) Looks.Release(o);
             regionOwned.Clear();
-            chunkMats.Clear();
             regions = null;
             if (waterDepth != null) Looks.Release(waterDepth);
             Regions = 0;
