@@ -122,17 +122,25 @@ namespace OpenKingdomsUnity.Engine
         public int footprintX, footprintZ, height;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxOrder
+    {
+        public int kind, target, x, y, building;
+    }
+
     // The engine's command types (TAK_CMD_* in tak_commands.h).
     public enum OkxCmd
     {
         Move = 1, Attack, Build, Stop, Patrol, Guard, Repair, Reclaim, Capture,
-        Load, Unload, Wait, SetAggro, SetWeapon
+        Load, Unload, Wait, SetAggro, SetWeapon,
+        FactoryEnqueue, FactoryDequeue, FactoryCancel, Rally, Gate, AttackGround,
+        SpecialWeapon, ReclaimFeature, ResurrectFeature
     }
 
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 3;
+        public const int ApiVersion = 4;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
@@ -156,6 +164,10 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_economy(int player, out OkxEconomy economy);
         [DllImport(Lib)] public static extern int okx_projectiles([Out] OkxProjectile[] projectiles, int cap);
         [DllImport(Lib)] public static extern int okx_projectile_pose(int id, [Out] float[] matrices, int cap);
+        [DllImport(Lib)] public static extern int okx_build_site(int def, int x, int y, out int sx, out int sy);
+        [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
+        [DllImport(Lib)] public static extern int okx_unit_order(int handle, out OkxOrder order);
+        [DllImport(Lib)] public static extern int okx_fog([Out] byte[] cells, int cap, out int w, out int h);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
         [DllImport(Lib)] public static extern void okx_end_game();
