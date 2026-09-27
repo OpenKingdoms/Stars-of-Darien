@@ -1,0 +1,17 @@
+# Build trees
+build/
+out/
+# Unity generated
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/*.csproj
+unity/*.sln
+unity/.vs/
+# The native plugin is built from core/, never committed
+unity/Assets/Plugins/x86_64/
+unity/Assets/Plugins/WebGL/
