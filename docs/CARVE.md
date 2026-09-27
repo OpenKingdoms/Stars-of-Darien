@@ -11,8 +11,20 @@ Copied from OpenKingdoms at 964dbef.
 | `src/core/trig.c`, `include/tak_trig.h` | The engine's own trig, bit-identical on every platform |
 | `src/core/sha256.c`, `include/tak_sha256.h` | Data and map fingerprints |
 | `include/tak_bytes.h` | Little-endian packing for commands and the wire |
-| `include/tak_sim_rand.h` | The generator step (the header only, the world globals stay behind) |
 | `include/test_framework.h` and the trig and bytes tests | The same harness |
+
+`include/tak_sim_rand.h` came over at 964dbef too and left again: it cites `legacy:` three times, which breaks the first rule below. The sim now draws from a xorshift32 generator written in `ok_sim.c`.
+
+## Written fresh instead of carved
+
+Checked against OpenKingdoms at 964dbef. A file comes over only with no `legacy:` citation, with Zach as its only author, and on the list below. These failed, so the core has its own versions.
+
+| Wanted | Why it stayed behind | Written here |
+| --- | --- | --- |
+| `src/game/pathing.c`, `src/game/occupancy.c` | 9 `legacy:` citations each | `src/ok_path.c`, `include/ok_grid.h`: A* on a grid of open and blocked cells, and line of sight smoothing |
+| `src/net/turnclock.c`, `include/tak_net_turn.h` | Both are clean, but they need `include/tak_net_protocol.h`, which cites `legacy:194618-194647` | `src/ok_turn.c`, `include/ok_turn.h`: a relay that closes numbered turns and stamps each command with its sender, and a peer that runs a turn only once it holds it |
+
+The wave opponent in `src/ok_ai.c` is new and borrows nothing from `ai.c` or the planners.
 
 ## Next, in order
 

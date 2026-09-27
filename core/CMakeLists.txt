@@ -14,6 +14,9 @@ endif()
 
 set(OKCORE_SOURCES
     src/ok_sim.c
+    src/ok_path.c
+    src/ok_turn.c
+    src/ok_ai.c
     src/trig.c
     src/sha256.c)
 
@@ -32,7 +35,7 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    foreach(t test_ok_sim test_trig test_bytes)
+    foreach(t test_ok_sim test_path test_turn test_ai test_trig test_bytes)
         add_executable(${t} tests/${t}.c)
         target_include_directories(${t} PRIVATE tests)
         target_link_libraries(${t} PRIVATE okcore_static)
