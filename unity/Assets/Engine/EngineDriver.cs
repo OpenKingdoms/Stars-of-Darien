@@ -62,11 +62,10 @@ namespace OpenKingdomsUnity.Engine
                 // on, and a batch run (the tests) stays quiet.
                 if (!Application.isBatchMode && volume > 0 && OkEngine.okx_audio(1, volume, music ? 1 : 0) != 0)
                     Debug.Log("OpenKingdoms: no sound, " + OkEngine.LastError);
-                var cfg = new OkxSkirmish
-                {
-                    map = map, kingdom = kingdom, aiPlayers = aiPlayers,
-                    lineOfSight = 0, mapRevealed = revealMap ? 1 : 0, seed = 0
-                };
+                var cfg = OkxSkirmish.For(map);
+                cfg.kingdom = kingdom;
+                cfg.aiPlayers = aiPlayers;
+                cfg.mapRevealed = revealMap ? 1 : 0;
                 float t0 = Time.realtimeSinceStartup;
                 if (OkEngine.okx_start_skirmish(ref cfg) != 0)
                     throw new InvalidOperationException("okx_start_skirmish: " + OkEngine.LastError);

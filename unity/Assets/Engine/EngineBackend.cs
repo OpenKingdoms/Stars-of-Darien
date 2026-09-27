@@ -129,20 +129,24 @@ namespace OpenKingdomsUnity.Engine
                 status = GameStatus.Running;
                 return new LoadProgress { Fraction = 1, Done = true, Stage = "ready" };
             }
-            int ai = 0;
-            string kingdom = "aramon";
-            for (int i = 0; i < setup.Seats.Count; i++)
+            var cfg = OkxSkirmish.For(setup.MapId);
+            cfg.lineOfSight = setup.LineOfSight ? 1 : 0;
+            cfg.mapRevealed = setup.MapRevealed ? 1 : 0;
+            cfg.seed = setup.Seed;
+            cfg.unitsPerSide = setup.UnitLimit;
+            // The lobby's lineup seat by seat. The engine plays seat 0 as
+            // the local player.
+            cfg.seatCount = Mathf.Min(setup.Seats.Count, cfg.seats.Length);
+            for (int i = 0; i < cfg.seatCount; i++)
             {
                 var seat = setup.Seats[i];
-                if (i == 0 && !string.IsNullOrEmpty(seat.Side)) kingdom = seat.Side.ToLowerInvariant();
-                if (i > 0 && seat.Kind == SeatKind.Computer) ai++;
+                cfg.seats[i] = new OkxSeat
+                {
+                    kind = seat.Kind == SeatKind.Closed ? 0 : seat.Kind == SeatKind.Human ? 1 : 2,
+                    side = SideIndex(seat.Side), team = seat.Team, color = seat.Colour,
+                    difficulty = (int)seat.Difficulty
+                };
             }
-            var cfg = new OkxSkirmish
-            {
-                map = setup.MapId, kingdom = kingdom, aiPlayers = ai,
-                lineOfSight = setup.LineOfSight ? 1 : 0, mapRevealed = setup.MapRevealed ? 1 : 0,
-                seed = setup.Seed
-            };
             if (OkEngine.okx_load_begin(ref cfg) != 0)
             {
                 pending = null;
@@ -216,6 +220,15 @@ namespace OpenKingdomsUnity.Engine
         }
 
         static readonly string[] SideIds = { "ARAMON", "TAROS", "VERUNA", "ZHON", "", "", "", "CREON" };
+
+        // A side's engine number, -1 for random.
+        static int SideIndex(string side)
+        {
+            if (string.IsNullOrEmpty(side)) return -1;
+            for (int i = 0; i < SideIds.Length; i++)
+                if (SideIds[i].Length > 0 && string.Equals(SideIds[i], side, StringComparison.OrdinalIgnoreCase)) return i;
+            return -1;
+        }
 
         void ReadPlayers(SkirmishSetup setup)
         {

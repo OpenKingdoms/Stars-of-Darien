@@ -16,7 +16,10 @@ namespace OpenKingdomsUnity.Tests
             OkEngine.PreloadDependencies(EngineSettings.PluginDir);
             Assert.AreEqual(OkEngine.ApiVersion, OkEngine.okx_api_version());
             Assert.AreEqual(0, OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir), OkEngine.LastError);
-            var cfg = new OkxSkirmish { map = "two castles", kingdom = "aramon", aiPlayers = 1, mapRevealed = 1, seed = 99 };
+            var cfg = OkxSkirmish.For("two castles");
+            cfg.aiPlayers = 1;
+            cfg.mapRevealed = 1;
+            cfg.seed = 99;
             Assert.AreEqual(0, OkEngine.okx_start_skirmish(ref cfg), OkEngine.LastError);
         }
 

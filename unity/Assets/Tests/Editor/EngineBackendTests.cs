@@ -65,6 +65,11 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(backend.UnitDefs.Count, 20);
             Assert.GreaterOrEqual(backend.Players.Count, 2);
             Assert.IsTrue(backend.Players[0].IsLocal);
+            // The lineup is the lobby's own.
+            Assert.AreEqual("ARAMON", backend.Players[0].Side);
+            Assert.AreEqual("TAROS", backend.Players[1].Side);
+            Assert.AreEqual(1, backend.Players[1].Colour);
+            Assert.IsTrue(backend.Players[1].IsComputer);
         }
 
         [Test, Order(3)]

@@ -54,6 +54,12 @@ namespace OpenKingdomsUnity.Engine
         public float x, y, z, vx, vy, vz, heading, pitch, roll, fromX, fromY, fromZ;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxSeat
+    {
+        public int kind, side, team, color, difficulty;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct OkxSkirmish
     {
@@ -61,6 +67,13 @@ namespace OpenKingdomsUnity.Engine
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string kingdom;
         public int aiPlayers, lineOfSight, mapRevealed;
         public uint seed;
+        public int seatCount;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public OkxSeat[] seats;
+        public int unitsPerSide, monarchExpendable, randomStartLocations;
+
+        // Every field set, seats included, ready to hand to the engine.
+        public static OkxSkirmish For(string map) =>
+            new OkxSkirmish { map = map, kingdom = "aramon", seats = new OkxSeat[8] };
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -147,7 +160,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 7;
+        public const int ApiVersion = 8;
         public const int EffectImpact = 0, EffectProjectile = 1;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
