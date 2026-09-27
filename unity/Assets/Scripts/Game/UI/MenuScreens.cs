@@ -245,7 +245,7 @@ namespace OpenKingdomsUnity.Game.UI
             UiKit.Cycle(row, new[] { "Team 1", "Team 2", "Team 3", "Team 4" }, seat.Team % 4, i => seat.Team = i, 21)
                 .GetComponent<RectTransform>().Size(110, 0);
             if (index > 0)
-                UiKit.Cycle(row, new[] { "Easy", "Normal", "Hard" }, (int)seat.Difficulty, i => seat.Difficulty = (AiDifficulty)i, 21)
+                UiKit.Cycle(row, new[] { "Easy", "Normal", "Hard", "Brutal" }, (int)seat.Difficulty, i => seat.Difficulty = (AiDifficulty)i, 21)
                     .GetComponent<RectTransform>().Size(116, 0);
         }
 
