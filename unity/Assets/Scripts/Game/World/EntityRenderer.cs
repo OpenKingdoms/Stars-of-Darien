@@ -205,9 +205,10 @@ namespace OpenKingdomsUnity.Game.World
             {
                 int n = Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length);
                 for (int p = 0; p < n; p++) posed[p] = poses[p].Matrix * model.Unscale;
-                // Nudges from the animation editor, for every animation.
+                // Nudges from the animation editor, for every animation and
+                // for the script function driving the unit now.
                 var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
-                nudges?.Apply(model.Data.Pieces, posed, n, AnimOverride.All);
+                nudges?.Apply(model.Data.Pieces, posed, n, backend.UnitAnimation(u.Handle));
                 for (int p = 0; p < n; p++)
                 {
                     var mesh = model.Pieces[p];
