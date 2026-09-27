@@ -219,6 +219,7 @@ namespace OpenKingdomsUnity.Game
         public float Height;
     }
 
+    [Serializable]
     public sealed class SeatSetup
     {
         public SeatKind Kind;

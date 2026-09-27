@@ -738,15 +738,50 @@ namespace OpenKingdomsUnity.Game
             return mockSelection.Count;
         }
 
-        public bool SaveGame(string path) => false;
-        public bool LoadGame(string path) => false;
+        // The mock's saves remember the setup and the tick only, and a load
+        // starts that skirmish afresh, which is enough to drive the screens.
+        [Serializable]
+        sealed class MockSave
+        {
+            public string map;
+            public uint seed, tick;
+            public long savedAt;
+            public List<SeatSetup> seats;
+        }
+
+        public bool SaveGame(string path)
+        {
+            if (Status != GameStatus.Running || setup == null) return false;
+            try
+            {
+                var save = new MockSave { map = setup.MapId, seed = setup.Seed, tick = Tick, savedAt = DateTime.UtcNow.Ticks, seats = setup.Seats };
+                System.IO.File.WriteAllText(path, JsonUtility.ToJson(save));
+                return true;
+            }
+            catch (Exception) { return false; }
+        }
+
+        public bool LoadGame(string path)
+        {
+            var save = ReadSave(path);
+            if (save == null || maps.Find(m => m.Id == save.map) == null) return false;
+            StartSkirmish(new SkirmishSetup { MapId = save.map, Seed = save.seed, Seats = save.seats ?? new List<SeatSetup>() });
+            return true;
+        }
+
+        static MockSave ReadSave(string path)
+        {
+            try { return JsonUtility.FromJson<MockSave>(System.IO.File.ReadAllText(path)); }
+            catch (Exception) { return null; }
+        }
 
         public bool SaveInfo(string path, out string map, out uint tick, out DateTime savedAt)
         {
-            map = null;
-            tick = 0;
-            savedAt = default;
-            return false;
+            var save = ReadSave(path);
+            map = save?.map;
+            tick = save?.tick ?? 0;
+            savedAt = save != null ? new DateTime(save.savedAt, DateTimeKind.Utc).ToLocalTime() : default;
+            return save != null && !string.IsNullOrEmpty(save.map);
         }
         public RgbaImage EffectStrip(int strip) => null;
 

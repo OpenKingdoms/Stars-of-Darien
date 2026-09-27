@@ -36,6 +36,16 @@ Plain lit materials work best: a base colour texture, no emission. Transparent p
 
 `.glb` files are read by the game's own loader (`GlbLoader`), in the editor and in a built game alike, with no extra package. `.fbx` and `.prefab` files load through Unity's asset database, so they work in the editor only for now. The engine has its own loader for shipped or modded builds, which reads `.glb` files from `unity/Assets/StreamingAssets/Overrides/` under the same names. Use the `Overrides` folders above while you iterate in the editor.
 
-## Tools that are coming
+## Studio windows
 
-The Unit Browser, the Map Browser and the Sprite Replacement window live under the OpenKingdoms menu. The map editor and the animation editor come later. The Unit Browser's preview and the `PoseModel` call on the backend are the seam the animation editor will build on, and the Map Browser's Play button is the seam for testing edited maps.
+All three live under OpenKingdoms, then Studio. They share one backend in edit mode, the engine when it and your game files are present and the mock otherwise. The Use mock button in their toolbar switches. The backend is let go before Play, since the engine runs one game at a time, and comes back afterwards.
+
+The Unit Browser lists every unit the backend knows, filtered by kingdom or by a search. The selected unit turns on a turntable in the team colour you pick. Drag to turn it yourself and use the wheel to zoom. When the unit has script animations, pick one and it plays, posed by the engine's own unit script. The panel under the preview lists the model's pieces, which are the names a drop-in model's nodes can use to follow them.
+
+The Map Browser lists every map with its overview picture, size, player count and climate. Play a skirmish on it opens the remaster scene and starts a game on that map straight away, with the default seats.
+
+The Sprite Replacement window is the work list for the 3D replacements. It reads `catalog.json` and the `sprites` folder that `tools/sprite-replace/extract.py` writes from your own game files, by default in `D:/OKReplace`, and shows every sprite-only feature with how many maps use it and whether it has a model yet, hand-made or generated. The bar at the top counts progress. The selected feature shows its sprite beside its model on a turntable. Open Blender template starts Blender on `tools/sprite-replace/template.py` with the feature's name, its sprite, the path of the hand-made model to save (`Assets/Overrides/Features/<feature>.glb`) and its footprint and height. The Blender and template paths are fields in the window.
+
+## Later tools
+
+The map editor and the animation editor come later. The Unit Browser's preview and the backend's `PoseModel` call are the seam the animation editor builds on, and the Map Browser's Play button is the seam for testing an edited map.

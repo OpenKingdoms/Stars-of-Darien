@@ -7,11 +7,11 @@ using System.Collections.Generic;
 
 namespace OpenKingdomsUnity.Game
 {
-    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit }
+    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit, LoadList }
 
     public enum FlowEvent
     {
-        OpenSkirmish, OpenOptions, Back, Start, Loaded, LoadFailed,
+        OpenSkirmish, OpenOptions, Back, Start, Loaded, LoadFailed, OpenLoad,
         Pause, Resume, Won, Lost, ToMenu, Exit,
     }
 
@@ -20,6 +20,8 @@ namespace OpenKingdomsUnity.Game
         public FlowState State { get; private set; } = FlowState.MainMenu;
         // Where Back from Options returns: the main menu or the pause menu.
         public FlowState OptionsReturn { get; private set; } = FlowState.MainMenu;
+        // Where a failed load returns: skirmish setup or the saved games.
+        public FlowState LoadingFrom { get; private set; } = FlowState.Skirmish;
         public event Action<FlowState, FlowState> Changed;
 
         static readonly Dictionary<(FlowState, FlowEvent), FlowState> Table = new Dictionary<(FlowState, FlowEvent), FlowState>
@@ -27,6 +29,9 @@ namespace OpenKingdomsUnity.Game
             { (FlowState.MainMenu, FlowEvent.OpenSkirmish), FlowState.Skirmish },
             { (FlowState.MainMenu, FlowEvent.OpenOptions), FlowState.Options },
             { (FlowState.MainMenu, FlowEvent.Exit), FlowState.Quit },
+            { (FlowState.MainMenu, FlowEvent.OpenLoad), FlowState.LoadList },
+            { (FlowState.LoadList, FlowEvent.Back), FlowState.MainMenu },
+            { (FlowState.LoadList, FlowEvent.Start), FlowState.Loading },
             { (FlowState.Skirmish, FlowEvent.Back), FlowState.MainMenu },
             { (FlowState.Skirmish, FlowEvent.Start), FlowState.Loading },
             { (FlowState.Loading, FlowEvent.Loaded), FlowState.Playing },
@@ -53,7 +58,9 @@ namespace OpenKingdomsUnity.Game
         {
             FlowState next;
             if (State == FlowState.Options && e == FlowEvent.Back) next = OptionsReturn;
+            else if (State == FlowState.Loading && e == FlowEvent.LoadFailed) next = LoadingFrom;
             else if (!Table.TryGetValue((State, e), out next)) return false;
+            if (next == FlowState.Loading) LoadingFrom = State;
             if (next == FlowState.Options) OptionsReturn = State;
             var was = State;
             State = next;
