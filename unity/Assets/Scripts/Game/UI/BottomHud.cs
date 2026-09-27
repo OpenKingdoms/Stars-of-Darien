@@ -71,8 +71,8 @@ namespace OpenKingdomsUnity.Game.UI
             // Commands and builds, on the right.
             grid = UiKit.Rect(panel, "Commands").Place(0.5f, 0, 1, 1, 24, 14, 16, 18);
             var g = grid.gameObject.AddComponent<GridLayoutGroup>();
-            g.cellSize = new Vector2(150, 64);
-            g.spacing = new Vector2(8, 8);
+            g.cellSize = new Vector2(150, 70);
+            g.spacing = new Vector2(8, 6);
             g.startCorner = GridLayoutGroup.Corner.UpperLeft;
             g.constraint = GridLayoutGroup.Constraint.FixedRowCount;
             g.constraintCount = 3;
@@ -292,7 +292,7 @@ namespace OpenKingdomsUnity.Game.UI
                 if (pic != null)
                 {
                     // The game's own build picture, with the cost on it.
-                    var img = UiKit.Rect(btn.transform, "Picture").Place(0, 0, 1, 1, 4, 4, 4, 4).gameObject.AddComponent<RawImage>();
+                    var img = UiKit.Rect(btn.transform, "Picture").Place(0, 0, 1, 1, 4, 26, 4, 4).gameObject.AddComponent<RawImage>();
                     img.texture = pic;
                     img.raycastTarget = false;
                     var fit = img.gameObject.AddComponent<AspectRatioFitter>();
@@ -301,8 +301,8 @@ namespace OpenKingdomsUnity.Game.UI
                     // The cost on a dark strip across the bottom.
                     var strip = UiKit.Picture(btn.transform, "Cost", UiKit.White, new Color(0, 0, 0, 0.65f));
                     strip.raycastTarget = false;
-                    strip.rectTransform.Place(0, 0, 1, 0, 4, 4, 4, -24);
-                    var cost = UiKit.Label(strip.transform, od.ManaCost.ToString(), 18, UiKit.GoldBright, TextAnchor.MiddleCenter);
+                    strip.rectTransform.Place(0, 0, 1, 0, 4, 3, 4, -26);
+                    var cost = UiKit.Label(strip.transform, od.ManaCost.ToString(), 22, UiKit.GoldBright, TextAnchor.MiddleCenter, true);
                     cost.rectTransform.Fill();
                 }
                 Text badge = null;

@@ -80,6 +80,31 @@ namespace OpenKingdomsUnity.Tests
             foreach (var kv in seen) lines.Add(kv.Value + " x " + kv.Key);
             File.WriteAllLines(Path.Combine(dir, "features.txt"), lines);
             var cam3 = root.World.Camera;
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TREES") == "1")
+            {
+                // Close over the thickest stand of trees, with the fog off.
+                OpenKingdomsUnity.Game.World.FogView.Disabled = true;
+                root.World.Fog.Update(true);
+                root.World.Atmosphere.SetWeather(WeatherChoice.Off);
+                Vector3 best = cam3.focus;
+                int bestCount = -1;
+                for (int i = 0; i < fc; i++)
+                {
+                    var d = root.Backend.FeatureDefs[feats[i].Def];
+                    if (d.Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    int near = 0;
+                    for (int j = 0; j < fc; j++)
+                        if ((feats[j].Position - feats[i].Position).sqrMagnitude < 64f &&
+                            root.Backend.FeatureDefs[feats[j].Def].Name.IndexOf("Tree", System.StringComparison.OrdinalIgnoreCase) >= 0) near++;
+                    if (near > bestCount) { bestCount = near; best = feats[i].Position; }
+                }
+                cam3.focus = best;
+                yield return View(cam3, 22f, 34f, 20f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-close.png"));
+                yield return View(cam3, 40f, 45f, -30f);
+                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-mid.png"));
+                OpenKingdomsUnity.Game.World.FogView.Disabled = false;
+            }
             // The classic view, then close and low, then far and wide.
             yield return Shoot(cam, canvas, Path.Combine(dir, "4-classic.png"));
             yield return View(cam3, 14f, 38f, 25f);

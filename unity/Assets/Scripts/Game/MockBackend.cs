@@ -18,6 +18,8 @@ namespace OpenKingdomsUnity.Game
         public float StageSeconds = 0.2f;
         // Scales unit damage, so a long test can keep everyone alive.
         public float DamageScale = 1f;
+        // Extra soldiers per side, in ranks behind the first, for load tests.
+        public int ExtraSoldiers;
 
         public string Name => "Mock";
         public IReadOnlyList<MapInfo> Maps => maps;
@@ -280,6 +282,8 @@ namespace OpenKingdomsUnity.Game
                 Spawn(side + DefBuilder, p.Index, home);
                 for (int i = 0; i < 4; i++) Spawn(side + DefKnight, p.Index, home + new Vector2(3 + i * 1.5f, -2));
                 for (int i = 0; i < 3; i++) Spawn(side + DefArcher, p.Index, home + new Vector2(3 + i * 1.5f, -4));
+                for (int i = 0; i < ExtraSoldiers; i++)
+                    Spawn(side + (i % 2 == 0 ? DefKnight : DefArcher), p.Index, home + new Vector2(-6 + (i % 12) * 1.3f, -6 - (i / 12) * 1.3f));
             }
         }
 

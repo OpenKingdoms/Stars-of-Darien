@@ -16,6 +16,9 @@ namespace OpenKingdomsUnity.Game.World
         float next;
         public bool Active { get; private set; }
 
+        // A debug switch: draw everything as if in sight.
+        public static bool Disabled;
+
         public FogView(IGameBackend backend) => this.backend = backend;
 
         public void Update(bool force = false)
@@ -23,7 +26,7 @@ namespace OpenKingdomsUnity.Game.World
             if (!force && Time.unscaledTime < next) return;
             next = Time.unscaledTime + Interval;
             int need = backend.ReadFog(null, out int w, out int h);
-            if (need <= 0 || w <= 0 || h <= 0) { SetActive(false); return; }
+            if (Disabled || need <= 0 || w <= 0 || h <= 0) { SetActive(false); return; }
             if (fog == null || fog.Length < need) fog = new byte[need];
             backend.ReadFog(fog, out width, out height);
             if (tex == null || tex.width != width || tex.height != height)
