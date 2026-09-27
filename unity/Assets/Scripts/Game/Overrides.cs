@@ -4,9 +4,10 @@
 // <feature>.glb, .gltf, .fbx or .prefab. A prefab beats a glb, which
 // beats a gltf, which beats an fbx. Assets/Overrides/Generated holds
 // feature models made on the player's machine from their own sprites,
-// never committed, and a hand-made one in Features beats them. Models are
-// in map cells (one unit is one cell of 16 engine pixels), Y up, origin on
-// the ground at the anchor. See docs/STUDIO.md.
+// never committed, and a hand-made one in Features beats them. A unit model
+// with a <name>.json beside it is a card (CardOverride), not a whole unit.
+// Models are in map cells (one unit is one cell of 16 engine pixels), Y up,
+// origin on the ground at the anchor. See docs/STUDIO.md.
 using System;
 using System.Collections.Generic;
 using System.IO;

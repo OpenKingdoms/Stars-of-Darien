@@ -471,8 +471,14 @@ def carve(r, spr, hull=None):
     return ob, (nx * ny * nz, faces)
 
 
+# Glb extras that mark a model as made from the player's own files, which
+# the studio then keeps out of the shared folders.
+PLAYERS_FILES = "okFromPlayersFiles"
+
+
 def paint(ob, r, spr):
     """Every corner takes the sprite pixel the original drew at that spot."""
+    ob[PLAYERS_FILES] = True
     hx, hy = r["sprite"]["hotspot"]
     me = ob.data
     uv = me.uv_layers.new(name="UVMap")
@@ -644,7 +650,7 @@ def main():
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
     bpy.ops.export_scene.gltf(filepath=os.path.join(out, name + ".glb"), export_format="GLB",
-                              use_selection=True, export_yup=True)
+                              use_selection=True, export_yup=True, export_extras=True)
     print("CARVED", name, "voxels", cells, "tris", sum(len(p.vertices) - 2 for p in ob.data.polygons),
           "size %.2f x %.2f x %.2f cells" % tuple(ob.dimensions))
 

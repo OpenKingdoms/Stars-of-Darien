@@ -17,7 +17,10 @@ namespace OpenKingdomsUnity.Studio
         string search = "";
         TargetKind listKind = TargetKind.Feature;
         List<StudioTarget> list;
-        bool showLook = true, showMaterial, showStage = true;
+        bool showLook = true, showMaterial, showStage = true, showTyped;
+        string typedName = "", typedPiece = "";
+        Vector2Int typedFootprint = Vector2Int.one;
+        float typedHeight;
 
         [MenuItem("OpenKingdoms/Studio/Studio Panel", priority = 32)]
         public static void Open() => GetWindow<StudioWindow>("Studio").minSize = new Vector2(320, 400);
@@ -105,6 +108,8 @@ namespace OpenKingdomsUnity.Studio
             var kinds = new[] { TargetKind.Feature, TargetKind.Unit, TargetKind.UnitCard };
             int k = GUILayout.Toolbar(Array.IndexOf(kinds, listKind), new[] { "Feature", "Unit", "Unit card" });
             if (kinds[k] != listKind) { listKind = kinds[k]; list = null; }
+            if (listKind == TargetKind.UnitCard)
+                GUILayout.Label("The units that stand on a painted card, which are the lodestones, the divine lodestones, the Zhon fire and glyph, and Thesh's stand. Your model takes the card's place and the unit keeps the rest.", EditorStyles.wordWrappedMiniLabel);
             search = EditorGUILayout.TextField(search, EditorStyles.toolbarSearchField);
             var b = StudioBackend.Get();
             list ??= listKind == TargetKind.Feature ? StudioTargets.Features(b, StudioTargets.Catalog()) : StudioTargets.Units(b, listKind == TargetKind.UnitCard);
@@ -113,37 +118,63 @@ namespace OpenKingdomsUnity.Studio
             foreach (var item in list)
             {
                 string label = item.Label;
-                if (search.Length > 0 && label.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                if (search.Length > 0 && label.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0 && item.ObjectName.IndexOf(search, StringComparison.OrdinalIgnoreCase) < 0) continue;
                 if (++shown > 300) { GUILayout.Label("Type to narrow the list.", EditorStyles.miniLabel); break; }
                 bool on = t.Kind == item.Kind && t.Name == item.Name;
-                if (GUILayout.Button(label, on ? EditorStyles.boldLabel : EditorStyles.label)) StudioSession.SetTarget(Copy(item));
+                if (GUILayout.Button(label, on ? EditorStyles.boldLabel : EditorStyles.label)) StudioSession.SetTarget(item);
             }
             if (list.Count == 0)
-                GUILayout.Label(listKind == TargetKind.Feature ? "No features. With your game files, run tools/sprite-replace/extract.py to list every sprite feature." : "No units.", EditorStyles.wordWrappedMiniLabel);
+                GUILayout.Label(listKind == TargetKind.Feature ? "No features. Type one in below." : "No units. Type one in below.", EditorStyles.wordWrappedMiniLabel);
             EditorGUILayout.EndScrollView();
+            if (b != null && b.Name == "Mock")
+                GUILayout.Label("The stand-in world only has made-up things. To aim at something from the real game, type its name in below.", EditorStyles.wordWrappedMiniLabel);
+            TypedSection();
             if (t.Kind == TargetKind.None) return;
-            string size = t.Kind == TargetKind.Feature ? $"Footprint {t.Footprint.x} by {t.Footprint.y} cells" + (t.Height > 0 ? $", {t.Height:0.#} cells tall" : "") : $"Model {t.ObjectName}";
+            string size = t.Kind == TargetKind.Feature ? $"Footprint {t.Footprint.x} by {t.Footprint.y} cells" +
+                (t.DrawnHeight > 0 ? $", drawn {t.DrawnHeight:0.#} cells tall" : t.Height > 0 ? $", about {t.Height:0.#} cells tall" : "") : $"Model {t.ObjectName}";
             GUILayout.Label(size, EditorStyles.miniLabel);
+            if (StudioSession.OriginalMissing != null) EditorGUILayout.HelpBox(StudioSession.OriginalMissing, MessageType.Info);
             if (t.Kind == TargetKind.UnitCard)
             {
                 var pieces = StudioSession.OriginalPieces;
-                if (pieces.Length == 0) EditorGUILayout.HelpBox("The original model did not load, so its pieces are unknown.", MessageType.Warning);
+                if (pieces.Length == 0)
+                {
+                    string typed = EditorGUILayout.DelayedTextField("Card piece", t.ReplacesPiece);
+                    if (typed != t.ReplacesPiece) StudioSession.SetCardPiece(typed);
+                }
                 else
                 {
                     int at = Array.FindIndex(pieces, p => string.Equals(p, t.ReplacesPiece, StringComparison.OrdinalIgnoreCase));
-                    int pick = EditorGUILayout.Popup("Stands in for", at, pieces);
-                    string tex = EditorGUILayout.DelayedTextField("Its texture", t.ReplacesTexture);
-                    if (pick != at || tex != t.ReplacesTexture) StudioSession.SetCardPiece(pick >= 0 ? pieces[pick] : "", tex);
+                    int pick = EditorGUILayout.Popup("Card piece", at, pieces);
+                    if (pick != at) StudioSession.SetCardPiece(pick >= 0 ? pieces[pick] : "");
                 }
+                GUILayout.Label("The piece that carries the painted card. The studio picks it for you, usually the one named after the unit.", EditorStyles.wordWrappedMiniLabel);
             }
         }
 
-        static StudioTarget Copy(StudioTarget t) => new StudioTarget
+        // A feature or unit by name, with its size, for things the list
+        // does not have.
+        void TypedSection()
         {
-            Kind = t.Kind, Name = t.Name, ObjectName = t.ObjectName, Description = t.Description, Side = t.Side,
-            Footprint = t.Footprint, Height = t.Height, Width = t.Width, SpriteFile = t.SpriteFile, SpriteSize = t.SpriteSize,
-            Hotspot = t.Hotspot, Maps = new List<string>(t.Maps), UnitDef = t.UnitDef, FeatureDef = t.FeatureDef,
-        };
+            if (!showTyped && StudioSession.SuggestedName.Length > 0 && typedName.Length == 0) typedName = StudioSession.SuggestedName;
+            showTyped = EditorGUILayout.Foldout(showTyped, "Type it in", true);
+            if (!showTyped) return;
+            typedName = EditorGUILayout.TextField(listKind == TargetKind.Feature ? "Feature name" : "Model name", typedName);
+            if (listKind == TargetKind.Feature)
+            {
+                typedFootprint = EditorGUILayout.Vector2IntField("Footprint (cells)", typedFootprint);
+                typedHeight = EditorGUILayout.FloatField("Height (cells)", typedHeight);
+                GUILayout.Label("The name as the game has it, such as AraTree01. The footprint is the cells it covers on the map, and the height how tall it stands in the game.", EditorStyles.wordWrappedMiniLabel);
+            }
+            else
+            {
+                if (listKind == TargetKind.UnitCard) typedPiece = EditorGUILayout.TextField("Card piece", typedPiece);
+                GUILayout.Label("The unit's model name, such as ARAKING.", EditorStyles.wordWrappedMiniLabel);
+            }
+            using (new EditorGUI.DisabledScope(typedName.Trim().Length == 0))
+                if (GUILayout.Button("Use this"))
+                    StudioSession.SetTarget(StudioTargets.Typed(listKind, typedName, typedFootprint, typedHeight, typedPiece));
+        }
 
         static string KindName(TargetKind k) => k == TargetKind.Feature ? "Feature" : k == TargetKind.Unit ? "Unit" : "Unit card";
 
@@ -190,12 +221,16 @@ namespace OpenKingdomsUnity.Studio
             {
                 if (GUILayout.Button("Use in game", GUILayout.Height(30))) StudioSession.UseInGame(true);
             }
-            if (path != null) GUILayout.Label("Goes to " + path + (StudioSession.Target.Kind == TargetKind.UnitCard ? " with a .json beside it" : ""), EditorStyles.wordWrappedMiniLabel);
+            if (path != null)
+                GUILayout.Label("Goes to " + path + (StudioSession.Target.Kind == TargetKind.UnitCard ? " with " + Path.GetFileName(OverrideWriter.SidecarFor(path)) + " beside it. Share both." : ""), EditorStyles.wordWrappedMiniLabel);
             if (!StudioSession.Tweaks.IsDefault) StudioSession.KeepTweaks = EditorGUILayout.ToggleLeft("Keep the material changes", StudioSession.KeepTweaks);
-            using (new EditorGUI.DisabledScope(path == null || !File.Exists(Path.Combine(StudioModel.ProjectDir, path ?? ""))))
+            bool inGame = path != null && File.Exists(Path.Combine(StudioModel.ProjectDir, path));
+            using (new EditorGUI.DisabledScope(!inGame))
             {
                 if (GUILayout.Button("Play here", GUILayout.Height(26))) StudioMode.PlayHere();
             }
+            GUILayout.Label(inGame ? "Play here shows what is in the game. After you export again, press Use in game again first."
+                : "Press Use in game first, then Play here starts a battle with it.", EditorStyles.wordWrappedMiniLabel);
             if (StudioSession.Target.Kind == TargetKind.Unit)
                 GUILayout.Label("Play here starts a battle as the unit's kingdom. Build it from your builder to see it.", EditorStyles.wordWrappedMiniLabel);
         }
@@ -213,13 +248,18 @@ namespace OpenKingdomsUnity.Studio
 
         // ---- Look ----
 
+        static readonly WeatherChoice[] Weathers = { WeatherChoice.ByMap, WeatherChoice.Off, WeatherChoice.Rain, WeatherChoice.Snow, WeatherChoice.Fog };
+        static readonly string[] WeatherNames = { "As the map has it", "Clear", "Rain", "Snow", "Fog" };
+        static readonly string[] TimeNames = { "The game's own light", "Morning", "Noon", "Evening", "Night" };
+
         void LookSection()
         {
             var b = StudioBackend.Get();
             if (b == null) return;
+            bool standIn = b.Name == "Mock";
             var ids = new List<string> { "", "?" };
-            var names = new List<string> { "Neutral ground", b.Name == "Mock" ? "Automatic (neutral on the mock)" : "Automatic (the first map)" };
-            foreach (var m in b.Maps) { ids.Add(m.Id); names.Add(m.Name + (b.Name == "Mock" ? " (mock)" : "")); }
+            var names = new List<string> { "Neutral ground", standIn ? "Automatic (neutral on the stand-in world)" : "Automatic (the first map)" };
+            foreach (var m in b.Maps) { ids.Add(m.Id); names.Add(m.Name + (standIn ? " (stand-in)" : "")); }
             int at = Mathf.Max(0, ids.IndexOf(StudioSession.MapChoice));
             int pick = EditorGUILayout.Popup("Ground", at, names.ToArray());
             if (pick != at) { StudioSession.MapChoice = ids[pick]; StudioSession.Relook(true); }
@@ -227,19 +267,21 @@ namespace OpenKingdomsUnity.Studio
             var climates = new List<string> { "" };
             climates.AddRange(StudioSession.Climates);
             int c = Mathf.Max(0, climates.IndexOf(StudioSession.ClimateChoice));
-            int cp = EditorGUILayout.Popup("Climate", c, climates.Select(x => x.Length == 0 ? "By the map" : Cap(x)).ToArray());
+            int cp = EditorGUILayout.Popup("Climate", c, climates.Select(x => x.Length == 0 ? "As the map has it" : Cap(x)).ToArray());
             if (cp != c) { StudioSession.ClimateChoice = climates[cp]; StudioSession.Relook(false); }
             if (!StudioSession.Stage.RealGround)
             {
                 bool sea = EditorGUILayout.Toggle("Sea", StudioSession.Sea);
                 if (sea != StudioSession.Sea) { StudioSession.Sea = sea; StudioSession.Relook(false); }
             }
-            var w = (WeatherChoice)EditorGUILayout.EnumPopup("Weather", StudioSession.Weather);
-            if (w != StudioSession.Weather) { StudioSession.Weather = w; StudioSession.Stage.SetWeather(w); }
-            var time = (TimeOfDay)EditorGUILayout.EnumPopup("Time of day", StudioSession.Time);
-            if (time != StudioSession.Time) { StudioSession.Time = time; StudioSession.Stage.SetTime(time); }
+            int wi = Mathf.Max(0, Array.IndexOf(Weathers, StudioSession.Weather));
+            int wp = EditorGUILayout.Popup("Weather", wi, WeatherNames);
+            if (wp != wi) { StudioSession.Weather = Weathers[wp]; StudioSession.Stage.SetWeather(Weathers[wp]); StudioSession.Notify(); }
+            int ti = Mathf.Clamp((int)StudioSession.Time, 0, TimeNames.Length - 1);
+            int tp = EditorGUILayout.Popup("Time of day", ti, TimeNames);
+            if (tp != ti) { StudioSession.Time = (TimeOfDay)tp; StudioSession.Stage.SetTime((TimeOfDay)tp); StudioSession.Notify(); }
             bool sh = EditorGUILayout.Toggle("Shadows", StudioSession.Shadows);
-            if (sh != StudioSession.Shadows) { StudioSession.Shadows = sh; StudioSession.Stage.SetShadows(sh); }
+            if (sh != StudioSession.Shadows) { StudioSession.Shadows = sh; StudioSession.Stage.SetShadows(sh); StudioSession.Notify(); }
             int team = EditorGUILayout.IntSlider("Team colour", StudioSession.TeamColour, 0, 7);
             if (team != StudioSession.TeamColour) StudioSession.SetTeam(team);
             GUILayout.Label("Materials with \"team\" in their name take the team colour here. The game does not tint drop-in models yet.", EditorStyles.wordWrappedMiniLabel);
@@ -261,6 +303,7 @@ namespace OpenKingdomsUnity.Studio
             else t.Roughness = EditorGUILayout.Slider("Roughness", t.Roughness < 0 ? 0.8f : t.Roughness, 0f, 1f);
             t.Emission = EditorGUILayout.Slider("Self light", t.Emission, 0f, 4f);
             if (EditorGUI.EndChangeCheck()) StudioSession.SetTweaks(t);
+            GUILayout.Label("Self light at 0 keeps the model's own glow from Blender.", EditorStyles.wordWrappedMiniLabel);
             if (GUILayout.Button("Reset the material")) StudioSession.SetTweaks(new MaterialTweaks());
         }
 

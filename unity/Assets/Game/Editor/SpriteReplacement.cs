@@ -18,9 +18,9 @@ namespace OpenKingdomsUnity.Studio
 {
     public sealed class SpriteReplacement : EditorWindow
     {
-        const string DirKey = "oku.sprites.dir", BlenderKey = "oku.sprites.blender", TemplateKey = "oku.sprites.template";
-        static string CatalogDir { get => EditorPrefs.GetString(DirKey, "D:/OKReplace"); set => EditorPrefs.SetString(DirKey, value); }
-        static string Blender { get => EditorPrefs.GetString(BlenderKey, "D:/Blender/blender-5.2.2-windows-x64/blender.exe"); set => EditorPrefs.SetString(BlenderKey, value); }
+        const string TemplateKey = "oku.sprites.template";
+        static string CatalogDir { get => StudioTargets.CatalogDir; set => StudioTargets.CatalogDir = value; }
+        static string Blender { get => SettingsWindow.Blender; set => SettingsWindow.Blender = value; }
         static string Template { get => EditorPrefs.GetString(TemplateKey, "tools/sprite-replace/template.py"); set => EditorPrefs.SetString(TemplateKey, value); }
 
         public sealed class Entry

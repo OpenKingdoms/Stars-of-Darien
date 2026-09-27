@@ -1,11 +1,15 @@
 // EngineInstaller.cs - copies the engine libraries the bindings expect from
-// engine/ into Assets/Plugins/x86_64 when scripts load, and when Unity has
-// another version loaded turns the engine off and asks for a restart.
+// engine/ into Assets/Plugins/x86_64 when scripts load, replaces a copy it
+// put there when engine/ has a newer build, and when Unity has another
+// version loaded turns the engine off and asks for a restart.
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using OpenKingdomsUnity.Game.World;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,17 +18,27 @@ namespace OpenKingdomsUnity.Studio
     [InitializeOnLoad]
     public static class EngineInstaller
     {
-        public enum Outcome { Ready, Install, Restart, NotPublished, Mismatch }
+        // Update: a newer build of the loaded version waits for the next start.
+        // Local: a build of the engine whose version cannot be read, left alone.
+        public enum Outcome { Ready, Install, Restart, NotPublished, Mismatch, Update, Local }
 
         // What to do about one library. installed is the version of the file
         // in the plugin folder (null when missing, -1 when unreadable), loaded
-        // the version Unity has loaded (null when not loaded).
-        public static Outcome Decide(int expected, int? installed, int? loaded, bool published)
+        // the version Unity has loaded (null when not loaded). ours says the
+        // plugin file is what the installer last put there, and newer that
+        // engine/ now holds different bytes for the same version.
+        public static Outcome Decide(int expected, int? installed, int? loaded, bool published, bool ours = false, bool newer = false)
         {
-            if (loaded.HasValue) return loaded.Value == expected ? Outcome.Ready : Outcome.Restart;
-            if (installed == expected) return Outcome.Ready;
+            bool refresh = published && ours && newer;
+            if (loaded.HasValue)
+            {
+                if (loaded.Value != expected) return Outcome.Restart;
+                return refresh ? Outcome.Update : Outcome.Ready;
+            }
+            if (installed == expected) return refresh ? Outcome.Install : Outcome.Ready;
+            if (installed == -1 && !ours) return Outcome.Local;
             if (published) return Outcome.Install;
-            if (installed == null || installed == -1) return Outcome.NotPublished;
+            if (installed == null) return Outcome.NotPublished;
             return Outcome.Mismatch;
         }
 
@@ -35,6 +49,14 @@ namespace OpenKingdomsUnity.Studio
             public int? Installed, Loaded;
             public Outcome Outcome;
             public string Published;    // the engine/ file for Expected, or null
+            public bool Ours, Newer;
+        }
+
+        public sealed class Report
+        {
+            public Library Engine, Core, Sdl;
+            public bool Copied;
+            public readonly List<string> Log = new List<string>();
         }
 
         public static Library Engine { get; private set; }
@@ -44,11 +66,13 @@ namespace OpenKingdomsUnity.Studio
         public static string ProjectDir => Path.GetDirectoryName(Application.dataPath);
         public static string ReleaseDir => Path.Combine(Path.GetDirectoryName(ProjectDir), "engine");
         public static string PluginDir => Path.Combine(Application.dataPath, "Plugins", "x86_64");
+        public static string KeepDir => Path.Combine(ProjectDir, "Library", "OkEngine");
+        public static string RecordPath => Path.Combine(KeepDir, "installed.json");
         const string AskedKey = "oku.engine.restartAsked";
 
         static EngineInstaller()
         {
-            try { Run(); }
+            try { Apply(Run(PluginDir, ReleaseDir, KeepDir, LoadedVersion)); }
             catch (Exception e) { Debug.LogWarning("Engine installer: " + e.Message); }
         }
 
@@ -61,93 +85,167 @@ namespace OpenKingdomsUnity.Studio
             return f != null ? (int)f.GetRawConstantValue() : -1;
         }
 
-        static void Run()
+        // Looks at every library and installs, replaces or stages it. loaded
+        // gives the version of a library Unity has loaded (file, export), -1
+        // for a loaded one with no version, or null when it is not loaded.
+        public static Report Run(string pluginDir, string releaseDir, string keepDir, Func<string, string, int?> loaded, int engineApi = int.MinValue, int coreAbi = int.MinValue)
         {
-            Engine = Check("okengine.dll", "okengine-api", "okx_api_version", BindingApi());
-            Core = Check("okcore.dll", "okcore-abi", "ok_sim_abi_version", OkNative.AbiVersion);
-            bool copied = false;
-            foreach (var lib in new[] { Engine, Core })
+            var r = new Report();
+            var record = ReadRecord(Path.Combine(keepDir, "installed.json"));
+            r.Engine = Check(pluginDir, releaseDir, record, loaded, "okengine.dll", "okengine-api", "okx_api_version", engineApi == int.MinValue ? BindingApi() : engineApi);
+            r.Core = Check(pluginDir, releaseDir, record, loaded, "okcore.dll", "okcore-abi", "ok_sim_abi_version", coreAbi == int.MinValue ? OkNative.AbiVersion : coreAbi);
+            r.Sdl = CheckPlain(pluginDir, releaseDir, record, loaded, "SDL2.dll");
+            foreach (var lib in new[] { r.Engine, r.Core, r.Sdl })
             {
-                if (lib.Outcome == Outcome.Install) copied |= Install(lib);
-                if (lib.Outcome == Outcome.Restart) Stage(lib);
+                if (lib == null) continue;
+                if (lib.Outcome == Outcome.Install) r.Copied |= Install(lib, pluginDir, keepDir, record, r.Log);
+                else if (lib.Outcome == Outcome.Restart || lib.Outcome == Outcome.Update) Stage(lib, pluginDir, keepDir, record, r.Log);
             }
-            if (Engine.Outcome != Outcome.Restart && Engine.Expected > 0)
-                copied |= CopyIfMissing("SDL2.dll");
+            WriteRecord(Path.Combine(keepDir, "installed.json"), record);
+            return r;
+        }
 
+        static void Apply(Report r)
+        {
+            Engine = r.Engine;
+            Core = r.Core;
+            foreach (var line in r.Log) Debug.Log("OpenKingdoms: " + line);
             Message = Describe(Engine);
             if (Engine.Outcome == Outcome.Restart || Engine.Outcome == Outcome.Mismatch) Block(Message);
-            else if (Engine.Outcome == Outcome.Ready && !RuntimePresent())
+            else if ((Engine.Outcome == Outcome.Ready || Engine.Outcome == Outcome.Update || Engine.Outcome == Outcome.Local) && !RuntimePresent())
             {
                 Message = RuntimeMissing;
                 Block(Message);
             }
-            if (copied) EditorApplication.delayCall += AssetDatabase.Refresh;
+            if (r.Copied) EditorApplication.delayCall += AssetDatabase.Refresh;
             if (Engine.Outcome == Outcome.Restart && !Application.isBatchMode && !SessionState.GetBool(AskedKey, false))
             {
                 SessionState.SetBool(AskedKey, true);
                 EditorApplication.delayCall += AskRestart;
             }
-            else if (Engine.Outcome == Outcome.Restart) Debug.LogWarning(Message);
+            else if (Engine.Outcome == Outcome.Restart) Debug.LogWarning($"{Message} (API {Engine.Loaded} loaded, {Engine.Expected} expected)");
         }
 
-        static Library Check(string file, string prefix, string export, int expected)
+        static Library Check(string pluginDir, string releaseDir, Dictionary<string, string> record, Func<string, string, int?> loaded, string file, string prefix, string export, int expected)
         {
             var lib = new Library { File = file, Prefix = prefix, Export = export, Expected = expected };
-            string installed = Path.Combine(PluginDir, file);
+            string installed = Path.Combine(pluginDir, file);
+            string published = Path.Combine(releaseDir, prefix + expected + ".dll");
+            lib.Published = expected > 0 && File.Exists(published) ? published : null;
             if (File.Exists(installed))
             {
                 try { lib.Installed = ReadVersion(File.ReadAllBytes(installed), export) ?? -1; }
                 catch (IOException) { lib.Installed = -1; }
             }
-            lib.Loaded = LoadedVersion(file, export);
-            string published = Path.Combine(ReleaseDir, prefix + expected + ".dll");
-            lib.Published = expected > 0 && File.Exists(published) ? published : null;
-            lib.Outcome = expected > 0 ? Decide(expected, lib.Installed, lib.Loaded, lib.Published != null) : Outcome.NotPublished;
+            Own(lib, installed, record);
+            lib.Loaded = loaded?.Invoke(file, export);
+            lib.Outcome = expected > 0 ? Decide(expected, lib.Installed, lib.Loaded, lib.Published != null, lib.Ours, lib.Newer) : Outcome.NotPublished;
             return lib;
         }
 
-        static bool Install(Library lib)
+        // A library with no version export, such as SDL2: installed when
+        // missing and kept up to date only while it is the installer's copy.
+        static Library CheckPlain(string pluginDir, string releaseDir, Dictionary<string, string> record, Func<string, string, int?> loaded, string file)
         {
-            Directory.CreateDirectory(PluginDir);
-            string dest = Path.Combine(PluginDir, lib.File);
-            // A local build of another version is kept aside, not lost.
-            if (File.Exists(dest) && lib.Installed.HasValue)
-            {
-                string keep = Path.Combine(ProjectDir, "Library", "OkEngine");
-                Directory.CreateDirectory(keep);
-                File.Copy(dest, Path.Combine(keep, "replaced-" + lib.File), true);
-            }
-            File.Copy(lib.Published, dest, true);
-            lib.Installed = lib.Expected;
-            lib.Outcome = Outcome.Ready;
-            Debug.Log($"OpenKingdoms: installed {Path.GetFileName(lib.Published)} as Plugins/x86_64/{lib.File}");
-            return true;
+            var lib = new Library { File = file };
+            string installed = Path.Combine(pluginDir, file), published = Path.Combine(releaseDir, file);
+            lib.Published = File.Exists(published) ? published : null;
+            if (lib.Published == null) return null;
+            bool present = File.Exists(installed);
+            if (present) lib.Installed = 0;
+            Own(lib, installed, record);
+            bool isLoaded = loaded?.Invoke(file, null) != null;
+            if (!present) lib.Outcome = Outcome.Install;
+            else if (lib.Ours && lib.Newer) lib.Outcome = isLoaded ? Outcome.Update : Outcome.Install;
+            else lib.Outcome = Outcome.Ready;
+            return lib;
         }
 
-        static bool CopyIfMissing(string file)
+        // Whether the plugin file is the installer's own copy, and whether
+        // engine/ now has different bytes. A plugin file with the published
+        // bytes and no record is taken as the installer's.
+        static void Own(Library lib, string installed, Dictionary<string, string> record)
         {
-            string from = Path.Combine(ReleaseDir, file), dest = Path.Combine(PluginDir, file);
-            if (File.Exists(dest) || !File.Exists(from)) return false;
-            Directory.CreateDirectory(PluginDir);
-            File.Copy(from, dest);
+            if (!File.Exists(installed)) return;
+            string have = Hash(installed), want = lib.Published != null ? Hash(lib.Published) : null;
+            if (record.TryGetValue(lib.File, out var mine)) lib.Ours = mine == have;
+            else if (want != null && want == have) { lib.Ours = true; record[lib.File] = have; }
+            lib.Newer = want != null && want != have;
+        }
+
+        static bool Install(Library lib, string pluginDir, string keepDir, Dictionary<string, string> record, List<string> log)
+        {
+            Directory.CreateDirectory(pluginDir);
+            string dest = Path.Combine(pluginDir, lib.File);
+            // A local build is kept aside under a name of its own, never lost.
+            if (File.Exists(dest) && !lib.Ours)
+            {
+                Directory.CreateDirectory(keepDir);
+                string keep = Unique(keepDir, $"replaced-{DateTime.Now:yyyyMMdd-HHmmss}", lib.File);
+                File.Copy(dest, keep, true);
+                log.Add($"kept the previous {lib.File} as {keep}");
+            }
+            File.Copy(lib.Published, dest, true);
+            record[lib.File] = Hash(dest);
+            if (lib.Expected > 0) lib.Installed = lib.Expected;
+            lib.Ours = true;
+            lib.Newer = false;
+            lib.Outcome = Outcome.Ready;
+            log.Add($"installed {Path.GetFileName(lib.Published)} as Plugins/x86_64/{lib.File}");
             return true;
         }
 
         // The loaded file cannot be overwritten, but it can be moved, so the
         // right one is in place when Unity next starts.
-        static void Stage(Library lib)
+        static void Stage(Library lib, string pluginDir, string keepDir, Dictionary<string, string> record, List<string> log)
         {
             if (lib.Published == null) return;
-            string dest = Path.Combine(PluginDir, lib.File);
-            if (lib.Installed == lib.Expected) return;
+            string dest = Path.Combine(pluginDir, lib.File);
+            if (File.Exists(dest) && Hash(dest) == Hash(lib.Published)) return;
             try
             {
-                string aside = Path.Combine(ProjectDir, "Library", "OkEngine");
-                Directory.CreateDirectory(aside);
-                if (File.Exists(dest)) File.Move(dest, Path.Combine(aside, $"old-{DateTime.Now.Ticks}-{lib.File}"));
+                Directory.CreateDirectory(keepDir);
+                if (File.Exists(dest)) File.Move(dest, Unique(keepDir, $"old-{DateTime.Now:yyyyMMdd-HHmmss}", lib.File));
                 File.Copy(lib.Published, dest, true);
+                record[lib.File] = Hash(dest);
+                log.Add($"put {Path.GetFileName(lib.Published)} in place for the next start");
             }
             catch (Exception e) { Debug.LogWarning($"Engine installer: {lib.File} stays until Unity restarts: {e.Message}"); }
+        }
+
+        static string Unique(string dir, string stem, string file)
+        {
+            for (int i = 0; ; i++)
+            {
+                string p = Path.Combine(dir, stem + (i > 0 ? "-" + i : "") + "-" + file);
+                if (!File.Exists(p)) return p;
+            }
+        }
+
+        static string Hash(string path)
+        {
+            using (var sha = SHA256.Create())
+            using (var s = File.OpenRead(path))
+                return BitConverter.ToString(sha.ComputeHash(s)).Replace("-", "").ToLowerInvariant();
+        }
+
+        static Dictionary<string, string> ReadRecord(string path)
+        {
+            var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (File.Exists(path) && MiniJson.Parse(File.ReadAllText(path)) is Dictionary<string, object> o)
+                    foreach (var kv in o) if (kv.Value is string s) d[kv.Key] = s;
+            }
+            catch (Exception) { }
+            return d;
+        }
+
+        static void WriteRecord(string path, Dictionary<string, string> record)
+        {
+            if (record.Count == 0) return;
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, JsonText.Write(record.ToDictionary(kv => kv.Key, kv => (object)kv.Value), true) + "\n");
         }
 
         static void Block(string why)
@@ -156,6 +254,7 @@ namespace OpenKingdomsUnity.Studio
             t?.GetField("Blocked", BindingFlags.Public | BindingFlags.Static)?.SetValue(null, why);
         }
 
+        // In plain words for the artist; the version numbers go to the log.
         public static string Describe(Library lib)
         {
             if (lib == null) return "";
@@ -163,22 +262,26 @@ namespace OpenKingdomsUnity.Studio
             {
                 case Outcome.Ready:
                     return lib.Installed.HasValue || lib.Loaded.HasValue
-                        ? $"The engine library (API {lib.Expected}) is installed and matches this project."
-                        : "No engine library is installed.";
+                        ? "The game's engine is installed and matches this project."
+                        : "The game's engine is not installed.";
+                case Outcome.Update:
+                    return "A newer build of the game's engine is in place and takes over when Unity next starts.";
+                case Outcome.Local:
+                    return "A build of the game's engine made on this computer is installed. The game checks it when it starts.";
                 case Outcome.Restart:
-                    return $"The engine was updated to API {lib.Expected}, but Unity still has API {lib.Loaded} loaded from before. Restart Unity to use it. Until then the mock engine runs.";
+                    return "The game's engine was updated, but Unity still has the old one loaded. Restart Unity to use it. Until then the studio uses the stand-in world.";
                 case Outcome.Mismatch:
-                    return $"The engine library in Plugins is API {lib.Installed}, but this project needs API {lib.Expected} and engine/ has no copy of it. The mock engine runs.";
+                    return "The game's engine in Assets/Plugins is an older one, and the engine folder has no copy of the one this project needs. The studio uses the stand-in world.";
                 case Outcome.NotPublished:
                     return lib.Expected > 0
-                        ? $"No engine library for API {lib.Expected} is installed or published in engine/. The mock engine runs."
-                        : "The engine binding is not in this project. The mock engine runs.";
+                        ? "The game's engine is not installed, and the engine folder has no copy of it. The studio uses the stand-in world."
+                        : "The game's engine is not in this project. The studio uses the stand-in world.";
                 default:
                     return "";
             }
         }
 
-        public const string RuntimeMissing = "Windows is missing the Microsoft Visual C++ runtime the engine needs, so the mock engine runs. " +
+        public const string RuntimeMissing = "Windows is missing the Microsoft Visual C++ runtime the game's engine needs, so the studio uses the stand-in world. " +
             "Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe and restart Unity.";
 
         // The engine and SDL link the Visual C++ runtime, which Unity itself
@@ -252,12 +355,14 @@ namespace OpenKingdomsUnity.Studio
         }
 
         // The version of a library Unity has already loaded, asked of the
-        // loaded copy itself, or null when it is not loaded.
+        // loaded copy itself, -1 when it has no such export, or null when it
+        // is not loaded.
         static int? LoadedVersion(string file, string export)
         {
             if (Application.platform != RuntimePlatform.WindowsEditor) return null;
             IntPtr module = GetModuleHandleW(file);
             if (module == IntPtr.Zero) return null;
+            if (export == null) return -1;
             IntPtr fn = GetProcAddress(module, export);
             if (fn == IntPtr.Zero) return -1;
             return Marshal.GetDelegateForFunctionPointer<VersionFn>(fn)();

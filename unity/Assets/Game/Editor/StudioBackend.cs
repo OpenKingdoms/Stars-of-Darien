@@ -1,7 +1,7 @@
 // StudioBackend.cs - the one backend the studio windows share in edit
-// mode: the real engine when okengine and the game files are present, the
-// mock otherwise, or the mock on request. It is let go before Play, since
-// the engine runs one instance at a time.
+// mode: the real game when okengine and the game files are present, the
+// stand-in world (the mock) otherwise, or on request. It is let go before
+// Play, since the engine runs one instance at a time.
 using System;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.World;
@@ -15,6 +15,7 @@ namespace OpenKingdomsUnity.Studio
     {
         static IGameBackend backend;
         static ModelCache models;
+        // Why the stand-in world runs, or null.
         public static string Problem { get; private set; }
         public static event Action Changed;
 
@@ -22,7 +23,7 @@ namespace OpenKingdomsUnity.Studio
         public static bool PreferMock
         {
             get => EditorPrefs.GetBool(MockKey, false);
-            set { if (value == PreferMock) return; EditorPrefs.SetBool(MockKey, value); Release(); Changed?.Invoke(); }
+            set { if (value == PreferMock) return; EditorPrefs.SetBool(MockKey, value); Reload(); }
         }
 
         static StudioBackend()
@@ -46,6 +47,14 @@ namespace OpenKingdomsUnity.Studio
             return backend;
         }
 
+        // Lets the backend go and tells every studio window, which then
+        // start again on whatever the settings give now.
+        public static void Reload()
+        {
+            Release();
+            Changed?.Invoke();
+        }
+
         public static ModelCache Models
         {
             get
@@ -62,13 +71,13 @@ namespace OpenKingdomsUnity.Studio
         {
             var settings = Type.GetType("OpenKingdomsUnity.Engine.EngineSettings, OpenKingdomsUnity.Engine");
             var type = Type.GetType("OpenKingdomsUnity.Engine.EngineBackend, OpenKingdomsUnity.Engine");
-            if (settings == null || type == null) { Problem = "The engine binding is not in this project."; return null; }
+            if (settings == null || type == null) { Problem = "The game's engine is not in this project."; return null; }
             var available = settings.GetProperty("EngineAvailable")?.GetValue(null) as bool?;
-            if (available != true) { Problem = SettingsWindow.Summary(out _) + " See OpenKingdoms > Settings."; return null; }
+            if (available != true) { Problem = SettingsWindow.Summary(out _, false); return null; }
             try { return (IGameBackend)Activator.CreateInstance(type); }
             catch (Exception e)
             {
-                Problem = "The engine did not start: " + (e.InnerException ?? e).Message;
+                Problem = "The game's engine did not start: " + (e.InnerException ?? e).Message;
                 return null;
             }
         }
@@ -81,17 +90,19 @@ namespace OpenKingdomsUnity.Studio
             backend = null;
         }
 
+        // What runs, the switch to the stand-in world, and once, why the
+        // stand-in world runs.
         public static void Toolbar()
         {
             using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
             {
                 var b = Available ? Get() : null;
-                GUILayout.Label(b != null ? "Engine: " + b.Name : "Stopped while playing", EditorStyles.miniLabel);
+                GUILayout.Label(b == null ? "Waiting while the game plays" : b.Name == "Mock" ? "On the stand-in world" : "On the real game", EditorStyles.miniLabel);
                 GUILayout.FlexibleSpace();
-                bool mock = GUILayout.Toggle(PreferMock, "Use mock", EditorStyles.toolbarButton);
+                bool mock = GUILayout.Toggle(PreferMock, "Use the stand-in world", EditorStyles.toolbarButton);
                 if (mock != PreferMock) PreferMock = mock;
             }
-            if (!string.IsNullOrEmpty(Problem)) EditorGUILayout.HelpBox(Problem, MessageType.Info);
+            if (!PreferMock && !string.IsNullOrEmpty(Problem)) EditorGUILayout.HelpBox(Problem, MessageType.Info);
         }
     }
 }

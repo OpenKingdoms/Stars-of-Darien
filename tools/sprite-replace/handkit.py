@@ -136,9 +136,13 @@ def finish(parts, glb_path, extras=None):
     for p in parts:
         p.select_set(True)
     bpy.context.view_layer.objects.active = parts[0]
+    # any part painted from the player's sprites marks the whole model
+    stamped = any(p.get(carve.PLAYERS_FILES) for p in parts)
     if len(parts) > 1:
         bpy.ops.object.join()
     ob = bpy.context.view_layer.objects.active
+    if stamped:
+        ob[carve.PLAYERS_FILES] = True
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     for k, v in (extras or {}).items():
         ob[k] = v

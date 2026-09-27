@@ -238,11 +238,13 @@ def main():
     r = load(catalog, name)
     sprite = os.path.join(catalog, "sprites", name + ".png")
     ob = build(r, sprite)
+    # painted from the player's own sprite, so the studio keeps it out of git
+    ob["okFromPlayersFiles"] = True
     render(ob, out, name, sprite)
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
     bpy.ops.export_scene.gltf(filepath=os.path.join(out, name + ".glb"), export_format="GLB",
-                              use_selection=True, export_yup=True)
+                              use_selection=True, export_yup=True, export_extras=True)
     print("INFLATED", name, "verts", len(ob.data.vertices), "faces", len(ob.data.polygons),
           "size %.2f x %.2f x %.2f cells" % tuple(ob.dimensions))
 

@@ -851,6 +851,8 @@ def build(name, henge, row, catalog, out, fit=None):
     bpy.context.collection.objects.link(ob)
     spr.opaque()
     seen, faces, hits = paint(ob, face_stone, stones, spr, hx, hy, name, fit)
+    # painted from the player's own sprite, so the studio keeps it out of git
+    ob["okFromPlayersFiles"] = True
     iou, miss, extra = fit_report(spr, hits, out, name)
     hk.smooth(ob, 40)
     glb = os.path.join(out, "models", name + ".glb")

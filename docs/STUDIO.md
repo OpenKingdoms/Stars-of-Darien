@@ -35,7 +35,7 @@ A unit model can move with the original's animation. Any node whose name matches
 
 ### Materials
 
-Plain lit materials work best: a base colour texture, no emission. Transparent pixels in the base colour are cut out, so leaves and fences can be painted on cards. Every drop-in model casts and takes shadows like the originals.
+Plain lit materials work best: a base colour texture and a plain emissive colour for anything that glows. The loader reads a glow as the brightest channel of the emissive colour times the base colour, so give glowing parts a bright base colour too. Transparent pixels in the base colour are cut out, so leaves and fences can be painted on cards. Every drop-in model casts and takes shadows like the originals.
 
 ### Formats and where they load
 

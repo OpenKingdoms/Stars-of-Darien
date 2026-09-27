@@ -19,7 +19,7 @@ namespace OpenKingdomsUnity.Studio
         public float Distance, Yaw, Pitch;
         public const float ClassicDistance = 34f, ClassicFov = 40f;
         public static StudioView ClassicDefault => new StudioView { Classic = true, Distance = ClassicDistance, Pitch = GameCamera.ClassicPitch };
-        public static StudioView FreeDefault => new StudioView { Classic = false, Distance = 8f, Yaw = 200f, Pitch = 25f };
+        public static StudioView FreeDefault => new StudioView { Classic = false, Distance = 11f, Yaw = 200f, Pitch = 25f };
     }
 
     public sealed class StudioStage : IDisposable
@@ -33,6 +33,8 @@ namespace OpenKingdomsUnity.Studio
         public bool RealGround => terrain != null;
         public float TurntableYaw;
         public GameObject ModelObject => model;
+        public IGameBackend Backend => backend;
+        public bool MonarchIsStandIn { get; private set; }
 
         public bool ShowMonarch = true, ShowGrid = true, ShowAnchor = true, ShowOriginal = true, ShowGhost = true;
 
@@ -43,13 +45,13 @@ namespace OpenKingdomsUnity.Studio
         readonly List<Object> owned = new List<Object>();
         readonly List<Object> modelOwned = new List<Object>();
         readonly List<Transform> cards = new List<Transform>();
-        readonly Dictionary<Material, (Color color, float gloss)> baseLook = new Dictionary<Material, (Color, float)>();
+        readonly Dictionary<Material, (Color color, float gloss, float glow)> baseLook = new Dictionary<Material, (Color, float, float)>();
         Color climateSun;
         float weatherLight = 1f;
         string climate = "grass";
         bool sea = true;
         Bounds modelBounds = new Bounds(Vector3.up * 0.5f, Vector3.one);
-        float originalWidth = 1f, monarchWidth = 1f;
+        float originalWidth = 1f, monarchWidth = 1f, monarchHeight = StudioTargets.MonarchHeight;
         Vector2Int footprint = Vector2Int.one;
         TimeOfDay time;
         bool shadows = true;
@@ -122,29 +124,34 @@ namespace OpenKingdomsUnity.Studio
         }
 
         // The flattest dry place near the start with room for the monarch,
-        // the model and the original in a row.
+        // the model and the original in a row, and open ground around them
+        // so no cliff stands in the free view.
         public static Vector3 PickSpot(MapTerrain t, Vector3 near)
         {
             var size = t.Size;
             Vector3 best = new Vector3(near.x, t.Sample(near.x, near.z), near.z);
             float bestScore = float.MaxValue;
-            for (float dz = -40; dz <= 40; dz += 2)
-                for (float dx = -40; dx <= 40; dx += 2)
+            for (float dz = -48; dz <= 48; dz += 2)
+                for (float dx = -48; dx <= 48; dx += 2)
                 {
                     float x = near.x + dx, z = near.z + dz;
-                    if (x < 12 || z > -8 || x > size.x - 12 || z < -size.y + 8) continue;
-                    float lo = float.MaxValue, hi = float.MinValue;
+                    if (x < 18 || z > -14 || x > size.x - 18 || z < -size.y + 14) continue;
+                    float mid = t.Sample(x, z), lo = float.MaxValue, hi = float.MinValue, around = 0f;
                     bool wet = false;
-                    for (float sz = -4; sz <= 4; sz += 2)
-                        for (float sx = -10; sx <= 10; sx += 2)
+                    for (float sz = -12; sz <= 12; sz += 2)
+                        for (float sx = -16; sx <= 16; sx += 2)
                         {
                             float h = t.Sample(x + sx, z + sz);
-                            lo = Mathf.Min(lo, h);
-                            hi = Mathf.Max(hi, h);
-                            wet |= t.SeaLevel > 0 && h < t.SeaLevel + 0.3f;
+                            if (Mathf.Abs(sz) <= 4 && Mathf.Abs(sx) <= 10)
+                            {
+                                lo = Mathf.Min(lo, h);
+                                hi = Mathf.Max(hi, h);
+                                wet |= t.SeaLevel > 0 && h < t.SeaLevel + 0.3f;
+                            }
+                            else around = Mathf.Max(around, Mathf.Abs(h - mid));
                         }
-                    float score = (hi - lo) + (wet ? 1000f : 0f) + new Vector2(dx, dz).magnitude * 0.02f;
-                    if (score < bestScore) { bestScore = score; best = new Vector3(x, t.Sample(x, z), z); }
+                    float score = (hi - lo) * 2f + around * 0.5f + (wet ? 1000f : 0f) + new Vector2(dx, dz).magnitude * 0.02f;
+                    if (score < bestScore) { bestScore = score; best = new Vector3(x, mid, z); }
                 }
             return best;
         }
@@ -379,7 +386,8 @@ namespace OpenKingdomsUnity.Studio
                     if (mats[i] == null) continue;
                     var copy = new Material(mats[i]) { name = mats[i].name };
                     modelOwned.Add(copy);
-                    baseLook[copy] = (mats[i].HasProperty("_Color") ? mats[i].color : Color.white, mats[i].HasProperty("_Glossiness") ? mats[i].GetFloat("_Glossiness") : 0.2f);
+                    baseLook[copy] = (mats[i].HasProperty("_Color") ? mats[i].color : Color.white, mats[i].HasProperty("_Glossiness") ? mats[i].GetFloat("_Glossiness") : 0.2f,
+                        mats[i].HasProperty("_Emission") ? mats[i].GetFloat("_Emission") : 0f);
                     mats[i] = copy;
                 }
                 r.sharedMaterials = mats;
@@ -426,7 +434,8 @@ namespace OpenKingdomsUnity.Studio
                 if (m.name.IndexOf("team", StringComparison.OrdinalIgnoreCase) >= 0) c = new Color(c.r * team.r, c.g * team.g, c.b * team.b, c.a);
                 if (m.HasProperty("_Color")) m.color = c;
                 if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", t.Roughness >= 0 ? (1f - t.Roughness) * 0.5f : kv.Value.gloss);
-                if (m.HasProperty("_Emission")) m.SetFloat("_Emission", t.Emission);
+                // The model's own glow stays unless the tweak sets one, as Bake does.
+                if (m.HasProperty("_Emission")) m.SetFloat("_Emission", t.Emission > 0 ? t.Emission : kv.Value.glow);
             }
         }
 
@@ -478,41 +487,44 @@ namespace OpenKingdomsUnity.Studio
         public void SetMonarch(PresentedModel pm, Color team)
         {
             if (monarch != null) Object.DestroyImmediate(monarch);
+            MonarchIsStandIn = pm == null;
             if (pm != null)
             {
                 monarch = Rest(pm, "Monarch", null, null);
                 monarchWidth = Mathf.Max(pm.RestBounds.size.x, pm.RestBounds.size.z);
+                monarchHeight = pm.RestBounds.max.y;
             }
             else
             {
                 monarch = Marker(team);
                 monarchWidth = 2f;
+                monarchHeight = StudioTargets.MonarchHeight;
             }
             monarch.transform.SetParent(Root.transform, false);
             Place();
             Hide(Root);
         }
 
-        // A stand-in monarch: a figure two and a half cells tall on a two by
-        // two cell base, the size of the game's monarchs.
+        // A stand-in monarch: a figure 4 cells tall on a two by two cell base,
+        // the size of the game's monarchs.
         GameObject Marker(Color team)
         {
-            var go = new GameObject("Monarch (marker)");
+            var go = new GameObject("Monarch");
             var mat = Own(Looks.Model(null));
             mat.color = Color.Lerp(team, Color.white, 0.25f);
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             Object.DestroyImmediate(body.GetComponent<Collider>());
             body.name = "Body";
             body.transform.SetParent(go.transform, false);
-            body.transform.localPosition = new Vector3(0, 1.05f, 0);
-            body.transform.localScale = new Vector3(0.7f, 1.05f, 0.7f);
+            body.transform.localPosition = new Vector3(0, 1.65f, 0);
+            body.transform.localScale = new Vector3(0.9f, 1.65f, 0.9f);
             body.GetComponent<MeshRenderer>().sharedMaterial = mat;
             var head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             Object.DestroyImmediate(head.GetComponent<Collider>());
             head.name = "Head";
             head.transform.SetParent(go.transform, false);
-            head.transform.localPosition = new Vector3(0, 2.3f, 0);
-            head.transform.localScale = Vector3.one * 0.45f;
+            head.transform.localPosition = new Vector3(0, 3.65f, 0);
+            head.transform.localScale = Vector3.one * 0.7f;
             head.GetComponent<MeshRenderer>().sharedMaterial = mat;
             var baseMat = Own(Looks.Overlay(new Color(team.r, team.g, team.b, 0.45f)));
             var plate = new GameObject("Base");
@@ -568,13 +580,16 @@ namespace OpenKingdomsUnity.Studio
             return go;
         }
 
-        // An upright picture turned to face the camera, as the game draws a
-        // sprite feature: rect is left of the anchor, bottom, width, height in cells.
+        // A picture facing the camera, as the game draws a sprite feature:
+        // rect is left of the anchor, bottom, width, height in cells. Aim
+        // turns and nudges its Face, and go stays on the anchor.
         GameObject Card(string name, Texture2D sprite, Rect rect, bool asGhost)
         {
             var go = new GameObject(name);
+            var face = new GameObject("Face");
+            face.transform.SetParent(go.transform, false);
             var quad = new GameObject("Picture");
-            quad.transform.SetParent(go.transform, false);
+            quad.transform.SetParent(face.transform, false);
             quad.transform.localPosition = new Vector3(rect.x, rect.y, 0);
             quad.transform.localScale = new Vector3(rect.width, rect.height, 1);
             quad.AddComponent<MeshFilter>().sharedMesh = Own(CardQuad());
@@ -594,7 +609,7 @@ namespace OpenKingdomsUnity.Studio
             var r = quad.AddComponent<MeshRenderer>();
             r.sharedMaterial = mat;
             r.shadowCastingMode = ShadowCastingMode.Off;
-            cards.Add(go.transform);
+            cards.Add(face.transform);
             return go;
         }
 
@@ -636,7 +651,7 @@ namespace OpenKingdomsUnity.Studio
         {
             float top = fixedBounds.max.y + 0.4f;
             yield return ("New model", Spot + Vector3.up * top);
-            if (monarch != null && monarch.activeSelf) yield return ("Monarch", monarch.transform.position + Vector3.up * 3f);
+            if (monarch != null && monarch.activeSelf) yield return (MonarchIsStandIn ? "Monarch (stand-in, 4 cells)" : "Monarch", monarch.transform.position + Vector3.up * (monarchHeight + 0.4f));
             if (original != null && original.activeSelf) yield return ("Original", original.transform.position + Vector3.up * Mathf.Max(1f, top));
         }
 
@@ -734,11 +749,22 @@ namespace OpenKingdomsUnity.Studio
         public void Tick(float dt, bool turning)
         {
             if (Root == null) return;
-            if (turning) TurntableYaw = (TurntableYaw + dt * 25f) % 360f;
-            if (turntable != null) turntable.transform.rotation = Quaternion.Euler(0, TurntableYaw, 0);
+            if (turning) TurntableYaw = (TurntableYaw + Mathf.Min(dt, 0.25f) * 25f) % 360f;
             if (Atmosphere != null)
                 foreach (var ps in Root.GetComponentsInChildren<ParticleSystem>())
                     ps.Simulate(Mathf.Min(dt, 0.1f), true, false, false);
+        }
+
+        // Something on the stage moves by itself, such as falling snow.
+        public bool Animating
+        {
+            get
+            {
+                if (Root == null) return false;
+                foreach (var ps in Root.GetComponentsInChildren<ParticleSystem>())
+                    if (ps.gameObject.activeInHierarchy && ps.particleCount > 0) return true;
+                return false;
+            }
         }
 
         // Points the camera for a view and draws into rt, or into the Game
@@ -749,6 +775,9 @@ namespace OpenKingdomsUnity.Studio
             float pitch = v.Classic ? GameCamera.ClassicPitch : v.Pitch, yaw = v.Classic ? 0f : v.Yaw;
             var focus = v.Classic ? Spot : Spot + Vector3.up * Mathf.Clamp(fixedBounds.center.y, 0.3f, 6f);
             Camera.fieldOfView = StudioView.ClassicFov;
+            // The classic view shows the model as it will stand in the game,
+            // never as the turntable left it.
+            if (turntable != null) turntable.transform.rotation = v.Classic ? Quaternion.identity : Quaternion.Euler(0, TurntableYaw, 0);
             Camera.transform.rotation = Quaternion.Euler(pitch, yaw, 0);
             Camera.transform.position = focus - Camera.transform.forward * v.Distance;
             if (!v.Classic)
@@ -763,11 +792,15 @@ namespace OpenKingdomsUnity.Studio
             if (grid != null) grid.SetActive(ShowGrid);
             if (anchor != null) anchor.SetActive(ShowAnchor);
             if (inPlace != null) inPlace.SetActive(true);
-            // Cards turn about y to face the camera, as the game's do.
-            var fwd = Camera.transform.forward;
-            fwd.y = 0;
-            var face = fwd.sqrMagnitude > 1e-4f ? Quaternion.LookRotation(fwd) : Quaternion.identity;
-            foreach (var c in cards) if (c != null) c.rotation = face;
+            // Cards lie in the camera's plane on their anchor, drawn a little
+            // toward the camera and shrunk to match, as EntityRenderer.CardMatrix does.
+            foreach (var c in cards)
+            {
+                if (c == null || c.parent == null) continue;
+                EffectRenderer.Nudged(c.parent.position, Camera.transform, EntityRenderer.CardNudge, out var pivot, out float k);
+                c.SetPositionAndRotation(pivot, Camera.transform.rotation);
+                c.localScale = Vector3.one * k;
+            }
             Atmosphere?.Follow(focus, Camera.transform.position.y - focus.y, v.Distance);
         }
 

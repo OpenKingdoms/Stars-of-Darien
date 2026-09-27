@@ -10,6 +10,7 @@ namespace OpenKingdomsUnity.Studio
     public enum TargetKind { None, Feature, Unit, UnitCard }
 
     // What the dropped model replaces in the game.
+    [Serializable]
     public sealed class StudioTarget
     {
         public TargetKind Kind;
@@ -18,18 +19,32 @@ namespace OpenKingdomsUnity.Studio
         public string Description = "";
         public string Side = "";
         public Vector2Int Footprint = Vector2Int.one;
-        public float Height;              // cells, 0 when unknown
+        public float Height;              // cells, from the definition, 0 when unknown
         public float Width;               // cells across the original picture, 0 when unknown
         public string SpriteFile;         // the original's picture from the sprite catalog
         public Vector2 SpriteSize, Hotspot;
         public List<string> Maps = new List<string>();
         public int UnitDef = -1, FeatureDef = -1;
         public string ReplacesPiece = "", ReplacesTexture = "";
+        public bool ToScale = true;       // false for the stand-in world's made-up things
+        public bool Typed;                // typed in by hand, not from the game
+
+        // How tall the original is drawn, in cells, and where that came from,
+        // once the studio has it on the stage.
+        [NonSerialized] public float DrawnHeight;
+        [NonSerialized] public string DrawnFrom;
 
         public string Label => Kind == TargetKind.None ? "nothing yet"
             : string.IsNullOrEmpty(Description) ? Name : $"{Name} ({Description})";
 
         public bool IsUnit => Kind == TargetKind.Unit || Kind == TargetKind.UnitCard;
+
+        public StudioTarget Clone()
+        {
+            var t = (StudioTarget)MemberwiseClone();
+            t.Maps = new List<string>(Maps ?? new List<string>());
+            return t;
+        }
     }
 
     // Changes the studio makes to a model before it goes in: a uniform
@@ -116,5 +131,7 @@ namespace OpenKingdomsUnity.Studio
         public readonly List<string> MaterialNames = new List<string>();
         // Opaque materials whose picture has clear parts, which draw solid.
         public readonly List<string> SolidSeeThrough = new List<string>();
+        // Stamped by the sprite tools as made from the player's own files.
+        public bool FromPlayersFiles;
     }
 }

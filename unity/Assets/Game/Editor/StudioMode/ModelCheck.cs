@@ -24,16 +24,31 @@ namespace OpenKingdomsUnity.Studio
 
         public const int FeatureTriangles = 3000, UnitTriangles = 6000, TextureSide = 1024, TextureCount = 4;
 
-        // How tall the original stands, in cells, or 0 when unknown. A sprite
-        // feature's height is its definition's, or its hotspot row over 8,
-        // since the original draws a cell of height as 8 pixels.
+        // How tall the original stands, in cells, or 0 when unknown or not to
+        // scale: a unit's model, a feature as the game draws it, and only
+        // failing that its definition's height, which is a rough guide.
         public static float ExpectedHeight(StudioTarget t, Bounds? original)
         {
-            if (t == null) return 0;
+            if (t == null || !t.ToScale) return 0;
             if (t.IsUnit) return original.HasValue ? original.Value.size.y : 0;
+            if (t.DrawnHeight > 0) return t.DrawnHeight;
             if (t.Height > 0) return t.Height;
-            if (t.Hotspot.y > 0) return t.Hotspot.y / 8f;
             return original.HasValue ? original.Value.size.y : 0;
+        }
+
+        // True when the height to match is only the definition's.
+        public static bool Rough(StudioTarget t) => t != null && !t.IsUnit && t.DrawnHeight <= 0 && t.Height > 0;
+
+        static string HeightSource(StudioTarget t)
+        {
+            if (t.IsUnit) return "the original model";
+            if (Rough(t)) return "the feature's definition, which is only a rough guide";
+            switch (t.DrawnFrom)
+            {
+                case "typed": return "the height you typed";
+                case "model": return "the original model";
+                default: return "the original picture as the game draws it";
+            }
         }
 
         public static List<Issue> Run(ModelFacts f, StudioFix fix, StudioTarget t, Bounds? original = null, IList<string> pieces = null)
@@ -45,7 +60,7 @@ namespace OpenKingdomsUnity.Studio
             if (t == null || t.Kind == TargetKind.None)
                 Add(Level.Problem, "Pick what this model replaces, under Replaces, so the studio knows its size and where it goes.");
             else if (t.Kind == TargetKind.UnitCard && string.IsNullOrEmpty(t.ReplacesPiece))
-                Add(Level.Problem, "Pick the piece of the original this model stands in for.");
+                Add(Level.Problem, "Pick the card piece this model stands in for, under Card piece.");
             if (f == null || !f.HasGeometry)
             {
                 Add(Level.Problem, "The model has nothing to draw. Check that the export included the meshes.");
@@ -62,16 +77,18 @@ namespace OpenKingdomsUnity.Studio
                     FixKind.Shrink100, "Make it 100 times smaller");
                 sized = true;
             }
+            else if (t != null && t.Kind != TargetKind.None && !t.ToScale)
+                Add(Level.Note, $"It is {across:0.#} cells across and {tall:0.#} tall. The stand-in world's things are not to scale, so judge the size by the 4-cell monarch.");
             else if (expected > 0 && tall > 0)
             {
                 float r = tall / expected;
+                string from = HeightSource(t);
                 if (r < 0.6f || r > 1.6f)
                 {
-                    string what = t.IsUnit ? "the original model" : "the original picture";
-                    Add(Level.Warning, $"It stands {tall:0.#} cells tall, {Describe(r)} {what} ({expected:0.#} cells).", FixKind.MatchSize, "Match the original's height");
+                    Add(Level.Warning, $"It stands {tall:0.#} cells tall, {Describe(r)} the original ({expected:0.#} cells, from {from}).", FixKind.MatchSize, "Match the original's height");
                     sized = true;
                 }
-                else Add(Level.Good, $"Its height suits the original: {tall:0.#} cells against {expected:0.#}.");
+                else Add(Level.Good, $"Its height suits the original: {tall:0.#} cells against {expected:0.#}, from {from}.");
             }
             else if (t != null && t.Kind != TargetKind.None && !t.IsUnit)
             {
@@ -100,7 +117,8 @@ namespace OpenKingdomsUnity.Studio
             // A long footprint or original that the model crosses the other way
             // was probably exported a quarter turn off.
             Vector2 want = Vector2.zero;
-            if (t != null && t.IsUnit && original.HasValue) want = new Vector2(original.Value.size.x, original.Value.size.z);
+            if (t != null && !t.ToScale) { }
+            else if (t != null && t.IsUnit && original.HasValue) want = new Vector2(original.Value.size.x, original.Value.size.z);
             else if (t != null && t.Kind == TargetKind.Feature) want = new Vector2(t.Footprint.x, t.Footprint.y);
             if (want.x > 0 && want.y > 0 && b.size.x > 0 && b.size.z > 0)
             {
@@ -111,8 +129,9 @@ namespace OpenKingdomsUnity.Studio
             Add(Level.Note, "The front faces the classic camera, to the south. If you see its back in the classic view, turn it half way.");
 
             int budget = t != null && t.Kind == TargetKind.Unit ? UnitTriangles : FeatureTriangles;
+            string kind = t == null ? "a feature" : t.Kind == TargetKind.Unit ? "a unit" : t.Kind == TargetKind.UnitCard ? "a card model" : "a feature";
             if (f.Triangles > budget)
-                Add(Level.Warning, $"It has {N(f.Triangles)} triangles. Keep {(t != null && t.IsUnit ? "a unit" : "a feature")} under {N(budget)}, since a map can hold hundreds of them.");
+                Add(Level.Warning, $"It has {N(f.Triangles)} triangles. Keep {kind} under {N(budget)}, since a map can hold hundreds of them.");
             else Add(Level.Good, $"{N(f.Triangles)} triangles, inside the budget of {N(budget)}.");
 
             foreach (var tex in f.Textures)
@@ -128,7 +147,7 @@ namespace OpenKingdomsUnity.Studio
                 Add(Level.Warning, $"The picture on {m} has see-through parts, but {m} is set to opaque, so they draw solid. " +
                     "In Blender, plug the picture's Alpha into the shader's Alpha to cut them out.");
             foreach (var m in f.MissingTextures)
-                Add(Level.Warning, $"The picture {m} is not in the file, so that part draws plain. Export as glTF Binary (.glb) so the pictures travel inside.");
+                Add(Level.Warning, $"The picture {m} was not found, so that part draws plain. Export as glTF Binary (.glb) so the pictures travel inside, or keep the picture beside the model file.");
 
             if (t != null && t.Kind == TargetKind.Unit && pieces != null && pieces.Count > 0)
             {

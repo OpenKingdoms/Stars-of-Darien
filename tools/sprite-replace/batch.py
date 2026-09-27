@@ -342,6 +342,7 @@ def main():
                 ob.select_set(True)
                 bpy.context.view_layer.objects.active = ob
                 bpy.ops.object.join()
+            ob[carve.PLAYERS_FILES] = True
             if r.get("texture"):
                 # a model standing in for a painted card of a unit's 3DO
                 ob["replacesTexture"] = r["texture"]

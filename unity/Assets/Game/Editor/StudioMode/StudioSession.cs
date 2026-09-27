@@ -27,12 +27,17 @@ namespace OpenKingdomsUnity.Studio
         public static string Status { get; private set; } = "";
         public static string LoadedMap { get; private set; }
         public static string[] OriginalPieces { get; private set; } = Array.Empty<string>();
+        // Why the original is not on the stage, or null when it is.
+        public static string OriginalMissing { get; private set; }
         public static event Action Changed;
 
         static Bounds? originalBounds;
         static Texture2D spriteTex;
         static double lastTick, lastPoll, lastDropScan;
         static HashSet<string> dropSeen;
+        // Whether this script domain has read back the saved state yet. Until
+        // it has, nothing it holds is written over what was saved.
+        static bool restored;
 
         public static bool Active => Stage != null && Stage.Root != null;
 
@@ -49,7 +54,7 @@ namespace OpenKingdomsUnity.Studio
         public static Color Team => (Color)MockBackend.Palette[Mathf.Abs(TeamColour) % MockBackend.Palette.Length];
 
         // "" for the neutral ground, "?" for the backend's choice: the first
-        // real map when game files are there, the neutral ground on the mock.
+        // real map when game files are there, the neutral ground on the stand-in.
         static bool WantsRealGround(IGameBackend b) =>
             MapChoice == "?" ? b != null && b.Name != "Mock" : MapChoice.Length > 0;
 
@@ -63,8 +68,25 @@ namespace OpenKingdomsUnity.Studio
         static StudioSession()
         {
             EditorApplication.update += Tick;
-            StudioBackend.Changed += () => { if (Active) EditorApplication.delayCall += () => Start(false); };
-            AssemblyReloadEvents.beforeAssemblyReload += Stop;
+            // Another backend, from Settings or the stand-in toggle, rebuilds
+            // the stage on it, so the lists and the stage agree.
+            StudioBackend.Changed += () =>
+            {
+                if (!Active) return;
+                EditorApplication.delayCall += () =>
+                {
+                    if (StudioMode.IsOn && !EditorApplication.isPlayingOrWillChangePlaymode && StudioBackend.Get() != Stage?.Backend) Start(false);
+                };
+            };
+            AssemblyReloadEvents.beforeAssemblyReload += BeforeReload;
+        }
+
+        // The stage and the model go, and their state stays in SessionState.
+        static void BeforeReload()
+        {
+            Stop();
+            Model?.Dispose();
+            Model = null;
         }
 
         // ---- Starting and stopping ----
@@ -77,6 +99,7 @@ namespace OpenKingdomsUnity.Studio
             StudioStage.RemoveStray();
             var b = StudioBackend.Get();
             if (b == null) { Status = "The studio pauses while the game plays."; Notify(); return false; }
+            if (!restored) Restore(b);
             LoadMap(b, progress);
             var stage = new StudioStage();
             try
@@ -92,19 +115,19 @@ namespace OpenKingdomsUnity.Studio
                 return false;
             }
             Stage = stage;
+            lastTick = 0;
             Stage.SetMonarch(MonarchModel(b), Team);
-            Restore();
             RefreshOriginal();
             if (Model != null) Stage.SetModel(Model, Fix, Tweaks, Team);
             Recheck();
-            Status = b.Name == "Mock" ? "Running on the mock engine. " + (StudioBackend.Problem ?? "") : "Running on the real engine with your game files.";
+            Status = Model == null ? "Drop a model on Studio Drop or on the Studio View to begin." : "Showing " + Path.GetFileName(Model.SourcePath) + ".";
             Notify();
             return true;
         }
 
         public static void Stop()
         {
-            Remember();
+            if (Active) Remember();
             Stage?.Dispose();
             Stage = null;
             if (spriteTex != null) UnityEngine.Object.DestroyImmediate(spriteTex);
@@ -139,8 +162,11 @@ namespace OpenKingdomsUnity.Studio
             finally { if (progress) EditorUtility.ClearProgressBar(); }
         }
 
+        // A real monarch from the game, or null for the 4-cell stand-in, which
+        // the stand-in world always gets since its units are not to scale.
         static PresentedModel MonarchModel(IGameBackend b)
         {
+            if (b == null || b.Name == "Mock") return null;
             var def = StudioTargets.Monarch(b);
             if (def == null) return null;
             int id = b.LoadModel(def.ObjectName, TeamColour);
@@ -151,14 +177,17 @@ namespace OpenKingdomsUnity.Studio
 
         public static bool LoadModel(string path)
         {
-            var m = StudioModel.Load(path, out var error);
+            string full = StudioModel.Absolute(path);
+            var m = StudioModel.Load(full, out var error);
             if (m == null)
             {
+                // A broken export is tried again only once its file changes again.
+                if (Model != null && SamePath(Model.SourcePath, full)) Model.MarkRead();
                 Status = "That model did not load: " + error;
                 Notify();
                 return false;
             }
-            bool same = Model != null && string.Equals(Model.SourcePath, m.SourcePath, StringComparison.OrdinalIgnoreCase);
+            bool same = Model != null && SamePath(Model.SourcePath, m.SourcePath);
             Model?.Dispose();
             Model = m;
             if (!same) { Fix = StudioFix.None; GuessTarget(m.Name); }
@@ -166,12 +195,20 @@ namespace OpenKingdomsUnity.Studio
             SessionState.SetString("oku.studio.model", m.SourcePath);
             EditorPrefs.SetString("oku.studio.lastModel", m.SourcePath);
             Recheck();
+            Remember();
             Status = (same ? "Reloaded " : "Loaded ") + Path.GetFileName(m.SourcePath) + (m.Notes.Count > 0 ? ". " + string.Join(" ", m.Notes) : "");
             Notify();
             return true;
         }
 
+        static bool SamePath(string a, string b) =>
+            a != null && b != null && string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
         public static string SamplePath => Path.Combine(StudioModel.ProjectDir, "Assets/Game/Studio/Samples/SampleWell.glb");
+
+        // What to fill the typed-in name with when a model's name matched
+        // nothing the backend knows.
+        public static string SuggestedName { get; private set; } = "";
 
         // A model named like something the game has aims at it at once.
         static void GuessTarget(string name)
@@ -179,40 +216,48 @@ namespace OpenKingdomsUnity.Studio
             if (Target.Kind != TargetKind.None) return;
             var b = StudioBackend.Get();
             var hit = StudioTargets.Features(b, StudioTargets.Catalog()).FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
+                ?? StudioTargets.Units(b, true).FirstOrDefault(t => string.Equals(t.ObjectName, name, StringComparison.OrdinalIgnoreCase) && t.UnitDef >= 0)
                 ?? StudioTargets.Units(b, false).FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase) || string.Equals(t.ObjectName, name, StringComparison.OrdinalIgnoreCase));
+            SuggestedName = hit == null ? name : "";
             if (hit != null) SetTarget(hit);
         }
 
         public static void SetTarget(StudioTarget t)
         {
-            Target = t ?? new StudioTarget();
+            Target = t?.Clone() ?? new StudioTarget();
             RefreshOriginal();
             Recheck();
+            Remember();
             Notify();
         }
 
-        public static void SetCardPiece(string piece, string texture)
+        public static void SetCardPiece(string piece, string texture = null)
         {
             if (Target.Kind != TargetKind.UnitCard) return;
             Target.ReplacesPiece = piece ?? "";
-            Target.ReplacesTexture = texture ?? "";
+            if (texture != null) Target.ReplacesTexture = texture;
             RefreshOriginal();
             Recheck();
+            Remember();
             Notify();
         }
 
-        // The original beside the model: its 3D model, or its picture from the
-        // loaded map when it stands there, or from the sprite catalog.
+        // The original beside the model: its 3D model, or its picture as the
+        // game draws it, from the loaded map, from one placed out of sight
+        // for a moment, or from the sprite catalog.
         static void RefreshOriginal()
         {
             originalBounds = null;
             OriginalPieces = Array.Empty<string>();
+            OriginalMissing = null;
             if (spriteTex != null) UnityEngine.Object.DestroyImmediate(spriteTex);
             spriteTex = null;
             var b = StudioBackend.Get();
             PresentedModel pm = null;
             var rect = default(Rect);
             var t = Target;
+            t.DrawnHeight = 0;
+            t.DrawnFrom = null;
             if (b != null && t.Kind != TargetKind.None)
             {
                 string obj = t.ObjectName;
@@ -224,19 +269,29 @@ namespace OpenKingdomsUnity.Studio
                     {
                         originalBounds = pm.RestBounds;
                         OriginalPieces = pm.Data.Pieces.Select(p => p.Name).Where(n => !string.IsNullOrEmpty(n)).ToArray();
+                        if (!t.IsUnit) { t.DrawnHeight = pm.RestBounds.size.y; t.DrawnFrom = "model"; }
                     }
                 }
                 if (pm == null && t.Kind == TargetKind.Feature)
                 {
-                    if (!FromMap(b, t, out rect) && t.SpriteFile != null && File.Exists(t.SpriteFile))
+                    if (FromMap(b, t, out rect) || Placed(b, t, out rect)) { t.DrawnHeight = rect.height; t.DrawnFrom = "map"; }
+                    else if (t.SpriteFile != null && File.Exists(t.SpriteFile) && t.SpriteSize.y > 0)
                     {
                         spriteTex = new Texture2D(2, 2) { hideFlags = HideFlags.DontSave, wrapMode = TextureWrapMode.Clamp };
                         spriteTex.LoadImage(File.ReadAllBytes(t.SpriteFile));
                         // One pixel is a sixteenth of a cell across and an eighth
                         // of a cell up, as the original's view draws height.
                         rect = new Rect(-t.Hotspot.x / 16f, -(t.SpriteSize.y - t.Hotspot.y) / 8f, t.SpriteSize.x / 16f, t.SpriteSize.y / 8f);
+                        t.DrawnHeight = rect.height;
+                        t.DrawnFrom = "picture";
                     }
+                    else if (t.Typed && t.Height > 0) { t.DrawnHeight = t.Height; t.DrawnFrom = "typed"; }
+                    else OriginalMissing = t.Typed ? "The original isn't in the game files the studio has, so only your numbers are there to go by."
+                        : "The original isn't on this map. Pick a Ground map where it stands, under Look.";
                 }
+                else if (pm == null && t.IsUnit)
+                    OriginalMissing = b.Name == "Mock" || t.UnitDef < 0 ? "The original model is only there with the game installed." : "The original model did not load.";
+                if (t.Kind == TargetKind.UnitCard && pm != null) t.ReplacesPiece = StudioTargets.CardPiece(OriginalPieces, t.ReplacesPiece);
             }
             Stage?.SetOriginal(t, pm, spriteTex, rect);
         }
@@ -245,17 +300,49 @@ namespace OpenKingdomsUnity.Studio
         {
             rect = default;
             if (t.FeatureDef < 0 || b.Status != GameStatus.Running) return false;
-            var feats = new FeatureState[8192];
+            var feats = new FeatureState[16384];
             int n = Mathf.Min(b.ReadFeatures(feats), feats.Length);
             for (int i = 0; i < n; i++)
             {
                 var f = feats[i];
                 if (f.Def != t.FeatureDef || f.Sprite < 0) continue;
-                var img = b.Sprite(f.Sprite);
-                if (img == null) return false;
-                spriteTex = OpenKingdomsUnity.Game.UI.UiKit.ToTexture(img, true);
-                rect = new Rect(-f.SpriteOffsetX, f.SpriteBottom, f.SpriteWidth, f.SpriteTop - f.SpriteBottom);
-                return true;
+                return SpriteOf(b, f, out rect);
+            }
+            return false;
+        }
+
+        static bool SpriteOf(IGameBackend b, FeatureState f, out Rect rect)
+        {
+            rect = default;
+            var img = b.Sprite(f.Sprite);
+            if (img == null) return false;
+            spriteTex = OpenKingdomsUnity.Game.UI.UiKit.ToTexture(img, true);
+            rect = new Rect(-f.SpriteOffsetX, f.SpriteBottom, f.SpriteWidth, f.SpriteTop - f.SpriteBottom);
+            return true;
+        }
+
+        // A feature the loaded map does not have, placed on an edge cell for
+        // as long as it takes to read how the game draws it, then taken away.
+        static bool Placed(IGameBackend b, StudioTarget t, out Rect rect)
+        {
+            rect = default;
+            if (t.FeatureDef < 0 || b.Status != GameStatus.Running || b.Terrain == null) return false;
+            var size = b.Terrain.Size;
+            float cell = Mathf.Max(0.01f, b.Terrain.CellSize);
+            int w = Mathf.Max(1, (int)(size.x / cell)), h = Mathf.Max(1, (int)(size.y / cell));
+            var cells = new[] { new Vector2Int(3, 3), new Vector2Int(w - 4, h - 4), new Vector2Int(w - 4, 3), new Vector2Int(3, h - 4), new Vector2Int(w / 2, h / 2) };
+            var feats = new FeatureState[16384];
+            foreach (var c in cells)
+            {
+                int index = b.PlaceFeature(t.FeatureDef, c.x, c.y);
+                if (index < 0) continue;
+                try
+                {
+                    int n = Mathf.Min(b.ReadFeatures(feats), feats.Length);
+                    for (int i = 0; i < n; i++)
+                        if (feats[i].Index == index) return feats[i].Sprite >= 0 && SpriteOf(b, feats[i], out rect);
+                }
+                finally { b.RemoveFeature(index); }
             }
             return false;
         }
@@ -265,12 +352,14 @@ namespace OpenKingdomsUnity.Studio
         public static void Recheck()
         {
             Issues = Model != null ? ModelCheck.Run(Model.Facts, Fix, Target, originalBounds, OriginalPieces) : new List<ModelCheck.Issue>();
-            if (Model != null && StudioModel.FromPlayersFiles(Model.SourcePath))
+            if (Model != null && (StudioModel.FromPlayersFiles(Model.SourcePath) || Model.Facts.FromPlayersFiles))
                 Issues.Insert(0, new ModelCheck.Issue
                 {
                     Level = ModelCheck.Level.Problem,
-                    Text = "The sprite tools made this model from your own game files, so it stays on your computer and can't go into the shared folders. It already shows in your game from Overrides/Generated.",
+                    Text = "The sprite tools made this model from your own game files, so it stays on your computer and can't go into the shared folders. Put it in Overrides/Generated to see it in your own game.",
                 });
+            if (Model != null && OriginalMissing != null && Target.Kind != TargetKind.None)
+                Issues.Add(new ModelCheck.Issue { Level = ModelCheck.Level.Note, Text = OriginalMissing });
         }
 
         public static void ApplyFix(ModelCheck.FixKind k)
@@ -292,6 +381,7 @@ namespace OpenKingdomsUnity.Studio
         {
             Tweaks = t ?? new MaterialTweaks();
             Stage?.SetTweaks(Tweaks, Team);
+            Remember();
             Notify();
         }
 
@@ -315,19 +405,32 @@ namespace OpenKingdomsUnity.Studio
             if (Model == null) { Status = "Drop a model first."; Notify(); return none; }
             if (ModelCheck.Blocks(Issues)) { Status = Issues.First(i => i.Level == ModelCheck.Level.Problem).Text; Notify(); return none; }
             string rel = OverrideWriter.PathFor(Target);
+            string winner = OverrideWriter.Outranks(StudioModel.ProjectDir, Target);
             if (ask)
             {
                 var warn = Issues.Where(i => i.Level == ModelCheck.Level.Warning).Select(i => "- " + i.Text).ToList();
                 if (warn.Count > 0 && !EditorUtility.DisplayDialog("Use it anyway?", string.Join("\n", warn), "Use it", "Cancel")) return none;
                 if (File.Exists(Path.Combine(StudioModel.ProjectDir, rel)) &&
                     !EditorUtility.DisplayDialog("Replace the model in the game?", $"{rel} is already in the game. Replace it with {Model.Name}?", "Replace", "Cancel")) return none;
+                if (winner != null && !EditorUtility.DisplayDialog("Another model wins", $"{winner} is in the game for the same thing and wins over a .glb, so the game will keep showing it. Put yours in anyway?", "Put it in", "Cancel")) return none;
             }
-            var written = OverrideWriter.Write(StudioModel.ProjectDir, Target, Model.Glb, Fix, KeepTweaks ? Tweaks : null, out var error);
+            bool overSource = SamePath(Path.Combine(StudioModel.ProjectDir, rel), Model.SourcePath);
+            var written = OverrideWriter.Write(StudioModel.ProjectDir, Target, Model.Glb, Fix, KeepTweaks ? Tweaks : null, out var error, Model.SourcePath);
             if (error != null) { Status = error; Notify(); return written; }
             foreach (var p in written) AssetDatabase.ImportAsset(p, ImportAssetOptions.ForceUpdate);
             OverrideLoader.Reset();
             CardOverride.Forget();
-            Status = "In the game now: " + rel + ". Press Play here to see it in a battle.";
+            string sidecar = written.Count > 1 ? $" and {written[1]}, which says which piece it stands in for. Share both files" : "";
+            Status = "In the game now: " + rel + sidecar + ". Press Play here to see it in a battle. After you export it again, press Use in game again." +
+                (winner != null ? $" {winner} still wins over it." : "");
+            if (overSource)
+            {
+                // The file now has the fixes in it, so the studio starts from it plain.
+                Fix = StudioFix.None;
+                Tweaks = new MaterialTweaks();
+                LoadModel(Model.SourcePath);
+                Status = "In the game now: " + rel + sidecar + ". Its fixes are in the file now.";
+            }
             Notify();
             return written;
         }
@@ -362,18 +465,20 @@ namespace OpenKingdomsUnity.Studio
             Notify();
         }
 
-        // ---- Keeping state over script reloads ----
+        // ---- Keeping state over script reloads and Play ----
 
         static void Remember()
         {
-            SessionState.SetString("oku.studio.target", Target.Kind == TargetKind.None ? "" :
-                $"{(int)Target.Kind}|{Target.Name}|{Target.ReplacesPiece}|{Target.ReplacesTexture}");
+            if (!restored) return;
+            SessionState.SetString("oku.studio.target", Target.Kind == TargetKind.None ? "" : JsonUtility.ToJson(Target));
             SessionState.SetString("oku.studio.fix", JsonUtility.ToJson(Fix));
             SessionState.SetString("oku.studio.tweaks", JsonUtility.ToJson(Tweaks));
         }
 
-        static void Restore()
+        // Reads back what the last script domain remembered, once.
+        static void Restore(IGameBackend b)
         {
+            restored = true;
             if (Model == null)
             {
                 string path = SessionState.GetString("oku.studio.model", "");
@@ -382,59 +487,75 @@ namespace OpenKingdomsUnity.Studio
                 {
                     Model = StudioModel.Load(path, out _);
                     string fix = SessionState.GetString("oku.studio.fix", "");
-                    if (Model != null && fix.Length > 0) Fix = JsonUtility.FromJson<StudioFix>(fix);
+                    if (Model != null && fix.Length > 0) { try { Fix = JsonUtility.FromJson<StudioFix>(fix); } catch (ArgumentException) { } }
                 }
             }
             string tw = SessionState.GetString("oku.studio.tweaks", "");
             if (tw.Length > 0) { try { Tweaks = JsonUtility.FromJson<MaterialTweaks>(tw) ?? new MaterialTweaks(); } catch (ArgumentException) { } }
             if (Target.Kind == TargetKind.None)
             {
-                var parts = SessionState.GetString("oku.studio.target", "").Split('|');
-                if (parts.Length == 4 && int.TryParse(parts[0], out int kind))
-                {
-                    var b = StudioBackend.Get();
-                    var list = (TargetKind)kind == TargetKind.Feature ? StudioTargets.Features(b, StudioTargets.Catalog()) : StudioTargets.Units(b, (TargetKind)kind == TargetKind.UnitCard);
-                    var t = list.FirstOrDefault(x => x.Name == parts[1]);
-                    if (t != null) { t.ReplacesPiece = parts[2]; t.ReplacesTexture = parts[3]; Target = t; }
-                }
+                string json = SessionState.GetString("oku.studio.target", "");
+                StudioTarget saved = null;
+                if (json.Length > 0) { try { saved = JsonUtility.FromJson<StudioTarget>(json); } catch (ArgumentException) { } }
+                if (saved != null && saved.Kind != TargetKind.None) Target = Resolve(b, saved);
             }
+        }
+
+        // A saved target as this backend knows it, with its ids, or as saved
+        // when the backend does not know it.
+        static StudioTarget Resolve(IGameBackend b, StudioTarget saved)
+        {
+            if (saved.Typed) return saved;
+            var list = saved.Kind == TargetKind.Feature ? StudioTargets.Features(b, StudioTargets.Catalog()) : StudioTargets.Units(b, saved.Kind == TargetKind.UnitCard);
+            var t = list.FirstOrDefault(x => x.Kind == saved.Kind && string.Equals(x.Name, saved.Name, StringComparison.OrdinalIgnoreCase));
+            if (t == null) { saved.FeatureDef = saved.UnitDef = -1; return saved; }
+            t.ReplacesPiece = saved.ReplacesPiece;
+            t.ReplacesTexture = saved.ReplacesTexture;
+            return t;
         }
 
         // ---- Each editor frame ----
 
         public static event Action Repaint;
 
-        static void Tick()
+        static void Tick() => TickAt(EditorApplication.timeSinceStartup);
+
+        // One editor frame at the given time: the turntable turns, a changed
+        // model reloads, a new file in Drop loads, and the view repaints when
+        // something moved.
+        public static void TickAt(double now)
         {
             if (!Active) return;
-            double now = EditorApplication.timeSinceStartup;
-            float dt = lastTick > 0 ? (float)(now - lastTick) : 0f;
+            if (lastTick <= 0) { lastTick = lastPoll = lastDropScan = now; return; }
+            float dt = (float)(now - lastTick);
             if (dt < 1f / 30f) return;
             lastTick = now;
-            Stage.Tick(dt, Turning && !View.Classic);
+            bool turning = Turning && !View.Classic;
+            Stage.Tick(dt, turning);
+            bool moved = turning || Stage.Animating;
             if (now - lastPoll > 0.5)
             {
                 lastPoll = now;
-                if (Model != null && Model.ChangedOnDisk()) LoadModel(Model.SourcePath);
+                if (Model != null && Model.ChangedOnDisk()) { LoadModel(Model.SourcePath); moved = true; }
             }
             if (now - lastDropScan > 1.0)
             {
                 lastDropScan = now;
-                ScanDrop();
+                moved |= ScanDrop();
             }
-            Repaint?.Invoke();
+            if (moved) Repaint?.Invoke();
         }
 
         // A model saved into the drop folder shows at once, once its file
-        // has stopped changing.
-        static void ScanDrop()
+        // has stopped changing. Returns true when one loaded.
+        static bool ScanDrop()
         {
             var files = DropFiles();
-            if (dropSeen == null) { dropSeen = new HashSet<string>(files.Select(f => f.FullName), StringComparer.OrdinalIgnoreCase); return; }
+            if (dropSeen == null) { dropSeen = new HashSet<string>(files.Select(f => f.FullName), StringComparer.OrdinalIgnoreCase); return false; }
             dropSeen.RemoveWhere(n => files.All(f => !string.Equals(f.FullName, n, StringComparison.OrdinalIgnoreCase)));
             var fresh = files.Where(f => !dropSeen.Contains(f.FullName) && (DateTime.UtcNow - f.LastWriteTimeUtc).TotalSeconds > 0.3).ToList();
             foreach (var f in fresh) dropSeen.Add(f.FullName);
-            if (fresh.Count > 0) LoadModel(fresh[0].FullName);
+            return fresh.Count > 0 && LoadModel(fresh[0].FullName);
         }
 
         public static List<FileInfo> DropFiles()
@@ -461,6 +582,22 @@ namespace OpenKingdomsUnity.Studio
             SessionState.EraseString("oku.studio.fix");
             SessionState.EraseString("oku.studio.tweaks");
             dropSeen = null;
+            lastTick = 0;
+            SuggestedName = "";
+            restored = true;
+        }
+
+        // For tests: what a script reload leaves, the saved state only.
+        public static void ForgetAsAfterReload()
+        {
+            BeforeReload();
+            Target = new StudioTarget();
+            Fix = StudioFix.None;
+            Tweaks = new MaterialTweaks();
+            Issues = new List<ModelCheck.Issue>();
+            dropSeen = null;
+            lastTick = 0;
+            restored = false;
         }
     }
 }

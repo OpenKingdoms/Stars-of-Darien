@@ -14,8 +14,10 @@ namespace OpenKingdomsUnity.Studio
     {
         public Dictionary<string, object> Json;
         public byte[] Bin = Array.Empty<byte>();
-        // Pictures a .gltf named that were not found, for the checks.
+        // Pictures a .gltf named that were not found, for the checks, and
+        // the files it was packed from, for the hot reload.
         public readonly List<string> Missing = new List<string>();
+        public readonly List<string> Sources = new List<string>();
 
         public const string WrapperName = "studio";
 
@@ -92,7 +94,7 @@ namespace OpenKingdomsUnity.Studio
             for (int i = 0; i < buffers.Count; i++)
             {
                 string uri = MiniJson.Text(buffers[i], "uri");
-                var bytes = uri != null ? LoadUri(uri, dir) : null;
+                var bytes = uri != null ? LoadUri(uri, dir, f.Sources) : null;
                 if (bytes == null) { error = "the buffer " + (uri ?? "#" + i) + " is missing"; return null; }
                 Align(bin);
                 bases[i] = bin.Count;
@@ -112,7 +114,7 @@ namespace OpenKingdomsUnity.Studio
                 string uri = MiniJson.Text(image, "uri");
                 if (uri == null) continue;
                 image.Remove("uri");
-                var bytes = LoadUri(uri, dir);
+                var bytes = LoadUri(uri, dir, f.Sources);
                 if (bytes == null) { f.Missing.Add(Uri.UnescapeDataString(uri)); continue; }
                 Align(bin);
                 views.Add(new Dictionary<string, object> { ["buffer"] = 0.0, ["byteOffset"] = (double)bin.Count, ["byteLength"] = (double)bytes.Length });
@@ -127,7 +129,7 @@ namespace OpenKingdomsUnity.Studio
 
         static void Align(List<byte> bin) { while (bin.Count % 4 != 0) bin.Add(0); }
 
-        static byte[] LoadUri(string uri, string dir)
+        static byte[] LoadUri(string uri, string dir, List<string> sources)
         {
             if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
@@ -135,6 +137,7 @@ namespace OpenKingdomsUnity.Studio
                 return comma > 0 && uri.Substring(0, comma).EndsWith(";base64") ? Convert.FromBase64String(uri.Substring(comma + 1)) : null;
             }
             string p = Path.Combine(dir ?? "", Uri.UnescapeDataString(uri));
+            sources.Add(Path.GetFullPath(p));
             return File.Exists(p) ? File.ReadAllBytes(p) : null;
         }
 

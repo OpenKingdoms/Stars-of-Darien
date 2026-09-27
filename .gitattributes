@@ -1,0 +1,4 @@
+# Unity writes its settings with LF and bash needs LF, so these check out
+# that way on every machine and never show as changed after Unity opens.
+unity/ProjectSettings/*.asset text eol=lf
+*.sh text eol=lf

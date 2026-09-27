@@ -16,12 +16,13 @@ using FixKind = OpenKingdomsUnity.Studio.ModelCheck.FixKind;
 
 namespace OpenKingdomsUnity.Tests
 {
-    public class StudioModeTests
+    // A temp folder, the stand-in world, and the machine's studio settings
+    // put back afterwards.
+    public abstract class StudioFixture
     {
-        string temp;
+        protected string temp;
         bool savedMock;
-        // The studio's editor settings are the machine's, so tests put them back.
-        static readonly string[] Prefs = { "oku.studio.map", "oku.studio.climate", "oku.studio.weather", "oku.studio.time", "oku.studio.sea", "oku.studio.shadows", "oku.studio.team", "oku.studio.lastModel" };
+        static readonly string[] Prefs = { "oku.studio.map", "oku.studio.climate", "oku.studio.weather", "oku.studio.time", "oku.studio.sea", "oku.studio.shadows", "oku.studio.team", "oku.studio.lastModel", "oku.sprites.dir" };
         readonly Dictionary<string, string> savedPrefs = new Dictionary<string, string>();
 
         [SetUp]
@@ -55,8 +56,11 @@ namespace OpenKingdomsUnity.Tests
             : k == "oku.studio.weather" || k == "oku.studio.time" || k == "oku.studio.team" ? EditorPrefs.GetInt(k).ToString()
             : EditorPrefs.GetString(k);
 
-        static string Sample => StudioSession.SamplePath;
+        protected static string Sample => StudioSession.SamplePath;
+    }
 
+    public class StudioModeTests : StudioFixture
+    {
         // ---- Coming in ----
 
         [Test]
@@ -105,27 +109,55 @@ namespace OpenKingdomsUnity.Tests
             finally { m.Dispose(); }
         }
 
-        [Test]
-        public void AnObjComesInThroughUnitysImporter()
+        // A one-cell box as an .obj, with a material file naming two pictures.
+        internal static string BoxObj(string dir, string name, bool withPicture)
         {
-            string obj = Path.Combine(temp, "studio_test_box.obj");
-            File.WriteAllText(obj, "o box\nv -0.5 0 -0.5\nv 0.5 0 -0.5\nv 0.5 1 -0.5\nv -0.5 1 -0.5\nv -0.5 0 0.5\nv 0.5 0 0.5\nv 0.5 1 0.5\nv -0.5 1 0.5\n" +
-                "f 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\nf 2 6 7 3\nf 3 7 8 4\nf 5 1 4 8\n");
-            string asset = StudioModel.DropFolder + "/studio_test_box.obj";
+            string obj = Path.Combine(dir, name + ".obj");
+            File.WriteAllText(obj, "mtllib " + name + ".mtl\no box\nv -0.5 0 -0.5\nv 0.5 0 -0.5\nv 0.5 1 -0.5\nv -0.5 1 -0.5\nv -0.5 0 0.5\nv 0.5 0 0.5\nv 0.5 1 0.5\nv -0.5 1 0.5\n" +
+                "vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nusemtl stone\nf 1/1 2/2 3/3 4/4\nf 5/1 8/2 7/3 6/4\nf 1/1 5/2 6/3 2/4\nf 2/1 6/2 7/3 3/4\nf 3/1 7/2 8/3 4/4\nf 5/1 1/2 4/3 8/4\n");
+            File.WriteAllText(Path.Combine(dir, name + ".mtl"), "newmtl stone\nKd 0.8 0.8 0.8\nmap_Kd stone.png\nmap_bump leaves.png\n");
+            if (withPicture)
+            {
+                var t = new Texture2D(4, 4);
+                File.WriteAllBytes(Path.Combine(dir, "stone.png"), t.EncodeToPNG());
+                UnityEngine.Object.DestroyImmediate(t);
+            }
+            return obj;
+        }
+
+        internal static void RemoveImported(string name)
+        {
+            string root = Path.Combine(StudioModel.ProjectDir, StudioModel.ImportedFolder);
+            if (!Directory.Exists(root)) return;
+            foreach (var d in Directory.GetDirectories(root, name + "-*"))
+                if (!AssetDatabase.DeleteAsset(StudioModel.ToAsset(d))) Directory.Delete(d, true);
+        }
+
+        [Test]
+        public void AnObjComesInThroughUnitysImporterWithItsPictures()
+        {
+            string obj = BoxObj(temp, "studio_test_box", true);
+            StudioModel m = null;
             try
             {
-                var m = StudioModel.Load(obj, out var error);
+                m = StudioModel.Load(obj, out var error);
                 Assert.IsNull(error, error);
-                try
-                {
-                    Assert.AreEqual(12, m.Facts.Triangles);
-                    Assert.AreEqual(1f, m.Facts.Bounds.size.x, 0.02f);
-                    Assert.AreEqual(1f, m.Facts.Bounds.size.y, 0.02f);
-                    Assert.IsTrue(File.Exists(Path.Combine(StudioModel.ProjectDir, asset)), "copied into the drop folder for Unity to import");
-                }
-                finally { m.Dispose(); }
+                Assert.AreEqual(12, m.Facts.Triangles);
+                Assert.AreEqual(1f, m.Facts.Bounds.size.x, 0.02f);
+                Assert.AreEqual(1f, m.Facts.Bounds.size.y, 0.02f);
+                var copies = Directory.GetDirectories(Path.Combine(StudioModel.ProjectDir, StudioModel.ImportedFolder), "studio_test_box-*");
+                Assert.AreEqual(1, copies.Length, "copied into a folder of its own for Unity to import");
+                Assert.IsTrue(File.Exists(Path.Combine(copies[0], "studio_test_box.obj")));
+                Assert.IsTrue(File.Exists(Path.Combine(copies[0], "stone.png")), "with the picture its material names");
+                CollectionAssert.Contains(m.Facts.MissingTextures, "leaves.png", "a picture that is not there is caught");
+                CollectionAssert.DoesNotContain(m.Facts.MissingTextures, "stone.png");
+                Assert.IsTrue(ModelCheck.Run(m.Facts, StudioFix.None, Feature()).Any(i => i.Level == Level.Warning && i.Text.Contains("leaves.png")));
             }
-            finally { AssetDatabase.DeleteAsset(asset); }
+            finally
+            {
+                m?.Dispose();
+                RemoveImported("studio_test_box");
+            }
         }
 
         [Test]
@@ -222,6 +254,71 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsFalse(StudioModel.FromPlayersFiles("Assets/Overrides/Drop/tree.glb"));
             Assert.IsFalse(StudioModel.FromPlayersFiles("Assets/Overrides/GeneratedByHand/tree.glb"));
             Assert.IsFalse(StudioModel.FromPlayersFiles(Sample));
+            StudioTargets.CatalogDir = temp;
+            Assert.IsTrue(StudioModel.FromPlayersFiles(Path.Combine(temp, "models", "AraTree01.glb")), "anything under the sprite catalog");
+        }
+
+        [Test]
+        public void AModelStampedAsMadeFromThePlayersFilesNeverGoesIn()
+        {
+            var f = GlbFile.Read(File.ReadAllBytes(Sample), out _);
+            var asset = (Dictionary<string, object>)f.Json["asset"];
+            asset["extras"] = new Dictionary<string, object> { [GlbCheck.PlayersFilesKey] = true };
+            string path = Path.Combine(temp, "carved.glb");
+            var bytes = f.Write();
+            File.WriteAllBytes(path, bytes);
+            var m = StudioModel.Load(path, out var error);
+            Assert.IsNull(error, error);
+            try { Assert.IsTrue(m.Facts.FromPlayersFiles, "the stamp is read"); }
+            finally { m.Dispose(); }
+            var written = OverrideWriter.Write(temp, Feature(), bytes, StudioFix.None.Scaled(2f), null, out error);
+            Assert.IsEmpty(written, "refused wherever it came from");
+            Assert.AreEqual(OverrideWriter.PlayersFilesRefused, error);
+
+            var g = GlbFile.Read(File.ReadAllBytes(Sample), out _);
+            ((Dictionary<string, object>)MiniJson.Arr(g.Json, "nodes")[0])["extras"] = new Dictionary<string, object> { [GlbCheck.PlayersFilesKey] = 1.0 };
+            Assert.IsTrue(GlbCheck.FromPlayersFiles(g), "Blender may write the stamp on a node as 1");
+            Assert.IsFalse(GlbCheck.FromPlayersFiles(GlbFile.Read(File.ReadAllBytes(Sample), out _)));
+
+            StudioTargets.CatalogDir = temp;
+            Assert.IsEmpty(OverrideWriter.Write(temp, Feature(), File.ReadAllBytes(Sample), StudioFix.None, null, out error, Path.Combine(temp, "plain.glb")), "a file from the sprite catalog's folder");
+            Assert.AreEqual(OverrideWriter.PlayersFilesRefused, error);
+        }
+
+        [Test]
+        public void AGlbTheGameCannotReadIsRefusedInPlainWords()
+        {
+            string Try(Action<GlbFile> spoil)
+            {
+                var f = GlbFile.Read(File.ReadAllBytes(Sample), out _);
+                spoil(f);
+                string path = Path.Combine(temp, Guid.NewGuid().ToString("N") + ".glb");
+                File.WriteAllBytes(path, f.Write());
+                StudioModel m = null;
+                string error = null;
+                Assert.DoesNotThrow(() => m = StudioModel.Load(path, out error));
+                Assert.IsNull(m);
+                return error;
+            }
+            object Indices(GlbFile f)
+            {
+                var prim = MiniJson.Arr(MiniJson.Arr(f.Json, "meshes")[0], "primitives")[0];
+                return MiniJson.Arr(f.Json, "accessors")[MiniJson.Int(prim, "indices")];
+            }
+            StringAssert.Contains("Compression", Try(f =>
+            {
+                ((Dictionary<string, object>)Indices(f)).Remove("bufferView");
+                f.Json["extensionsRequired"] = new List<object> { "KHR_draco_mesh_compression" };
+            }));
+            StringAssert.Contains("Compression", Try(f => ((Dictionary<string, object>)Indices(f)).Remove("bufferView")), "geometry with nothing behind it");
+            StringAssert.Contains(".bin", Try(f => GlbFile.List(f.Json, "buffers").Add(new Dictionary<string, object> { ["uri"] = "extra.bin", ["byteLength"] = 4.0 })));
+            StringAssert.Contains("damaged", Try(f => ((Dictionary<string, object>)MiniJson.Arr(f.Json, "nodes")[0])["mesh"] = 99.0));
+            StringAssert.Contains("PNG or JPEG", Try(f => f.Json["extensionsRequired"] = new List<object> { "KHR_texture_basisu" }));
+            string junk = Path.Combine(temp, "junk.glb");
+            File.WriteAllBytes(junk, new byte[] { 1, 2, 3 });
+            Assert.IsNull(StudioModel.Load(junk, out var why));
+            StringAssert.Contains("isn't a glTF Binary", why);
+            Assert.IsFalse(Resources.FindObjectsOfTypeAll<GameObject>().Any(g => g != null && g.name.StartsWith("studio-load-")), "nothing half-built is left behind");
         }
 
         [Test]
@@ -356,6 +453,94 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(3, fix.QuarterTurns);
             Assert.IsTrue(StudioFix.None.IsIdentity);
             Assert.IsTrue(StudioFix.None.Turned(4).IsIdentity);
+        }
+
+        [Test]
+        public void AFeatureIsSizedAgainstItsPictureAsTheGameDrawsIt()
+        {
+            // The definition says 18.75 cells, the game draws the tree 9.4 tall.
+            var t = Feature(1, 1, 18.75f);
+            t.DrawnHeight = 9.4f;
+            t.DrawnFrom = "map";
+            var f = Facts(new Bounds(new Vector3(0, 9.375f, 0), new Vector3(3, 18.75f, 3)));
+            var issues = ModelCheck.Run(f, StudioFix.None, t);
+            Assert.IsTrue(Has(issues, Level.Warning, FixKind.MatchSize), string.Join("\n", issues));
+            var fix = ModelCheck.Apply(FixKind.MatchSize, f, StudioFix.None, t);
+            Assert.AreEqual(9.4f, fix.Apply(f.Bounds).size.y, 1e-3f, "matched to the picture, not the definition");
+            Assert.IsTrue(ModelCheck.Run(f, fix, t).Any(i => i.Level == Level.Good && i.Text.Contains("as the game draws it")));
+
+            var rough = Feature(1, 1, 18.75f);
+            var small = Facts(new Bounds(new Vector3(0, 1, 0), new Vector3(1, 2, 1)));
+            Assert.IsTrue(ModelCheck.Run(small, StudioFix.None, rough).Any(i => i.Text.Contains("rough guide")), "only the definition, and it says so");
+        }
+
+        [Test]
+        public void TheStandInWorldsThingsAreNotJudgedForSize()
+        {
+            var toy = Feature(2, 2, 1.5f);
+            toy.ToScale = false;
+            var f = Facts(new Bounds(new Vector3(0, 7, 0), new Vector3(1, 14, 3)));
+            var issues = ModelCheck.Run(f, StudioFix.None, toy);
+            Assert.IsFalse(issues.Any(i => i.Fix == FixKind.MatchSize || i.Fix == FixKind.FitFootprint || i.Fix == FixKind.TurnQuarter), string.Join("\n", issues));
+            Assert.IsTrue(issues.Any(i => i.Text.Contains("not to scale")));
+            Assert.AreEqual(1f, ModelCheck.Apply(FixKind.MatchSize, f, StudioFix.None, toy).Scale, "nothing to match against");
+        }
+
+        [Test]
+        public void TheCardTabListsOnlyTheCardUnitsWithTheirPiece()
+        {
+            var mock = new MockBackend { StageSeconds = 0 };
+            var cards = StudioTargets.Units(mock, true);
+            Assert.AreEqual(StudioTargets.Cards.Length, cards.Count, "the card units, known by name without the game");
+            var lode = cards.First(c => c.ObjectName == "ARALODE");
+            Assert.AreEqual(TargetKind.UnitCard, lode.Kind);
+            Assert.AreEqual("aralode", lode.ReplacesPiece, "the card piece is picked for you");
+            Assert.AreEqual("Assets/Overrides/Units/ARALODE.glb", OverrideWriter.PathFor(lode));
+            Assert.AreEqual(mock.UnitDefs.Count, StudioTargets.Units(mock, false).Count, "the Unit tab still lists every unit");
+            Assert.AreEqual("VerLode", StudioTargets.CardPiece(new[] { "base", "VerLode", "VerLode_off" }, "verlode"));
+            Assert.AreEqual("glow", StudioTargets.CardPiece(new[] { "base", "glow", "glow_off" }, "missing"), "else the piece with an _off twin");
+        }
+
+        [Test]
+        public void AThingTypedInByHandGoesWhereTheGameLooks()
+        {
+            var tree = StudioTargets.Typed(TargetKind.Feature, " AraTree01 ", new Vector2Int(1, 2), 14f);
+            Assert.AreEqual("Assets/Overrides/Features/AraTree01.glb", OverrideWriter.PathFor(tree));
+            Assert.AreEqual(new Vector2Int(1, 2), tree.Footprint);
+            Assert.IsTrue(tree.ToScale);
+            var king = StudioTargets.Typed(TargetKind.Unit, "araking", Vector2Int.one, 0);
+            Assert.AreEqual("Assets/Overrides/Units/ARAKING.glb", OverrideWriter.PathFor(king));
+            Assert.AreEqual("zonfire", StudioTargets.Typed(TargetKind.UnitCard, "ZonFire", Vector2Int.one, 0).ReplacesPiece, "a known card gets its piece");
+            Assert.IsNull(StudioTargets.Typed(TargetKind.Feature, "  ", Vector2Int.one, 1));
+        }
+
+        [Test]
+        public void APrefabForTheSameThingIsReported()
+        {
+            var t = Feature();
+            string dir = Path.Combine(temp, "Assets", "Overrides", "Features");
+            Directory.CreateDirectory(dir);
+            Assert.IsNull(OverrideWriter.Outranks(temp, t));
+            File.WriteAllText(Path.Combine(dir, "TestTree.gltf"), "{}");
+            Assert.IsNull(OverrideWriter.Outranks(temp, t), "a .gltf gives way to the .glb");
+            File.WriteAllText(Path.Combine(dir, "TestTree.prefab"), "");
+            Assert.AreEqual("Assets/Overrides/Features/TestTree.prefab", OverrideWriter.Outranks(temp, t));
+        }
+
+        [Test]
+        public void PlayHerePutsCopiesAFootprintApartOnFlatGround()
+        {
+            // A cliff east of x = 20.
+            var spots = StudioMode.PlaceFor((x, z) => x > 20f ? 5f : 0f, Vector3.zero, 3, 3, 3);
+            Assert.AreEqual(3, spots.Count);
+            foreach (var a in spots)
+            {
+                Assert.Less(a.x + 1.5f, 20f, "none on the cliff");
+                Assert.Greater(a.x, 0f, "east of the start");
+                Assert.Less(a.z, 0f, "south of it");
+                foreach (var b in spots)
+                    if (a != b) Assert.GreaterOrEqual(Mathf.Max(Mathf.Abs(a.x - b.x), Mathf.Abs(a.z - b.z)), 5f, "a footprint and two cells apart");
+            }
         }
 
         // ---- Baked into the file ----
@@ -566,7 +751,7 @@ namespace OpenKingdomsUnity.Tests
                 StudioSession.SetTarget(knight);
                 Assert.Greater(StudioSession.OriginalPieces.Length, 0, "the original model's pieces, for naming parts");
                 Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Original"));
-                Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Monarch"), "the mock's monarch for scale");
+                Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Monarch"), "the 4-cell stand-in monarch for scale");
             }
             finally
             {
@@ -677,6 +862,32 @@ namespace OpenKingdomsUnity.Tests
                 var free = StudioView.FreeDefault;
                 free.Distance = 12f;
                 File.WriteAllBytes(Path.Combine(dir, "engine-unit-free.png"), StudioSession.Stage.Screenshot(free, 1280, 720));
+                Assert.IsFalse(StudioSession.Stage.MonarchIsStandIn, "a real monarch, not the stand-in");
+
+                // A sprite feature the loaded map lacks is still shown as the game draws it.
+                var feats = new FeatureState[16384];
+                int n = Mathf.Min(b.ReadFeatures(feats), feats.Length);
+                var onMap = new HashSet<int>(feats.Take(n).Select(f => f.Def));
+                var away = StudioTargets.Features(b, StudioTargets.Catalog()).FirstOrDefault(t => t.FeatureDef >= 0 && !onMap.Contains(t.FeatureDef) && string.IsNullOrEmpty(t.ObjectName));
+                if (away != null)
+                {
+                    StudioSession.SetTarget(away);
+                    Assert.IsNull(StudioSession.OriginalMissing, away.Name);
+                    Assert.Greater(StudioSession.Target.DrawnHeight, 0f);
+                    Debug.Log($"Engine studio: {away.Name} not on the map, drawn {StudioSession.Target.DrawnHeight:0.##} cells, defined {away.Height:0.##}");
+                    File.WriteAllBytes(Path.Combine(dir, "engine-placed-classic.png"), StudioSession.Stage.Screenshot(StudioView.ClassicDefault, 1280, 720));
+                    n = Mathf.Min(b.ReadFeatures(feats), feats.Length);
+                    Assert.IsFalse(feats.Take(n).Any(f => f.Def == away.FeatureDef), "taken away again");
+                }
+
+                // A lodestone's card piece is picked from its own model.
+                var lode = StudioTargets.Units(b, true).FirstOrDefault(t => t.UnitDef >= 0 && t.ObjectName == "ARALODE");
+                if (lode != null)
+                {
+                    StudioSession.SetTarget(lode);
+                    Debug.Log($"Engine studio: ARALODE pieces {string.Join(",", StudioSession.OriginalPieces)}, card piece {StudioSession.Target.ReplacesPiece}");
+                    Assert.IsTrue(StudioSession.OriginalPieces.Contains(StudioSession.Target.ReplacesPiece), StudioSession.Target.ReplacesPiece);
+                }
             }
             finally
             {
