@@ -114,6 +114,7 @@ namespace OpenKingdomsUnity.Game
             public int Def, Model, Sprite;
             public Vector3 Pos;
             public float Heading;
+            public float Sink;      // units a second, for a corpse
         }
 
         sealed class Arrow
@@ -345,6 +346,7 @@ namespace OpenKingdomsUnity.Game
             const float dt = 1f / Tps;
             Tick++;
             TickMana(dt);
+            SinkFeatures(dt);
             if (Tick % 10 == 0) Look();
             for (int i = 0; i < economy.Count; i++)
             {
@@ -642,6 +644,30 @@ namespace OpenKingdomsUnity.Game
                 Model = def == 0 ? LoadModel("mocktree", 0) : -1, Sprite = def == 0 ? -1 : def - 1,
             });
             return features.Count - 1;
+        }
+
+        // A feature at a point that sinks so many units a second, as a corpse
+        // does, until it is gone. For tests.
+        public int AddFeature(int def, Vector3 pos, float sinkPerSecond)
+        {
+            if (def < 0 || def >= featureDefs.Count) return -1;
+            features.Add(new Feature
+            {
+                Def = def, Pos = pos, Heading = 0, Sink = sinkPerSecond,
+                Model = def == 0 ? LoadModel("mocktree", 0) : -1, Sprite = def == 0 ? -1 : def - 1,
+            });
+            return features.Count - 1;
+        }
+
+        void SinkFeatures(float dt)
+        {
+            for (int i = features.Count - 1; i >= 0; i--)
+            {
+                var f = features[i];
+                if (f.Sink <= 0) continue;
+                f.Pos.y -= f.Sink * dt;
+                if (Terrain != null && f.Pos.y < Terrain.Sample(f.Pos.x, f.Pos.z) - 3f) features.RemoveAt(i);
+            }
         }
 
         public bool RemoveFeature(int index)

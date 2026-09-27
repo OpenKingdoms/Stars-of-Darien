@@ -70,11 +70,8 @@ namespace OpenKingdomsUnity.Game.World
 
         readonly Mesh quad, ring, shaft, barQuad;
         readonly Material ringMat, barBack, barGood, barMid, barLow, shaftMat;
-        // Features never move in the mock and rarely in a game, so their
-        // matrices are cached until the count changes.
-        int featureCount = -1;
-        readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, bool flat, int feature)> featureDraws = new List<(Mesh, int, Material, Matrix4x4, bool, int)>();
-        readonly List<(int sprite, Vector3 pos, float w, float bottom, float top, float offX, int feature)> spriteFeatures = new List<(int, Vector3, float, float, float, float, int)>();
+        // Each feature as drawn, rebuilt only when what it is changes.
+        readonly List<FeatureEntry> featureEntries = new List<FeatureEntry>();
 
         // A building being placed: its model at rest and its footprint,
         // green where it can stand and red where it cannot.
@@ -570,76 +567,143 @@ namespace OpenKingdomsUnity.Game.World
             foreach (var id in stale) flyers.Remove(id);
         }
 
+        // One feature as drawn, and what it was built from: its kind, model,
+        // picture, place and heading. A corpse that sinks changes place, so
+        // it is rebuilt each frame, and a feature that stays is built once.
+        sealed class FeatureEntry
+        {
+            public int Def = int.MinValue, Model, Sprite;
+            public Vector3 Position;
+            public float Heading;
+            public readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, bool flat)> Draws = new List<(Mesh, int, Material, Matrix4x4, bool)>();
+            public bool Card;
+            public float W, Bottom, Top, OffX;
+            public Mesh Drape;
+            public float SiteTop;
+
+            public bool Same(in FeatureState f) =>
+                f.Def == Def && f.Model == Model && f.Sprite == Sprite && f.Position == Position && f.Heading == Heading;
+        }
+
+        // Features rebuilt in the last frame.
+        public int FeaturesRebuilt { get; private set; }
+
+        // Whether a feature is drawn standing at p, to within in x and z.
+        public bool FeatureDrawnAt(Vector3 p, float within) => !float.IsNaN(FeatureDrawnHeight(p, within));
+
+        // The height a feature standing at p is drawn at, or NaN.
+        public float FeatureDrawnHeight(Vector3 p, float within)
+        {
+            for (int i = 0; i < featureEntries.Count; i++)
+            {
+                var e = featureEntries[i];
+                if (featureHidden[i] || (e.Draws.Count == 0 && !e.Card)) continue;
+                if (Mathf.Abs(e.Position.x - p.x) > within || Mathf.Abs(e.Position.z - p.z) > within) continue;
+                return e.Draws.Count > 0 && e.Draws[0].m != Matrix4x4.identity ? e.Draws[0].m.GetColumn(3).y : e.Position.y;
+            }
+            return float.NaN;
+        }
+
+        bool sitesStale;
+
         void AddFeatures(Camera cam)
         {
+            FeaturesRebuilt = 0;
             int n = backend.ReadFeatures(features);
-            if (n != featureCount)
+            bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
+            while (featureEntries.Count > n)
             {
-                bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
-                featureCount = n;
-                featureDraws.Clear();
+                Forget(featureEntries[featureEntries.Count - 1]);
+                featureEntries.RemoveAt(featureEntries.Count - 1);
+                sitesStale = true;
+            }
+            while (featureEntries.Count < n) featureEntries.Add(new FeatureEntry());
+            for (int i = 0; i < n; i++)
+            {
+                var e = featureEntries[i];
+                if (e.Same(features[i])) continue;
+                Build(e, features[i], seaOn);
+                FeaturesRebuilt++;
+                sitesStale = true;
+            }
+            if (sitesStale)
+            {
                 sites.Clear();
-                foreach (var d in drapes) { owned.Remove(d); Looks.Release(d); }
-                drapes.Clear();
-                spriteFeatures.Clear();
-                for (int i = 0; i < n; i++)
+                foreach (var e in featureEntries) if (e.SiteTop > 0) sites.Add((e.Position, e.SiteTop));
+                sitesStale = false;
+            }
+            for (int i = 0; i < n; i++)
+            {
+                featureHidden[i] = Unseen != null && Unseen(features[i].Position);
+                if (featureHidden[i]) continue;
+                var e = featureEntries[i];
+                foreach (var d in e.Draws) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, d.m);
+                if (!e.Card) continue;
+                var mat = SpriteMaterial(e.Sprite);
+                if (mat != null) billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform));
+            }
+        }
+
+        // Lets go of what a feature's entry holds.
+        void Forget(FeatureEntry e)
+        {
+            e.Draws.Clear();
+            e.Card = false;
+            e.SiteTop = 0;
+            if (e.Drape != null) { owned.Remove(e.Drape); Looks.Release(e.Drape); e.Drape = null; }
+        }
+
+        void Build(FeatureEntry e, in FeatureState f, bool seaOn)
+        {
+            Forget(e);
+            e.Def = f.Def; e.Model = f.Model; e.Sprite = f.Sprite; e.Position = f.Position; e.Heading = f.Heading;
+            var fdef = f.Def >= 0 && f.Def < backend.FeatureDefs.Count ? backend.FeatureDefs[f.Def] : null;
+            var fnames = fdef != null ? new[] { fdef.Name, fdef.SequenceName, fdef.ObjectName } : new string[0];
+            // Shoreline wave sprites give way to the sea's own foam.
+            if (f.Model < 0 && fdef != null && seaOn && IsWave(fdef)) return;
+            if (f.Model < 0 && f.Sprite >= 0)
+            {
+                // A sprite feature with a drop-in model draws the model.
+                var over = OverrideLoader.Find(OverrideKind.Feature, null, fnames);
+                if (over != null)
                 {
-                    var f = features[i];
-                    var fdef = f.Def >= 0 && f.Def < backend.FeatureDefs.Count ? backend.FeatureDefs[f.Def] : null;
-                    var fnames = fdef != null ? new[] { fdef.Name, fdef.SequenceName, fdef.ObjectName } : new string[0];
-                    // Shoreline wave sprites give way to the sea's own foam.
-                    if (f.Model < 0 && fdef != null && seaOn && IsWave(fdef)) continue;
-                    if (f.Model < 0 && f.Sprite >= 0)
-                    {
-                        // A sprite feature with a drop-in model draws the model.
-                        var over = OverrideLoader.Find(OverrideKind.Feature, null, fnames);
-                        if (over != null)
-                        {
-                            if (over.StandTop > 0) sites.Add((f.Position, over.StandTop));
-                            var at = Matrix4x4.TRS(f.Position, Quaternion.Euler(0, f.Heading, 0), Vector3.one);
-                            foreach (var part in over.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat, i));
-                            continue;
-                        }
-                    }
-                    if (f.Model >= 0)
-                    {
-                        var model = models.Get(f.Model, OverrideKind.Feature, fnames);
-                        if (model == null) continue;
-                        int pn = backend.ReadFeaturePose(f.Index, poses);
-                        if (model.Override != null)
-                        {
-                            var basis = pn > 0 ? poses[0].Matrix * model.Unscale * model.RestInverse[0] : Matrix4x4.identity;
-                            foreach (var part in model.Override.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, basis * part.NodeToRoot, part.Flat, i));
-                            continue;
-                        }
-                        for (int p = 0; p < pn && p < model.Pieces.Length; p++)
-                        {
-                            if (model.Pieces[p] == null || poses[p].Hidden) continue;
-                            var mats = model.Materials[p];
-                            for (int s = 0; s < mats.Length; s++) featureDraws.Add((model.Pieces[p], s, mats[s], poses[p].Matrix * model.Unscale, false, i));
-                        }
-                    }
-                    else if (f.Sprite >= 0 && f.Flat)
-                    {
-                        // A flat sprite, such as a lodestone site, lies on the
-                        // ground and follows it, north up.
-                        var mat = SpriteMaterial(f.Sprite);
-                        if (mat != null) featureDraws.Add((Drape(f), 0, mat, Matrix4x4.identity, true, i));
-                    }
-                    else if (f.Sprite >= 0)
-                        spriteFeatures.Add((f.Sprite, f.Position, f.SpriteWidth, f.SpriteBottom, f.SpriteTop, f.SpriteOffsetX, i));
+                    if (over.StandTop > 0) e.SiteTop = over.StandTop;
+                    var at = Matrix4x4.TRS(f.Position, Quaternion.Euler(0, f.Heading, 0), Vector3.one);
+                    foreach (var part in over.Parts) e.Draws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat));
+                    return;
                 }
             }
-            for (int i = 0; i < Mathf.Min(n, featureHidden.Length); i++) featureHidden[i] = Unseen != null && Unseen(features[i].Position);
-            foreach (var d in featureDraws)
-                if (!featureHidden[d.feature]) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, d.m);
-
-            foreach (var s in spriteFeatures)
+            if (f.Model >= 0)
             {
-                if (featureHidden[s.feature]) continue;
-                var mat = SpriteMaterial(s.sprite);
-                if (mat == null) continue;
-                billboards.Add(quad, 0, mat, CardMatrix(s.pos, s.w, s.bottom, s.top, s.offX, cam.transform));
+                var model = models.Get(f.Model, OverrideKind.Feature, fnames);
+                if (model == null) return;
+                int pn = backend.ReadFeaturePose(f.Index, poses);
+                if (model.Override != null)
+                {
+                    var basis = pn > 0 ? poses[0].Matrix * model.Unscale * model.RestInverse[0] : Matrix4x4.identity;
+                    foreach (var part in model.Override.Parts) e.Draws.Add((part.Mesh, part.Submesh, part.Material, basis * part.NodeToRoot, part.Flat));
+                    return;
+                }
+                for (int p = 0; p < pn && p < model.Pieces.Length; p++)
+                {
+                    if (model.Pieces[p] == null || poses[p].Hidden) continue;
+                    var mats = model.Materials[p];
+                    for (int s = 0; s < mats.Length; s++) e.Draws.Add((model.Pieces[p], s, mats[s], poses[p].Matrix * model.Unscale, false));
+                }
+            }
+            else if (f.Sprite >= 0 && f.Flat)
+            {
+                // A flat sprite, such as a lodestone site, lies on the
+                // ground and follows it, north up.
+                var mat = SpriteMaterial(f.Sprite);
+                if (mat == null) return;
+                e.Drape = Drape(f);
+                e.Draws.Add((e.Drape, 0, mat, Matrix4x4.identity, true));
+            }
+            else if (f.Sprite >= 0)
+            {
+                e.Card = true;
+                e.W = f.SpriteWidth; e.Bottom = f.SpriteBottom; e.Top = f.SpriteTop; e.OffX = f.SpriteOffsetX;
             }
         }
 
@@ -660,8 +724,6 @@ namespace OpenKingdomsUnity.Game.World
         static bool IsWave(FeatureDef d) =>
             (d.Name ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
             (d.SequenceName ?? "").IndexOf("wave", System.StringComparison.OrdinalIgnoreCase) >= 0;
-
-        readonly List<Mesh> drapes = new List<Mesh>();
 
         // A grid over the sprite's rectangle, each vertex a hair above the ground.
         Mesh Drape(FeatureState f)
@@ -695,7 +757,6 @@ namespace OpenKingdomsUnity.Game.World
             var mesh = new Mesh { name = "flat sprite", hideFlags = HideFlags.DontSave, vertices = v, uv = uv, normals = n, colors32 = c };
             mesh.SetTriangles(t, 0);
             mesh.RecalculateBounds();
-            drapes.Add(mesh);
             owned.Add(mesh);
             return mesh;
         }
