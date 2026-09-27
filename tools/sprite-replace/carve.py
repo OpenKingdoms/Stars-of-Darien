@@ -28,6 +28,9 @@ from mathutils import Vector
 TILT = 0.5
 CELL = 16.0
 RES = 8  # voxels per cell
+ALBEDO_GAIN = 1.3
+STONE_TOP = 1.4  # the thickest a lying stone gets, in cells
+STONE_SLOPE = 0.12  # cells of thickness per pixel in from the edge
 ROUND_WORDS = ("tree", "bush", "plant", "shrub", "groundcover", "grass", "corn", "crops", "mushroom")
 
 
@@ -66,7 +69,9 @@ class Sprite:
             grow = ~known & (cnt > 0)
             rgb[grow] = acc[grow] / cnt[grow][:, None]
             known = known | grow
-        a[..., :3] = rgb
+        # the sprite has its light painted in and the game lights the model
+        # again: lift the colour so the lit model lands near the original
+        a[..., :3] = np.clip(rgb * ALBEDO_GAIN, 0.0, 1.0)
         self.img.pixels[:] = a.ravel()
 
     def edge_distance(self):
@@ -137,6 +142,14 @@ def carve(r, spr):
     # z lands on row hy - 16 y - 8 z, so the tallest reachable point is at
     # the front of the box, where -y is largest.
     H = min(H, (hy - y0 * CELL) / (CELL * TILT))
+    # Stones are mostly fallen slabs seen from above: every pixel of the
+    # sprite is the top of a block lying on the ground, thicker away from
+    # the silhouette's edge, so they lie down and have no holes.
+    stone = "standing stones" in words or shape == "stone"
+    if stone:
+        tree = rounded = False
+        H = min(H, STONE_TOP)
+        y0, y1 = (hy - spr.h - CELL * TILT * H) / CELL - 0.2, hy / CELL + 0.2
     nx = max(1, int(math.ceil((x1 - x0) * RES)))
     ny = max(1, int(math.ceil((y1 - y0) * RES)))
     nz = max(1, int(math.ceil(H * RES)))
@@ -178,7 +191,20 @@ def carve(r, spr):
     def idx(i, j, k):
         return (k * ny + j) * nx + i
 
-    for k in range(nz):
+    if stone:
+        for py in range(spr.h):
+            for px in range(spr.w):
+                if not spr.alpha[py][px]:
+                    continue
+                t = min(H, max(1.0 / RES, spr.dist[py][px] * STONE_SLOPE))
+                i = int((((px + 0.5) - hx) / CELL - x0) * RES)
+                j = int(((hy - (py + 0.5) - CELL * TILT * t) / CELL - y0) * RES)
+                for jj in (j, j + 1):
+                    if 0 <= i < nx and 0 <= jj < ny:
+                        for k in range(min(nz, max(1, int(round(t * RES))))):
+                            solid[idx(i, jj, k)] = 1
+
+    for k in range(0 if stone else nz):
         for j in range(ny):
             for i in range(nx):
                 x, y, z = centre(i, j, k)
@@ -272,6 +298,8 @@ def carve(r, spr):
     ob["zscale"] = zscale
     if tree and trunk_top > 0:
         ob["trunk"] = (trunk_x, ymid, trunk_r, trunk_top)
+    if tree:
+        ob["crown"] = ((x0 + x1) / 2, ymid, crown_c, crown_r, crown_h)
     return ob, (nx * ny * nz, faces)
 
 
@@ -285,6 +313,35 @@ def paint(ob, r, spr):
     stretch = (x1 - x0) / max(1e-3, (y1 - y0))
     zscale = ob.get("zscale", 1.0)
     trunk = tuple(ob["trunk"]) if "trunk" in ob else None
+    crown = tuple(ob["crown"]) if "crown" in ob else None
+
+    def in_trunk(x, y, z):
+        return trunk is not None and z < trunk[3] - 0.05 and             (x - trunk[0]) ** 2 + (y - trunk[1]) ** 2 < (trunk[2] * 1.8) ** 2
+
+    # the classic camera looks along (0, 1, -2): toward it is (0, -1, 2)
+    cam = (0.0, -1 / math.sqrt(5), 2 / math.sqrt(5))
+
+    def crown_point(x, y, z):
+        """A crown is painted like a globe seen from the classic camera:
+        each point takes the sprite pixel at its angle from the view axis,
+        spaced evenly out to the rim, the far side mirrored onto the near,
+        so round sides wrap the painting instead of smearing it."""
+        cx, cy, cz, r, h = crown
+        d = [(x - cx) / r, (y - cy) / r, (z - cz) / max(h, 1e-3)]
+        n = math.sqrt(sum(c * c for c in d)) or 1.0
+        d = [c / n for c in d]
+        dot = sum(a * b for a, b in zip(d, cam))
+        if dot < 0:
+            d = [a - 2 * dot * b for a, b in zip(d, cam)]
+            dot = -dot
+        e = [a - dot * b for a, b in zip(d, cam)]
+        s = math.sqrt(sum(c * c for c in e))
+        theta = math.acos(max(-1.0, min(1.0, dot)))
+        k = (theta / (math.pi / 2)) / s if s > 1e-4 else 0.0
+        ox = e[0] * k * r
+        oy, oz = e[1] * k * r, e[2] * k * h * zscale
+        sx0, sy0 = screen(hx, hy, cx, cy, cz * zscale)
+        return sx0 + ox * CELL, sy0 - oy * CELL - oz * CELL * TILT
     for poly in me.polygons:
         n = poly.normal
         for li in poly.loop_indices:
@@ -302,13 +359,10 @@ def paint(ob, r, spr):
                 # east and west sides: the painting turned onto the side
                 side = 1.0 if n.x > 0 else -1.0
                 px, py, pz = xc + side * (y - yc) * stretch, yc, z
-            if trunk and z < trunk[3] - 0.05 and (x - trunk[0]) ** 2 + (y - trunk[1]) ** 2 < (trunk[2] * 1.8) ** 2:
-                # the trunk is hidden in the sprite: take the bark it
-                # shows where the tree meets the ground
-                px, py, pz = x, 0.0, 0.1 + 0.2 * z / trunk[3]
+            if crown and not in_trunk(x, y, z):
+                sx, sy = crown_point(x, y, z)
             else:
-                pz *= zscale
-            sx, sy = screen(hx, hy, px, py, pz)
+                sx, sy = screen(hx, hy, px, py, pz * zscale)
             uv.data[li].uv = (sx / spr.w, 1.0 - sy / spr.h)
     mat = bpy.data.materials.new(r["name"])
     mat.use_nodes = True
@@ -323,7 +377,34 @@ def paint(ob, r, spr):
     # Plain lit colour: in the game the sun and shadows light it like
     # everything else.
     me.materials.append(mat)
+    if trunk:
+        bark = bpy.data.materials.new(r["name"] + "_bark")
+        bark.use_nodes = True
+        bb = bark.node_tree.nodes["Principled BSDF"]
+        bb.inputs["Base Color"].default_value = (*bark_colour(spr, hx, hy), 1.0)
+        bb.inputs["Roughness"].default_value = 1.0
+        me.materials.append(bark)
+        for poly in me.polygons:
+            if all(in_trunk(*me.vertices[vi].co) for vi in poly.vertices):
+                poly.material_index = 1
     spr.img.pack()
+
+
+def bark_colour(spr, hx, hy):
+    """The brownest pixels near where the tree meets the ground, or a
+    plain bark brown when the sprite shows none."""
+    px = spr.img.pixels[:]
+    w, h = spr.w, spr.h
+    picks = []
+    for y in range(max(0, hy - 10), min(h, hy + 4)):
+        for x in range(max(0, hx - 12), min(w, hx + 12)):
+            i = ((h - 1 - y) * w + x) * 4
+            rr, gg, bb, aa = px[i:i + 4]
+            if aa > 0.5 and rr > gg * 1.05 and rr > bb * 1.2 and 0.08 < rr < 0.8:
+                picks.append((rr, gg, bb))
+    if len(picks) < 4:
+        return (0.20, 0.13, 0.07)
+    return tuple(sum(c[k] for c in picks) / len(picks) for k in range(3))
 
 
 def render(ob, out, name):
