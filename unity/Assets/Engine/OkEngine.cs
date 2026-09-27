@@ -151,6 +151,35 @@ namespace OpenKingdomsUnity.Engine
         public float x, y, z, top, bottom, offX, w, u0, u1, v1;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxNetRoom
+    {
+        public uint id;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string code;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string host;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string map;
+        public int players, maxPlayers, status, joinable;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxNetSeat
+    {
+        public int kind, side, colour, team, ready, connected, loadPercent, hasMap;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string name;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxNetRoomInfo
+    {
+        public uint id;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string code;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string map;
+        public int options, unitCap, youHost, yourSeat, seatCount;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public OkxNetSeat[] seats;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct OkxOrder
     {
@@ -169,7 +198,9 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 13;
+        public const int ApiVersion = 14;
+        public const int NetOff = 0, NetConnecting = 1, NetLobby = 2, NetRoom = 3, NetLoading = 4,
+            NetPlaying = 5, NetRefused = 6, NetGone = 7;
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
             ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
         public const int EffectImpact = 0, EffectProjectile = 1;
@@ -212,6 +243,23 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_armed(out int def);
         [DllImport(Lib)] public static extern int okx_order_selection(int type, int arg);
         [DllImport(Lib)] public static extern void okx_group_assign(int group);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_connect(string address, string name);
+        [DllImport(Lib)] public static extern void okx_net_disconnect();
+        [DllImport(Lib)] public static extern int okx_net_pump();
+        [DllImport(Lib)] static extern IntPtr okx_net_why();
+        [DllImport(Lib)] public static extern int okx_net_list_rooms();
+        [DllImport(Lib)] public static extern int okx_net_rooms([Out] OkxNetRoom[] rooms, int cap);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_create_room(string name, string map, int options);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_join_room(uint id, string code);
+        [DllImport(Lib)] public static extern int okx_net_leave_room();
+        [DllImport(Lib)] public static extern int okx_net_room(out OkxNetRoomInfo info);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_edit(int field, int seat, int value, string text);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_chat(string text);
+        [DllImport(Lib)] public static extern int okx_net_last_chat([Out] byte[] from, int fromCap, [Out] byte[] text, int textCap);
+        [DllImport(Lib)] public static extern int okx_net_start();
+        [DllImport(Lib)] public static extern int okx_net_load_begin();
+
+        public static string NetWhy => Marshal.PtrToStringAnsi(okx_net_why()) ?? "";
         [DllImport(Lib)] public static extern int okx_group_recall(int group);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);

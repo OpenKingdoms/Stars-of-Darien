@@ -690,7 +690,19 @@ namespace OpenKingdomsUnity.Engine
         // sub square. A map saves under a new name in the player's folder.
         public int ReadCells(byte[] into, out int width, out int height) => OkEngine.okx_map_cells(into, into?.Length ?? 0, out width, out height);
 
-        public bool EditCells(int x0, int z0, int w, int h, byte[] values) => OkEngine.okx_edit_cells(x0, z0, w, h, values) == 0;
+        public bool EditCells(int x0, int z0, int w, int h, byte[] values)
+        {
+            if (OkEngine.okx_edit_cells(x0, z0, w, h, values) != 0) return false;
+            // Terrain follows in place, so the editor rebuilds only the
+            // regions it touched. The engine's corner grid repeats the last
+            // row and column, so the whole grid is read back, which is cheap.
+            if (terrain != null)
+            {
+                OkEngine.okx_terrain_heights(terrain.Heights, terrain.Heights.Length);
+                for (int i = 0; i < terrain.Heights.Length; i++) terrain.Heights[i] *= S;
+            }
+            return true;
+        }
 
         public uint[] ChunkLibrary()
         {

@@ -222,6 +222,14 @@ namespace OpenKingdomsUnity.Tests
                 Assert.Greater(effects[i].UvMax.x, effects[i].UvMin.x);
                 Assert.IsNotNull(backend.EffectStrip(effects[i].Strip));
             }
+            // The map editor: a height edit shows in Terrain and the ground at once.
+            int cellsNeed = backend.ReadCells(null, out int cw, out int ch);
+            Assert.AreEqual(cw * ch, cellsNeed);
+            var hill = new byte[] { 220, 220, 220, 220 };
+            int hx = cw / 3, hz = ch / 3;
+            Assert.IsTrue(backend.EditCells(hx, hz, 2, 2, hill));
+            Assert.AreEqual(220f / 16f, backend.Terrain.HeightAt(hx, hz), 0.001f);
+            Assert.AreEqual(220f / 16f, backend.GroundHeight(hx + 0.5f, -(hz + 0.5f)), 0.5f);
             var features = new FeatureState[1024];
             Assert.Greater(backend.ReadFeatures(features), 0);
         }
