@@ -4,6 +4,9 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/Remaster.unity
+    guid: 0b2789c5f0c1ca54bb7fe6967a7b6bb1
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

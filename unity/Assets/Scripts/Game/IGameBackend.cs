@@ -7,7 +7,7 @@
 // The map's north-west corner is the origin, x runs east and z runs north,
 // so the whole map lies at z <= 0. Headings are degrees about +y, 0 facing
 // north (+z), clockwise seen from above. Pictures are RGBA with row 0 at
-// the top, and a consumer that uploads them as is samples v = row / height.
+// the top. Model UVs address a texture uploaded as is, v = row / height.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -43,9 +43,9 @@ namespace OpenKingdomsUnity.Game
         int Advance(int n);
 
         // The ground, valid once loading is done.
-        TerrainData Terrain { get; }
+        MapTerrain Terrain { get; }
         float GroundHeight(float x, float z);
-        // A ground picture that TerrainData.Blocks points into.
+        // A ground picture that MapTerrain.Blocks points into.
         RgbaImage TerrainChunk(int chunk);
 
         // Snapshots, each filling a caller's buffer and returning the count.
@@ -189,7 +189,7 @@ namespace OpenKingdomsUnity.Game
         public bool IsLocal, IsComputer, Alive;
     }
 
-    public sealed class TerrainData
+    public sealed class MapTerrain
     {
         public int HeightsW, HeightsH;
         public float CellSize;      // world units between height samples

@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Game
         public IReadOnlyList<PlayerInfo> Players => players;
         public int TicksPerSecond => Tps;
         public uint Tick { get; private set; }
-        public TerrainData Terrain { get; private set; }
+        public MapTerrain Terrain { get; private set; }
 
         public static readonly Color32[] Palette =
         {
@@ -156,7 +156,12 @@ namespace OpenKingdomsUnity.Game
                 for (int x = 0; x < w; x++)
                 {
                     float wx = (x + 0.5f) * scale, wz = -(y + 0.5f) * scale;
-                    Put(img, x, y, gen.Colour(wx, wz, gen.Height(wx, wz)));
+                    float ground = gen.Height(wx, wz);
+                    Color c = gen.Colour(wx, wz, ground);
+                    // The preview shows the sea, as the game draws it.
+                    if (gen.SeaLevel > 0 && ground < gen.SeaLevel)
+                        c = Color.Lerp(c, new Color(0.08f, 0.3f, 0.4f), Mathf.Clamp01(0.55f + (gen.SeaLevel - ground) * 0.25f));
+                    Put(img, x, y, c);
                 }
             return img;
         }

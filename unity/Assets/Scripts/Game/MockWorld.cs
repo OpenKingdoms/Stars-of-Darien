@@ -120,10 +120,10 @@ namespace OpenKingdomsUnity.Game
             return c;
         }
 
-        public TerrainData Build()
+        public MapTerrain Build()
         {
             int w = Mathf.RoundToInt(map.Size.x) + 1, h = Mathf.RoundToInt(map.Size.y) + 1;
-            var t = new TerrainData { HeightsW = w, HeightsH = h, CellSize = 1f, Heights = new float[w * h], SeaLevel = SeaLevel };
+            var t = new MapTerrain { HeightsW = w, HeightsH = h, CellSize = 1f, Heights = new float[w * h], SeaLevel = SeaLevel };
             for (int z = 0; z < h; z++)
                 for (int x = 0; x < w; x++)
                     t.Heights[z * w + x] = Mathf.Max(0f, Height(x, -z));
@@ -145,7 +145,7 @@ namespace OpenKingdomsUnity.Game
             return t;
         }
 
-        public RgbaImage Chunk(TerrainData t, int chunk)
+        public RgbaImage Chunk(MapTerrain t, int chunk)
         {
             int cw = (t.BlocksW + ChunkBlocks - 1) / ChunkBlocks;
             int cx = chunk % cw, cy = chunk / cw;

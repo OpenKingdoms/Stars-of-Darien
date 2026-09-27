@@ -1,7 +1,9 @@
 {
     "name": "OpenKingdomsUnity",
     "rootNamespace": "OpenKingdomsUnity",
-    "references": [],
+    "references": [
+        "UnityEngine.UI"
+    ],
     "allowUnsafeCode": false,
     "autoReferenced": true
 }

@@ -19,3 +19,7 @@ unity/*.slnx
 # Written by the editor for in-app purchasing, not used here
 unity/Assets/Resources/
 unity/Assets/Resources.meta
+
+# Sprite-feature replacements painted from the player's own files, never committed
+unity/Assets/Overrides/Generated/
+unity/Assets/Overrides/Generated.meta
