@@ -46,6 +46,28 @@ class Sprite:
         w, h = self.w, self.h
         # alpha as rows top-down, for lookups by sprite row
         self.alpha = [[px[((h - 1 - y) * w + x) * 4 + 3] > 0.5 for x in range(w)] for y in range(h)]
+        self.bleed(px)
+
+    def bleed(self, px, passes=12):
+        """Spread edge colours into the clear pixels, alpha untouched, so
+        filtering and faces just past the silhouette never pick up black."""
+        import numpy as np
+        a = np.array(px, dtype=np.float32).reshape(self.h, self.w, 4)
+        rgb, known = a[..., :3].copy(), a[..., 3] > 0.5
+        for _ in range(passes):
+            if known.all():
+                break
+            acc = np.zeros_like(rgb)
+            cnt = np.zeros(known.shape, np.float32)
+            for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                k = np.roll(known, (dy, dx), (0, 1))
+                acc += np.roll(rgb, (dy, dx), (0, 1)) * k[..., None]
+                cnt += k
+            grow = ~known & (cnt > 0)
+            rgb[grow] = acc[grow] / cnt[grow][:, None]
+            known = known | grow
+        a[..., :3] = rgb
+        self.img.pixels[:] = a.ravel()
 
     def edge_distance(self):
         """Pixels from each opaque pixel to the silhouette's edge (a two

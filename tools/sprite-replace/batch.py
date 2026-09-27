@@ -107,7 +107,7 @@ def main():
             shape = shape_of(name)
             if shape:
                 r = dict(r, shape=shape)
-            kind = None if shape else arch.kind_of(r)
+            kind = shape if shape in arch.HAND_KINDS else (None if shape else arch.kind_of(r))
             decal = shape == "decal" or (not shape and not kind and frond.is_decal(r))
             if shape in ("palm", "fern"):
                 fr = True

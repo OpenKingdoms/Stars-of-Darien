@@ -16,6 +16,8 @@ FENCE_WORDS = ("fence", "gate", "rail")
 TOWER_WORDS = ("tower",)
 TENT_WORDS = ("tent",)
 HOUSE_WORDS = ("house", "hut", "hovel", "building", "barn", "shack", "cottage", "well", "temple", "church")
+# kinds only shapes.json assigns, by looking at the sprite
+HAND_KINDS = ("flat", "vault", "granary", "well")
 
 
 def kind_of(r):
@@ -80,6 +82,19 @@ def _top_row(spr):
     return 0
 
 
+def _ring(r, spr, kind):
+    """Centre offset and radius of a round thing, read off the widest
+    row of the sprite at or above the anchor."""
+    hx, hy = r["sprite"]["hotspot"]
+    spans = [spr.row_span(y) for y in range(max(0, hy - 60), min(spr.h, hy + 1))]
+    spans = [s for s in spans if s]
+    if not spans:
+        return 0.0, 0.5
+    lo, hi = max(spans, key=lambda s: s[1] - s[0])
+    rad = (hi - lo + 1) / 2 / 16.0 * (0.8 if kind == "well" else 0.95)
+    return ((lo + hi + 1) / 2 - hx) / 16.0, max(0.3, rad)
+
+
 def drawn_height(r, spr, kind):
     """How tall the sprite shows the thing, in cells. The unit files'
     height is not the drawn height (walls say 12 cells and are drawn 1),
@@ -90,6 +105,14 @@ def drawn_height(r, spr, kind):
     top = _top_row(spr)
     if kind in ("house", "tent", "fence") or (kind == "wall" and max(fx, fz) > 2 * min(fx, fz)):
         back = 0.0
+    elif kind == "flat" or (kind == "vault" and fz > fx):
+        # the far edge of the roof is the highest thing drawn
+        back = fz / 2 * 0.85
+    elif kind == "vault":
+        back = 0.0
+    elif kind in ("well", "granary"):
+        # the far rim is the highest thing drawn
+        back = _ring(r, spr, kind)[1]
     elif kind == "tower":
         back = max(0.4, min(fx, fz) / 2 * 0.9, spr.w / 32.0 * 0.85)
     else:
@@ -147,6 +170,50 @@ def build(r, kind, spr=None):
     elif kind == "tent":
         rad = max(0.5, min(fx, fz) / 2 * 0.95)
         _cyl(bm, 0, 0, 0, rad, 0.05, H, seg=8)
+    elif kind == "flat":
+        sx, sy = fx * 0.85, fz * 0.85
+        _box(bm, 0, 0, 0, sx, sy, H)
+        t, ph = 0.12, 0.18
+        _box(bm, 0, -sy / 2 + t / 2, H, sx, t, ph)
+        _box(bm, 0, sy / 2 - t / 2, H, sx, t, ph)
+        _box(bm, -sx / 2 + t / 2, 0, H, t, sy, ph)
+        _box(bm, sx / 2 - t / 2, 0, H, t, sy, ph)
+    elif kind == "vault":
+        sx, sy = fx * 0.85, fz * 0.85
+        along_y = sy > sx
+        span = sx if along_y else sy
+        length = sy if along_y else sx
+        rise = min(span / 2, H * 0.45)
+        wall_h = H - rise
+        _box(bm, 0, 0, 0, sx, sy, wall_h)
+        seg = 12
+        ends = []
+        for e in (-1, 1):
+            ring = []
+            for i in range(seg + 1):
+                a = math.pi * i / seg
+                u, z = math.cos(a) * span / 2, wall_h + math.sin(a) * rise
+                ring.append(bm.verts.new((u, e * length / 2, z) if along_y else (e * length / 2, u, z)))
+            ends.append(ring)
+        for i in range(seg):
+            bm.faces.new((ends[0][i], ends[0][i + 1], ends[1][i + 1], ends[1][i]))
+        for ring in ends:
+            bm.faces.new(ring)
+    elif kind == "granary":
+        cx, rad = _ring(r, spr, kind)
+        roof = min(H * 0.25, rad * 0.6)
+        shaft = H - roof
+        _cyl(bm, cx, 0, 0, rad, rad * 0.97, shaft, seg=20)
+        _cyl(bm, cx, 0, shaft, rad * 1.1, 0.05, roof, seg=20)
+    elif kind == "well":
+        cx, rad = _ring(r, spr, kind)
+        ring_h = min(H, 0.5)
+        _cyl(bm, cx, 0, 0, rad, rad, ring_h, seg=16)
+        if H > 1.2:
+            # the frame that holds the bucket
+            for e in (-1, 1):
+                _box(bm, cx + e * rad * 0.9, 0, 0, 0.1, 0.1, H * 0.9)
+            _box(bm, cx, 0, H * 0.9 - 0.08, rad * 2, 0.08, 0.08)
     else:  # house
         sx, sy = fx * 0.85, fz * 0.85
         wall_h = H * 0.42
