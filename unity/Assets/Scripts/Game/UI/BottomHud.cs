@@ -55,7 +55,7 @@ namespace OpenKingdomsUnity.Game.UI
 
             // What is selected, in the middle.
             var info = UiKit.Panel(panel, "Selection", true);
-            info.Place(0, 0, 0.5f, 1, 270, 14, -10, 18);
+            info.Place(0, 0, 0.5f, 1, 270, 14, 20, 18);
             title = UiKit.Label(info, "", 32, UiKit.Ink, TextAnchor.UpperLeft, true);
             title.GetComponent<Shadow>().enabled = false;
             title.rectTransform.Place(0, 1, 1, 1, 22, -60, 22, 14);
@@ -126,6 +126,7 @@ namespace OpenKingdomsUnity.Game.UI
             {
                 var u = units[i];
                 if ((u.Flags & UnitFlags.Dying) != 0) continue;
+                if (root.World.Entities.Hidden != null && root.World.Entities.Hidden(u)) continue;
                 int x = Mathf.FloorToInt(u.Position.x / size.x * dotTex.width);
                 int y = Mathf.FloorToInt((1f + u.Position.z / size.y) * dotTex.height);
                 Color32 c = u.Player >= 0 && u.Player < b.Players.Count ? b.Players[u.Player].Tint : new Color32(200, 200, 200, 255);
@@ -291,14 +292,18 @@ namespace OpenKingdomsUnity.Game.UI
                 if (pic != null)
                 {
                     // The game's own build picture, with the cost on it.
-                    var img = UiKit.Rect(btn.transform, "Picture").Fill(4).gameObject.AddComponent<RawImage>();
+                    var img = UiKit.Rect(btn.transform, "Picture").Place(0, 0, 1, 1, 4, 4, 4, 4).gameObject.AddComponent<RawImage>();
                     img.texture = pic;
                     img.raycastTarget = false;
                     var fit = img.gameObject.AddComponent<AspectRatioFitter>();
                     fit.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
                     fit.aspectRatio = (float)pic.width / pic.height;
-                    var cost = UiKit.Label(btn.transform, od.ManaCost.ToString(), 18, UiKit.GoldBright, TextAnchor.LowerRight);
-                    cost.rectTransform.Fill(6);
+                    // The cost on a dark strip across the bottom.
+                    var strip = UiKit.Picture(btn.transform, "Cost", UiKit.White, new Color(0, 0, 0, 0.65f));
+                    strip.raycastTarget = false;
+                    strip.rectTransform.Place(0, 0, 1, 0, 4, 4, 4, -24);
+                    var cost = UiKit.Label(strip.transform, od.ManaCost.ToString(), 18, UiKit.GoldBright, TextAnchor.MiddleCenter);
+                    cost.rectTransform.Fill();
                 }
                 Text badge = null;
                 if (factory >= 0)

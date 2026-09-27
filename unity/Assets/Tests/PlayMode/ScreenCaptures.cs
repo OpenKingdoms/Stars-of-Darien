@@ -101,10 +101,13 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 20; i++) yield return null;
         }
 
+        static int W => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_W"), out int w) ? w : 1920;
+        static int H => int.TryParse(System.Environment.GetEnvironmentVariable("OKU_CAPTURE_H"), out int h) ? h : 1080;
+
         static IEnumerator Shoot(Camera cam, Canvas canvas, string path)
         {
             yield return null;
-            var rt = RenderTexture.GetTemporary(1920, 1080, 24, RenderTextureFormat.ARGB32);
+            var rt = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.ARGB32);
             var mode = canvas.renderMode;
             canvas.renderMode = RenderMode.ScreenSpaceCamera;
             canvas.worldCamera = cam;
@@ -114,8 +117,8 @@ namespace OpenKingdomsUnity.Tests
             Canvas.ForceUpdateCanvases();
             cam.Render();
             RenderTexture.active = rt;
-            var tex = new Texture2D(1920, 1080, TextureFormat.RGB24, false);
-            tex.ReadPixels(new Rect(0, 0, 1920, 1080), 0, 0);
+            var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, W, H), 0, 0);
             tex.Apply();
             RenderTexture.active = null;
             cam.targetTexture = old;

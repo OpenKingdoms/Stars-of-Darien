@@ -47,6 +47,8 @@ namespace OpenKingdomsUnity.Game.World
             public bool Ok;
         }
         public GhostState? Ghost;
+        // Units not to draw, such as enemies out of sight.
+        public System.Func<UnitState, bool> Hidden;
         Mesh flat;
         Material ghostGood, ghostBad;
 
@@ -127,6 +129,7 @@ namespace OpenKingdomsUnity.Game.World
 
         void AddUnit(ref UnitState u, Camera cam)
         {
+            if (Hidden != null && Hidden(u)) return;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
             float height = 1.5f, radius = 0.6f;

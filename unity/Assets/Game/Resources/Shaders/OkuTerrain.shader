@@ -36,6 +36,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fog
             #include "../../Shaders/OkuLit.hlsl"
+            #include "../../Shaders/OkuFog.hlsl"
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
@@ -57,6 +58,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
                 c.rgb *= lerp(1, 0.72, wet);
                 half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, lerp(_Glossiness, 0.6, wet), 0);
+                rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
             ENDHLSL
@@ -130,6 +132,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
         CGPROGRAM
         #pragma surface surf Standard fullforwardshadows addshadow
         #pragma target 3.5
+        #include "../../Shaders/OkuFog.hlsl"
         sampler2D _MainTex;
         float _SeaLevel;
         half _Glossiness;
@@ -143,7 +146,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             fixed4 c = tex2D(_MainTex, IN.uv_MainTex);
             float wet = saturate(1 - (IN.worldPos.y - _SeaLevel) / 0.6);
             c.rgb *= lerp(1, 0.72, wet);
-            o.Albedo = c.rgb;
+            o.Albedo = c.rgb * OkuFogLight(IN.worldPos);
             o.Smoothness = lerp(_Glossiness, 0.6, wet);
             o.Metallic = 0;
             o.Alpha = 1;

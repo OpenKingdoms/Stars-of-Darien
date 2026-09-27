@@ -41,6 +41,7 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fog
             #include "../../Shaders/OkuLit.hlsl"
+            #include "../../Shaders/OkuFog.hlsl"
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
@@ -61,6 +62,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * i.color * _Color;
                 clip(c.a - _Cutoff);
                 half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, _Glossiness, _Rim);
+                rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
             ENDHLSL
@@ -144,6 +146,7 @@ Shader "OpenKingdoms/Presentation/Model"
         #pragma surface surf Standard fullforwardshadows addshadow alphatest:_Cutoff
         #pragma multi_compile_instancing
         #pragma target 3.5
+        #include "../../Shaders/OkuFog.hlsl"
         sampler2D _MainTex;
         half _Glossiness;
         half _Rim;
@@ -155,6 +158,7 @@ Shader "OpenKingdoms/Presentation/Model"
             float2 uv_MainTex;
             float4 color : COLOR;
             float3 viewDir;
+            float3 worldPos;
         };
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
@@ -165,7 +169,9 @@ Shader "OpenKingdoms/Presentation/Model"
             o.Metallic = 0;
             // A soft sky-coloured rim, so small models read against the ground.
             half rim = 1 - saturate(dot(normalize(IN.viewDir), o.Normal));
-            o.Emission = unity_AmbientSky.rgb * c.rgb * pow(rim, 3) * _Rim * 2;
+            half fog = OkuFogLight(IN.worldPos);
+            o.Albedo *= fog;
+            o.Emission = unity_AmbientSky.rgb * c.rgb * pow(rim, 3) * _Rim * 2 * fog;
         }
         ENDCG
     }

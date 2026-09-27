@@ -13,6 +13,7 @@ namespace OpenKingdomsUnity.Game.World
         public ModelCache Models { get; private set; }
         public EntityRenderer Entities { get; private set; }
         public EffectRenderer Effects { get; private set; }
+        public FogView Fog { get; private set; }
         public GameCamera Camera { get; private set; }
         readonly IGameBackend backend;
 
@@ -27,6 +28,9 @@ namespace OpenKingdomsUnity.Game.World
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
             Effects = new EffectRenderer(backend);
+            Fog = new FogView(backend);
+            Fog.Update(true);
+            Entities.Hidden = u => !Fog.InSight(u.Position) && !Friendly(u.Player);
 
             var cam = UnityEngine.Camera.main;
             if (cam == null)
@@ -58,6 +62,14 @@ namespace OpenKingdomsUnity.Game.World
             return new Vector3(s.x / 2, 0, -s.y / 2);
         }
 
+        bool Friendly(int player)
+        {
+            var ps = backend.Players;
+            int me = backend.LocalPlayer;
+            if (player == me) return true;
+            return player >= 0 && player < ps.Count && me < ps.Count && ps[player].Team == ps[me].Team;
+        }
+
         public void Render()
         {
             if (Root == null || Camera == null) return;
@@ -65,6 +77,7 @@ namespace OpenKingdomsUnity.Game.World
             // Shadows reach a little past what the camera frames, so the
             // cascades spend their texels where the eye is.
             Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
+            Fog.Update();
             Entities.Render(cam);
             Effects.Render(cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
@@ -74,6 +87,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             Entities?.Dispose();
             Effects?.Dispose();
+            Fog?.Dispose();
             Models?.Dispose();
             Terrain.Dispose();
             Atmosphere.Dispose();
