@@ -115,7 +115,7 @@ def features(data_dir):
             if not fn.lower().endswith(".tdf"):
                 continue
             s = open(os.path.join(dirpath, fn), encoding="latin-1").read()
-            for m in re.finditer(r"\[([^\]]+)\]\s*\{(.*?)\n\s*\}", s, re.S):
+            for m in re.finditer(r"\[([^\]]+)\][^\n{]*\s*\{(.*?)\n\s*\}", s, re.S):
                 body = m.group(2)
 
                 def g(k):

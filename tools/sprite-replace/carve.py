@@ -314,6 +314,7 @@ def paint(ob, r, spr):
     zscale = ob.get("zscale", 1.0)
     trunk = tuple(ob["trunk"]) if "trunk" in ob else None
     crown = tuple(ob["crown"]) if "crown" in ob else None
+    site_top = ob.get("site_top")
 
     def in_trunk(x, y, z):
         return trunk is not None and z < trunk[3] - 0.05 and             (x - trunk[0]) ** 2 + (y - trunk[1]) ** 2 < (trunk[2] * 1.8) ** 2
@@ -359,7 +360,17 @@ def paint(ob, r, spr):
                 # east and west sides: the painting turned onto the side
                 side = 1.0 if n.x > 0 else -1.0
                 px, py, pz = xc + side * (y - yc) * stretch, yc, z
-            if crown and not in_trunk(x, y, z):
+            if site_top is not None:
+                # the site art lies on the plinth's top as it lay on the
+                # ground; the plinth's sides take the stone at the rim
+                if n.z > 0.6:
+                    px, py, pz = x, y, 0.0
+                else:
+                    d = math.hypot(x, y) or 1.0
+                    rim = min(ob["box"][1], (spr.w - hx) / CELL) * 0.92
+                    px, py, pz = x / d * rim, y / d * rim, 0.0
+                sx, sy = screen(hx, hy, px, py, pz)
+            elif crown and not in_trunk(x, y, z):
                 sx, sy = crown_point(x, y, z)
             else:
                 sx, sy = screen(hx, hy, px, py, pz * zscale)

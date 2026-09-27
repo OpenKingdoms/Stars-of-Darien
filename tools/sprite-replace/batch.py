@@ -129,7 +129,7 @@ def main():
             thumbs(ob, out, name)
             bpy.ops.object.select_all(action="DESELECT")
             ob.select_set(True)
-            bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_yup=True)
+            bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_extras=True)
             done += 1
             print("BATCH_OK", name, "tris", sum(len(p.vertices) - 2 for p in ob.data.polygons), flush=True)
         except Exception as e:  # keep going, report at the end
