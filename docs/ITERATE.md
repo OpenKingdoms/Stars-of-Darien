@@ -45,6 +45,20 @@ The top-left label shows the tick, the lockstep turn and the sim hash. Every ord
 
 Changes to C# scripts only (`unity/Assets/Scripts`) do not need a restart. Unity recompiles when you switch back to it.
 
+## Playing the remaster
+
+Pick OpenKingdoms, then Play Remaster. The game starts at the main menu, runs on the real engine when `okengine.dll` and your game files are there, and on the mock engine otherwise. Skirmish sets up the map, your kingdom, the computer seats and the options. Esc pauses, and the pause menu saves the game. Load game on the main menu brings a save back.
+
+In a battle the controls are the original's by default. A left click selects a unit, orders the selection to the ground or at an enemy, or carries out an armed command. A right click or Escape cancels. Drag a box to select, and hold Shift to add. M, A, P and G arm move, attack, patrol and guard, and S stops. Ctrl with a digit makes a group, and the digit alone brings it back. Options, then Controls, switches to a modern scheme where the right button gives orders. The camera pans with the arrow keys, the screen edge or a middle drag, zooms with the wheel, turns with Q and E, tilts with Page Up and Page Down, and Home returns to the classic view.
+
+The bottom panel has the minimap, what is selected and its orders, and the command and build buttons. A builder's build button shows a ghost of the building, green where it can stand. A factory's build button queues a unit, and a right click takes one off the queue.
+
+## Testing the remaster
+
+The EditMode tests cover the screen flow, the mock engine, the terrain builder, the override rules, the glb reader and the studio windows. The PlayMode tests go from the main menu through skirmish setup and the loading screen into a running game and back, save and load a game, play a fight to its end, and time five hundred units on screen. All of them run on the mock engine, so they need no game files.
+
+The capture test draws every screen into PNG files without a window. It runs only when `OKU_CAPTURE_DIR` names a folder. Set `OKU_CAPTURE_BACKEND=engine` to use the real engine, `OKU_CAPTURE_MAP` to pick a map by name, and `OKU_CAPTURE_W` and `OKU_CAPTURE_H` for another size than 1920 by 1080. With `OKU_CAPTURE_TREES=1` it also frames the thickest stand of trees with the fog and weather off.
+
 ## Where things go
 
 - Rules, anything that decides what happens: `core/`, in C, with a test. Unit numbers are the `RULES` table in `core/src/ok_sim.c`. Pathing is `ok_path.c`, lockstep is `ok_turn.c`, and the wave opponent is `ok_ai.c`.
