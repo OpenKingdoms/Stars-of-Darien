@@ -41,6 +41,9 @@ namespace OpenKingdomsUnity
         public int PrevCount { get; private set; }
         // How far the render frame sits between the last two ticks.
         public float Alpha { get; private set; }
+        public int AiWavesLeft => ai != null ? ai.WavesLeft : 0;
+        // "Victory" or "Defeat" once the game is over, null until then.
+        public string Outcome => outcome;
         public event Action<OkEvent> SimEvent;
         public event Action GameStarted;
 

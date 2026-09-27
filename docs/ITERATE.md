@@ -29,7 +29,7 @@ After a core change, close the Unity editor, because it keeps `okcore.dll` open 
 powershell -File scripts\unity-test.ps1
 ```
 
-That builds the core, runs its tests, copies `okcore.dll` into `unity/Assets/Plugins/x86_64`, and runs the Unity EditMode tests headless. Those tests drive the plugin from C# and check it gives the same hashes as the C tests, so a binding mistake shows up there. It needs the Unity license from the setup above. Without one Unity exits with code 198.
+That builds the core, runs its tests, copies `okcore.dll` into `unity/Assets/Plugins/x86_64`, and runs the Unity tests headless. The EditMode tests drive the plugin from C# and check it gives the same hashes as the C tests, so a binding mistake shows up there. The PlayMode test boots the demo the way Play does, runs it at twenty times speed until the first red wave sets off, and fails on any logged error. It needs the Unity license from the setup above. Without one Unity exits with code 198.
 
 Without a license, `bash scripts/csharp-check.sh` from Git Bash gets most of the way. It compiles every script in `unity/Assets/Scripts` against the editor's own UnityEngine assemblies, then runs the EditMode test bodies in plain .NET against the built plugin. It uses the compiler and runtime inside the Unity install, so nothing else needs installing. It does not replace a real Unity run, because Unity's Mono and the editor itself are not involved.
 
