@@ -28,6 +28,8 @@ namespace OpenKingdomsUnity.Engine
         readonly float[] pose = new float[128 * 12];
         readonly byte[] hidden = new byte[128];
         SkirmishSetup pending;
+        bool loadStarted;
+        readonly byte[] statusBuf = new byte[128];
         GameStatus status = GameStatus.Idle;
         MapTerrain terrain;
 
@@ -96,15 +98,36 @@ namespace OpenKingdomsUnity.Engine
         {
             EndGame();
             pending = setup;
+            loadStarted = false;
             status = GameStatus.Loading;
         }
+
+        // How long one PumpLoading call may work, so the loading screen
+        // keeps drawing while the engine loads.
+        public int LoadSliceMs = 12;
 
         public LoadProgress PumpLoading()
         {
             if (status != GameStatus.Loading || pending == null)
                 return new LoadProgress { Fraction = 1, Done = status == GameStatus.Running, Failed = status == GameStatus.Failed };
             var setup = pending;
-            pending = null;
+            if (loadStarted)
+            {
+                int rc = OkEngine.okx_load_step(LoadSliceMs, out float progress, statusBuf, statusBuf.Length);
+                string stage = System.Text.Encoding.ASCII.GetString(statusBuf, 0, Math.Max(0, Array.IndexOf(statusBuf, (byte)0)));
+                if (rc == 0) return new LoadProgress { Fraction = progress, Stage = stage };
+                pending = null;
+                if (rc < 0)
+                {
+                    status = GameStatus.Failed;
+                    return new LoadProgress { Fraction = 1, Failed = true, Error = OkEngine.LastError, Stage = "failed" };
+                }
+                ReadCatalogue();
+                ReadTerrain();
+                ReadPlayers(setup);
+                status = GameStatus.Running;
+                return new LoadProgress { Fraction = 1, Done = true, Stage = "ready" };
+            }
             int ai = 0;
             string kingdom = "aramon";
             for (int i = 0; i < setup.Seats.Count; i++)
@@ -119,16 +142,14 @@ namespace OpenKingdomsUnity.Engine
                 lineOfSight = setup.LineOfSight ? 1 : 0, mapRevealed = setup.MapRevealed ? 1 : 0,
                 seed = setup.Seed
             };
-            if (OkEngine.okx_start_skirmish(ref cfg) != 0)
+            if (OkEngine.okx_load_begin(ref cfg) != 0)
             {
+                pending = null;
                 status = GameStatus.Failed;
                 return new LoadProgress { Fraction = 1, Failed = true, Error = OkEngine.LastError, Stage = "failed" };
             }
-            ReadCatalogue();
-            ReadTerrain();
-            ReadPlayers(setup);
-            status = GameStatus.Running;
-            return new LoadProgress { Fraction = 1, Done = true, Stage = "ready" };
+            loadStarted = true;
+            return new LoadProgress { Fraction = 0, Stage = "starting" };
         }
 
         void ReadCatalogue()

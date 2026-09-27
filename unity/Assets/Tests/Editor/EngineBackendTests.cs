@@ -52,7 +52,9 @@ namespace OpenKingdomsUnity.Tests
             backend.StartSkirmish(TwoCastles());
             Assert.AreEqual(GameStatus.Loading, backend.Status);
             LoadProgress p = default;
-            for (int i = 0; i < 100 && !p.Done && !p.Failed; i++) p = backend.PumpLoading();
+            int pumps = 0;
+            for (; pumps < 5000 && !p.Done && !p.Failed; pumps++) p = backend.PumpLoading();
+            Assert.Greater(pumps, 2, "the load comes in slices");
             Assert.IsTrue(p.Done, p.Error);
             Assert.AreEqual(GameStatus.Running, backend.Status);
             var t = backend.Terrain;

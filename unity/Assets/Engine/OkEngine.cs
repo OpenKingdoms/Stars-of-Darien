@@ -147,7 +147,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 6;
+        public const int ApiVersion = 7;
         public const int EffectImpact = 0, EffectProjectile = 1;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
@@ -180,6 +180,8 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_fog([Out] byte[] cells, int cap, out int w, out int h);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
+        [DllImport(Lib)] public static extern int okx_load_begin(ref OkxSkirmish cfg);
+        [DllImport(Lib)] public static extern int okx_load_step(int maxMs, out float progress, [Out] byte[] status, int cap);
         [DllImport(Lib)] public static extern void okx_end_game();
         [DllImport(Lib)] public static extern int okx_tick_rate();
         [DllImport(Lib)] public static extern int okx_tick(int n);
