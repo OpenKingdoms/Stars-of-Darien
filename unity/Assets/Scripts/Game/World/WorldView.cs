@@ -27,6 +27,7 @@ namespace OpenKingdomsUnity.Game.World
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
+            Warm();
             Effects = new EffectRenderer(backend);
             Fog = new FogView(backend);
             Fog.Update(true);
@@ -68,6 +69,27 @@ namespace OpenKingdomsUnity.Game.World
             int me = backend.LocalPlayer;
             if (player == me) return true;
             return player >= 0 && player < ps.Count && me < ps.Count && ps[player].Team == ps[me].Team;
+        }
+
+        // Builds the models of every unit on the field and of everything the
+        // players' units can build, now while the loading screen is up, so a
+        // model seen for the first time does not stall a frame.
+        void Warm()
+        {
+            var units = new UnitState[EntityRenderer.MaxUnits];
+            int n = backend.ReadUnits(units);
+            var seen = new System.Collections.Generic.HashSet<(int, int)>();
+            for (int i = 0; i < n; i++)
+            {
+                Models.Get(units[i].Model);
+                var def = backend.UnitDefs[units[i].Def];
+                int colour = units[i].Player >= 0 && units[i].Player < backend.Players.Count ? backend.Players[units[i].Player].Colour : 0;
+                foreach (int o in def.BuildOptions)
+                {
+                    if (o < 0 || o >= backend.UnitDefs.Count || !seen.Add((o, colour))) continue;
+                    Models.Get(backend.LoadModel(backend.UnitDefs[o].ObjectName, colour));
+                }
+            }
         }
 
         public void Render()

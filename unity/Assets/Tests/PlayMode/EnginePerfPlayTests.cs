@@ -33,6 +33,8 @@ namespace OpenKingdomsUnity.Tests
             {
                 yield return null;
                 var b = root.Backend;
+                // Normal speed, whatever the player last chose.
+                root.Options.GameSpeed = 1;
                 var map = b.Maps.Where(m => m.MaxPlayers >= 5).OrderByDescending(m => m.Size.x * m.Size.y).FirstOrDefault()
                        ?? b.Maps.OrderByDescending(m => m.Size.x * m.Size.y).First();
                 root.Flow.Fire(FlowEvent.OpenSkirmish);
@@ -70,7 +72,7 @@ namespace OpenKingdomsUnity.Tests
                 frames.Sort();
                 float P(float q) => frames[Mathf.Clamp(Mathf.RoundToInt(q * (frames.Count - 1)), 0, frames.Count - 1)];
                 var parts = string.Join(", ", names.Select((n, k) => $"{n} {sums[k] / frames.Count:0.00} avg {worst[k]:0.0} worst"));
-                Debug.Log($"EnginePerf: {map.Name}, {seats} kingdoms, {frames.Count} frames, {units} units at the end, tick {b.Tick}; " +
+                Debug.Log($"EnginePerf: {map.Name}, {seats} kingdoms, {frames.Count} frames, {units} units in the player's sight at the end, tick {b.Tick} at {b.TicksPerSecond} a second; " +
                           $"frame p50 {P(0.5f):0.0} ms, p95 {P(0.95f):0.0} ms, max {frames[frames.Count - 1]:0.0} ms; {parts}");
             }
             finally { Object.Destroy(root.gameObject); }
