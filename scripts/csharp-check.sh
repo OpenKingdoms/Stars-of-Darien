@@ -17,6 +17,10 @@ nunit="$data/Resources/PackageManager/BuiltInPackages/com.unity.ext.nunit/net40/
 
 engine=()
 for f in "$data"/Managed/UnityEngine/UnityEngine*.dll; do engine+=("-r:$(w "$f")"); done
+# Package runtimes such as uGUI, once the editor has built them.
+for f in "$root"/unity/Library/ScriptAssemblies/UnityEngine.UI.dll "$root"/unity/Library/ScriptAssemblies/Unity.TextMeshPro.dll; do
+    [ -f "$f" ] && engine+=("-r:$(w "$f")")
+done
 scripts=()
 while IFS= read -r f; do scripts+=("$(w "$f")"); done < <(find "$root/unity/Assets/Scripts" "$root/unity/Assets/Engine" -name "*.cs" -not -path "*/Editor/*")
 csc -target:library -warn:4 -out:"$(w "$out/OpenKingdomsUnity.dll")" \
