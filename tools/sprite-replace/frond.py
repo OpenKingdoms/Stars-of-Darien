@@ -91,7 +91,7 @@ def build(r, spr):
     crown_mid_row = (top + (crown_rows[-1] if crown_rows else top)) / 2.0
     crown_z = max(1.0, (hy - crown_mid_row) / (carve.CELL * carve.TILT))
     words = (r["description"] + " " + r["category"]).lower()
-    if "tree" not in words and "palm" not in words:
+    if r.get("shape") == "fern" or ("tree" not in words and "palm" not in words and r.get("shape") != "palm"):
         # a plant, not a tree: it sits low, with barely a stem
         crown_z = min(crown_z, 0.4 + 0.35 * radius)
     crown_x = (cx_px - hx) / carve.CELL

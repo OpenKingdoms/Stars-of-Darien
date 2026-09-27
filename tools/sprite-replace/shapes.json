@@ -1,0 +1,13 @@
+{
+  "_comment": "Hand classification of living plants, by looking at their sprites. A name ending in * matches every name with that start. Shapes: palm (trunk under drooping fronds), crown (a domed canopy on a trunk), poplar (a tall narrow crown), bush (a low dome with no trunk), fern (low fronds), decal (flat on the ground).",
+  "palm": ["VerTree04", "VerTree05", "VerTree06", "VerTree07", "VerTree08", "VerTree09", "ZonTree01", "ZonTree02", "ZonTree03"],
+  "crown": ["AraTree04", "AraTree05", "AraTree06", "AraTree07", "AraTree08", "AraTree09", "AraTree10",
+            "TarTree07", "TarTree08", "TarTree09", "ZonTree04", "ZonTree05", "ZonTree06",
+            "ZonTree201", "ZonTree202", "ZonTree203"],
+  "poplar": ["AraTree01", "AraTree02", "AraTree03", "VerTree01", "VerTree02", "VerTree03"],
+  "bush": ["TarPlant01", "TarPlant02", "TarPlant03",
+           "ZonPlant07", "ZonPlant08", "ZonPlant09", "ZonPlant10", "ZonPlant11", "ZonPlant12", "ZonPlant13",
+           "ZonPlant14", "ZonPlant15", "ZonPlant16", "ZonPlant17", "ZonPlant18", "ZonPlant19"],
+  "fern": ["ZonPlant01", "ZonPlant02", "ZonPlant03"],
+  "decal": ["*smudge*", "*Smudge*", "ZonFire*"]
+}

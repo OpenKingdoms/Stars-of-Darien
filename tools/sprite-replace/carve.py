@@ -95,6 +95,9 @@ def carve(r, spr):
     # so carving alone would fill the whole height with canopy. A dead tree
     # keeps thin branches, carved like any other object.
     tree = "tree" in words and "dead" not in words
+    shape = r.get("shape")
+    if shape in ("crown", "poplar", "bush"):
+        tree, rounded = True, True
     if "dead" in words:
         rounded = False
     # The box: east-west from the sprite itself (things overhang their
@@ -130,6 +133,18 @@ def carve(r, spr):
         crown_r = (x1 - x0) / 2
         crown_c = (trunk_top * 0.7 + H) / 2
         crown_h = (H - trunk_top * 0.7) / 2
+        if shape == "crown":
+            # a dome about as tall as it is wide, sitting on the trunk
+            crown_h = min(crown_h, crown_r * 0.9)
+            crown_c = H - crown_h
+            trunk_top = max(0.3, crown_c - crown_h * 0.5)
+            # a trunk that can carry the crown, not a stick
+            trunk_r = min(0.6, max(trunk_r, crown_r * 0.13))
+        elif shape == "bush":
+            # a low dome from the ground, no trunk
+            crown_h = min(H * 0.5, crown_r * 0.7)
+            crown_c = crown_h * 0.9
+            trunk_top = 0.0
     if not rounded:
         spr.edge_distance()
 

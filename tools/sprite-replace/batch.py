@@ -27,6 +27,26 @@ import frond  # noqa: E402
 import carve  # noqa: E402
 
 
+SHAPES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "shapes.json")))
+
+
+def shape_of(name):
+    """The hand classification in shapes.json, if the feature has one."""
+    import fnmatch
+    for shape, names in SHAPES.items():
+        if shape.startswith("_"):
+            continue
+        for pat in names:
+            if fnmatch.fnmatchcase(name, pat) or fnmatchcase_ci(name, pat):
+                return shape
+    return None
+
+
+def fnmatchcase_ci(name, pat):
+    import fnmatch
+    return fnmatch.fnmatchcase(name.lower(), pat.lower())
+
+
 def thumbs(ob, out, name):
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_WORKBENCH"
@@ -66,6 +86,8 @@ def main():
     if names:
         keep = set(names.split(","))
         rows = [r for r in rows if r["name"] in keep]
+    if os.environ.get("ONLY_SHAPED"):
+        rows = [r for r in rows if shape_of(r["name"])]
     if os.environ.get("ONLY_FROND"):
         rows = [r for r in rows if not arch.kind_of(r) and (frond.is_decal(r) or frond.is_frond(
             r, carve.Sprite(os.path.join(catalog, "sprites", r["name"] + ".png"))))]
@@ -82,9 +104,17 @@ def main():
         try:
             bpy.ops.wm.read_factory_settings(use_empty=True)
             spr = carve.Sprite(os.path.join(catalog, "sprites", name + ".png"))
-            kind = arch.kind_of(r)
-            decal = not kind and frond.is_decal(r)
-            fr = not kind and (decal or frond.is_frond(r, spr))
+            shape = shape_of(name)
+            if shape:
+                r = dict(r, shape=shape)
+            kind = None if shape else arch.kind_of(r)
+            decal = shape == "decal" or (not shape and not kind and frond.is_decal(r))
+            if shape in ("palm", "fern"):
+                fr = True
+            elif shape in ("crown", "poplar", "bush"):
+                fr = False
+            else:
+                fr = not kind and (decal or frond.is_frond(r, spr))
             if decal:
                 ob = frond.build_decal(r, spr)
             elif kind:
