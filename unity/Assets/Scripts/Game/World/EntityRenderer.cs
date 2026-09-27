@@ -35,7 +35,7 @@ namespace OpenKingdomsUnity.Game.World
         // Features never move in the mock and rarely in a game, so their
         // matrices are cached until the count changes.
         int featureCount = -1;
-        readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m)> featureDraws = new List<(Mesh, int, Material, Matrix4x4)>();
+        readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, bool flat)> featureDraws = new List<(Mesh, int, Material, Matrix4x4, bool)>();
         readonly List<(int sprite, Vector3 pos, float w, float bottom, float top, float offX)> spriteFeatures = new List<(int, Vector3, float, float, float, float)>();
 
         public EntityRenderer(IGameBackend backend, ModelCache models)
@@ -173,7 +173,7 @@ namespace OpenKingdomsUnity.Game.World
                         if (over != null)
                         {
                             var at = Matrix4x4.TRS(f.Position, Quaternion.Euler(0, f.Heading, 0), Vector3.one);
-                            foreach (var part in over.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot));
+                            foreach (var part in over.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat));
                             continue;
                         }
                     }
@@ -185,21 +185,21 @@ namespace OpenKingdomsUnity.Game.World
                         if (model.Override != null)
                         {
                             var basis = pn > 0 ? poses[0].Matrix * model.Unscale * model.RestInverse[0] : Matrix4x4.identity;
-                            foreach (var part in model.Override.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, basis * part.NodeToRoot));
+                            foreach (var part in model.Override.Parts) featureDraws.Add((part.Mesh, part.Submesh, part.Material, basis * part.NodeToRoot, part.Flat));
                             continue;
                         }
                         for (int p = 0; p < pn && p < model.Pieces.Length; p++)
                         {
                             if (model.Pieces[p] == null || poses[p].Hidden) continue;
                             var mats = model.Materials[p];
-                            for (int s = 0; s < mats.Length; s++) featureDraws.Add((model.Pieces[p], s, mats[s], poses[p].Matrix * model.Unscale));
+                            for (int s = 0; s < mats.Length; s++) featureDraws.Add((model.Pieces[p], s, mats[s], poses[p].Matrix * model.Unscale, false));
                         }
                     }
                     else if (f.Sprite >= 0)
                         spriteFeatures.Add((f.Sprite, f.Position, f.SpriteWidth, f.SpriteBottom, f.SpriteTop, f.SpriteOffsetX));
                 }
             }
-            foreach (var d in featureDraws) solid.Add(d.mesh, d.sub, d.mat, d.m);
+            foreach (var d in featureDraws) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, d.m);
 
             // Upright quads turned about y to face the camera.
             var fwd = cam.transform.forward;

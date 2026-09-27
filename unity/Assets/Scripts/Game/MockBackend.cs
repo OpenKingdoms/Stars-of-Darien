@@ -650,6 +650,10 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
+        // The mock is silent.
+        public bool SetAudio(float volume, bool music) => false;
+        public void SetView(Vector3 centre, float width, float depth) { }
+
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
         // ---- HUD helpers ----

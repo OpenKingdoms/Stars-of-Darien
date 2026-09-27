@@ -63,7 +63,7 @@ namespace OpenKingdomsUnity.Game.World
             // cascades spend their texels where the eye is.
             QualitySettings.shadowDistance = Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f);
             Entities.Render(cam);
-            Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y);
+            Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 
         public void Dispose()

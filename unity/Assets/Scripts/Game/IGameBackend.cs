@@ -68,6 +68,15 @@ namespace OpenKingdomsUnity.Game
         // piece count, or 0 when the backend cannot pose it.
         int PoseModel(int model, string animation, float seconds, PiecePose[] into);
 
+        // Sound, which the engine plays straight to the audio device.
+        // Volume 0 to 1, 0 stops it all. Call before StartSkirmish so the
+        // music follows the local kingdom, and whenever the options change.
+        // False when there is no audio device, and the game plays on.
+        bool SetAudio(float volume, bool music);
+        // The ground the camera looks at, its centre and the width and depth
+        // in view in world units, once a frame, so sounds pan and fade.
+        void SetView(Vector3 centre, float width, float depth);
+
         // Orders, for one unit at a time. False when the engine refuses it.
         bool Command(in GameCommand command);
         Economy ReadEconomy(int player);

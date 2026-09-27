@@ -298,8 +298,8 @@ namespace OpenKingdomsUnity.Game.UI
             var s = NewScreen("Options", false);
             var dim = UiKit.Picture(s, "Dim", UiKit.White, new Color(0, 0, 0, 0.55f));
             dim.rectTransform.Fill();
-            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -420, -380, -420, -380);
-            Heading(p, "Options", 60, 0.84f, 0.98f);
+            var p = UiKit.Panel(s, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -420, -440, -420, -440);
+            Heading(p, "Options", 60, 0.86f, 0.98f);
             var rows = UiKit.Rect(p, "Rows").Place(0, 0, 1, 1, 60, 150, 60, 150);
             UiKit.Column(rows, 14);
             var o = root.Options;
@@ -315,6 +315,11 @@ namespace OpenKingdomsUnity.Game.UI
             });
             OptionRow(rows, "Post effects", new[] { "On", "Off" }, o.PostEffects ? 0 : 1, i => o.PostEffects = i == 0);
             OptionRow(rows, "Game speed", new[] { "Normal", "Fast" }, o.GameSpeed - 1, i => o.GameSpeed = i + 1);
+            var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
+            int vi = 0;
+            for (int k = 0; k < volumes.Length; k++) if (Mathf.Abs(volumes[k] - o.Volume) < Mathf.Abs(volumes[vi] - o.Volume)) vi = k;
+            OptionRow(rows, "Sound", new[] { "Off", "Quiet", "Half", "Loud", "Full" }, vi, i => { o.Volume = volumes[i]; root.ApplyAudio(); });
+            OptionRow(rows, "Music", new[] { "On", "Off" }, o.Music ? 0 : 1, i => { o.Music = i == 0; root.ApplyAudio(); });
             OptionRow(rows, "Display", new[] { "Full screen", "Window" }, o.Fullscreen ? 0 : 1, i =>
             {
                 o.Fullscreen = i == 0;

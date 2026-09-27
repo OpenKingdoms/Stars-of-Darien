@@ -144,8 +144,30 @@ namespace OpenKingdomsUnity.Game.World
                     idx[i + 2] = a + basev;
                     idx[i] += basev;
                 }
+                int matIndex = MiniJson.Int(p, "material");
+                if (DoubleSided(ctx, matIndex))
+                {
+                    // The back of a double-sided surface as its own faces, with
+                    // normals turned round, so both sides light and shade right.
+                    int backBase = verts.Count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        verts.Add(verts[basev + i]);
+                        norms.Add(-norms[basev + i]);
+                        uvs.Add(uvs[basev + i]);
+                    }
+                    var both = new int[idx.Length * 2];
+                    Array.Copy(idx, both, idx.Length);
+                    for (int i = 0; i + 2 < idx.Length; i += 3)
+                    {
+                        both[idx.Length + i] = idx[i] - basev + backBase;
+                        both[idx.Length + i + 1] = idx[i + 2] - basev + backBase;
+                        both[idx.Length + i + 2] = idx[i + 1] - basev + backBase;
+                    }
+                    idx = both;
+                }
                 subs.Add(idx);
-                mats.Add(MaterialFor(ctx, MiniJson.Int(p, "material")));
+                mats.Add(MaterialFor(ctx, matIndex));
             }
             if (subs.Count == 0) return;
             var mesh = new Mesh { name = MiniJson.Text(meshJson, "name", go.name), hideFlags = HideFlags.DontSave };
@@ -181,10 +203,14 @@ namespace OpenKingdomsUnity.Game.World
             // Cut out by the texture's alpha whatever the mode says, since
             // sprite-painted models leave the sprite's clear pixels clear.
             m.SetFloat("_Cutoff", MiniJson.Text(json, "alphaMode") == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : 0.5f);
-            if (json is Dictionary<string, object> d && d.TryGetValue("doubleSided", out var ds) && ds is bool b && b)
-                m.SetInt("_Cull", (int)CullMode.Off);
             ctx.Materials[index] = m;
             return m;
+        }
+
+        static bool DoubleSided(Ctx ctx, int material)
+        {
+            var json = material >= 0 ? MiniJson.Arr(ctx.Json, "materials")?[material] : null;
+            return json is Dictionary<string, object> d && d.TryGetValue("doubleSided", out var ds) && ds is bool b && b;
         }
 
         static Texture2D TextureFor(Ctx ctx, int index)

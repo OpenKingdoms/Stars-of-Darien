@@ -71,6 +71,27 @@ namespace OpenKingdomsUnity.Game
                     if (b != null && !(b is GameCamera)) DestroyImmediate(b);
         }
 
+        // The Map Browser's Play button leaves a map here, and the next
+        // game starts straight on it, skipping the menus.
+        public const string AutoStartKey = "oku.autostart.map";
+
+        void Start()
+        {
+            string map = PlayerPrefs.GetString(AutoStartKey, "");
+            if (map.Length == 0) return;
+            PlayerPrefs.DeleteKey(AutoStartKey);
+            PlayerPrefs.Save();
+            foreach (var m in Backend.Maps)
+            {
+                if (m.Id != map) continue;
+                Flow.Fire(FlowEvent.OpenSkirmish);
+                Setup.MapId = map;
+                Screens.StartGame();
+                return;
+            }
+            Debug.LogWarning("Map Browser asked for " + map + ", which this engine does not have.");
+        }
+
         public static SkirmishSetup DefaultSetup(IGameBackend b)
         {
             var s = new SkirmishSetup { MapId = b.Maps.Count > 0 ? b.Maps[0].Id : "", Seed = (uint)Environment.TickCount };
@@ -96,6 +117,7 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Loading:
                     LastError = null;
                     Loading = default;
+                    ApplyAudio();
                     Backend.StartSkirmish(Setup);
                     break;
                 case FlowState.Playing:
@@ -162,8 +184,28 @@ namespace OpenKingdomsUnity.Game
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
                     break;
             }
-            if (World != null) World.Render();
+            if (World != null)
+            {
+                World.Render();
+                if (!Application.isBatchMode) TellView();
+            }
             Screens.Tick();
+        }
+
+        // Sound follows the options. Batch runs stay quiet.
+        public void ApplyAudio()
+        {
+            if (Application.isBatchMode) return;
+            Backend.SetAudio(Options.Volume, Options.Music);
+        }
+
+        void TellView()
+        {
+            var cam = World.Camera;
+            var c = cam != null ? cam.GetComponent<Camera>() : null;
+            if (c == null) return;
+            float wide = 2f * cam.distance * Mathf.Tan(c.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            Backend.SetView(cam.focus, wide * c.aspect, wide / Mathf.Max(0.2f, Mathf.Sin(cam.pitch * Mathf.Deg2Rad)));
         }
 
         void RunSim(float dt)
