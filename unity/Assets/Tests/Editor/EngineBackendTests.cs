@@ -155,6 +155,10 @@ namespace OpenKingdomsUnity.Tests
             var def = backend.UnitDefs[u.Def];
             Assert.Greater(def.BuildOptions.Length, 0, "the monarch has a build menu");
             Assert.Greater(backend.UnitDefs[def.BuildOptions[0]].ManaCost, 0);
+            Assert.IsNotEmpty(backend.UnitDefs[def.BuildOptions[0]].Title);
+            var pic = backend.UnitPicture(def.BuildOptions[0]);
+            Assert.IsNotNull(pic, "the build button has the game's picture");
+            Assert.AreEqual(pic.Width * pic.Height * 4, pic.Pixels.Length);
             var eco = backend.ReadEconomy(me);
             Assert.Greater(eco.Storage, 0f);
 

@@ -657,6 +657,7 @@ namespace OpenKingdomsUnity.Game
         public Economy ReadEconomy(int player) => player >= 0 && player < economy.Count ? economy[player] : default;
 
         public int ReadEffects(EffectState[] into) => 0;
+        public RgbaImage UnitPicture(int def) => null;
 
         // ---- The game's own controls, simply ----
 

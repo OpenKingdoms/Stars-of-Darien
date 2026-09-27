@@ -169,7 +169,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 12;
+        public const int ApiVersion = 13;
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
             ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
         public const int EffectImpact = 0, EffectProjectile = 1;
@@ -188,6 +188,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_def_count();
         [DllImport(Lib)] public static extern int okx_def_info(int def, out OkxDefInfo info);
         [DllImport(Lib)] public static extern int okx_def_buildables(int def, [Out] int[] defs, int cap);
+        [DllImport(Lib)] public static extern int okx_unit_picture(int def, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] static extern int okx_def_scripts(int def, [Out] byte[] names, int cap);
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_studio_pose(int def, int color, string script, int ticks,
             [Out] float[] matrices, [Out] byte[] hidden, int cap);

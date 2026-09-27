@@ -72,6 +72,8 @@ namespace OpenKingdomsUnity.Game
         ModelData GetModel(int model);
         RgbaImage Texture(int texture);
         RgbaImage Sprite(int sprite);
+        // A unit's build-menu picture from the game, or null.
+        RgbaImage UnitPicture(int def);
         // An effect's frames side by side, for EffectState.Strip.
         RgbaImage EffectStrip(int strip);
         // A pose of a model outside any game, in model space, for the
@@ -196,6 +198,7 @@ namespace OpenKingdomsUnity.Game
     {
         public int Id;
         public string Name;         // the internal unit name
+        public string Title = "";   // the name the game's HUD shows, "Knight"
         public string ObjectName;   // the model name, for LoadModel
         public string Side;
         public string Category;

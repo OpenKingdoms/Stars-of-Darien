@@ -212,7 +212,7 @@ namespace OpenKingdomsUnity.Engine
                 if (OkEngine.okx_def_info(i, out var d) != 0) continue;
                 unitDefs.Add(new UnitDef
                 {
-                    Id = i, Name = d.name, ObjectName = d.obj, Side = d.side, Category = d.category,
+                    Id = i, Name = d.name, Title = d.displayName ?? "", ObjectName = d.obj, Side = d.side, Category = d.category,
                     Description = d.description, MaxHealth = d.maxHealth, IsBuilding = d.isBuilding != 0,
                     Footprint = new Vector2Int(d.footprintX, d.footprintZ), ManaCost = d.buildCost,
                     BuildOptions = Buildables(i), Animations = OkEngine.Scripts(i)
@@ -522,6 +522,15 @@ namespace OpenKingdomsUnity.Engine
             if (need <= 0) return null;
             var img = new RgbaImage(w, h);
             OkEngine.okx_texture(texture, img.Pixels, need, out w, out h);
+            return img;
+        }
+
+        public RgbaImage UnitPicture(int def)
+        {
+            int need = OkEngine.okx_unit_picture(def, null, 0, out int w, out int h);
+            if (need <= 0) return null;
+            var img = new RgbaImage(w, h);
+            OkEngine.okx_unit_picture(def, img.Pixels, need, out w, out h);
             return img;
         }
 
