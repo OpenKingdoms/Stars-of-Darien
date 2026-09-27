@@ -18,7 +18,7 @@ nunit="$data/Resources/PackageManager/BuiltInPackages/com.unity.ext.nunit/net40/
 engine=()
 for f in "$data"/Managed/UnityEngine/UnityEngine*.dll; do engine+=("-r:$(w "$f")"); done
 scripts=()
-for f in "$root"/unity/Assets/Scripts/*.cs; do scripts+=("$(w "$f")"); done
+while IFS= read -r f; do scripts+=("$(w "$f")"); done < <(find "$root/unity/Assets/Scripts" "$root/unity/Assets/Engine" -name "*.cs" -not -path "*/Editor/*")
 csc -target:library -warn:4 -out:"$(w "$out/OpenKingdomsUnity.dll")" \
     -r:"$(w "$data/NetStandard/ref/2.1.0/netstandard.dll")" "${engine[@]}" "${scripts[@]}"
 echo "Unity scripts compile"

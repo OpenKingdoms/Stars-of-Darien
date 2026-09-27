@@ -1,6 +1,7 @@
-// SimDriver.cs - the demo game. Builds the scene from code, runs the core
-// at a fixed 30 Hz through local lockstep, and lets a wave AI attack the
-// player. Press Play in any scene, even an empty one, and it starts.
+// SimDriver.cs - the capsule demo on the small core. Builds the scene from
+// code, runs the core at a fixed 30 Hz through local lockstep, and lets a
+// wave AI attack the player. The bootstrap starts it when the real engine
+// cannot run, and the demo tests start it themselves.
 using System;
 using UnityEngine;
 
@@ -53,13 +54,6 @@ namespace OpenKingdomsUnity
         float accumulator;
         int lastWavesLeft;
         string outcome;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        static void Boot()
-        {
-            if (FindAnyObjectByType<SimDriver>() == null)
-                new GameObject("SimDriver").AddComponent<SimDriver>();
-        }
 
         void Awake()
         {

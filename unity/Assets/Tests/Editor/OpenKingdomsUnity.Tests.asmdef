@@ -2,6 +2,7 @@
     "name": "OpenKingdomsUnity.Tests",
     "references": [
         "OpenKingdomsUnity",
+        "OpenKingdomsUnity.Engine",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

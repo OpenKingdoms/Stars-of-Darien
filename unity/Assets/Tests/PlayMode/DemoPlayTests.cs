@@ -5,6 +5,7 @@ using System.Collections;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using OpenKingdomsUnity.Engine;
 
 namespace OpenKingdomsUnity.Tests
 {
@@ -17,6 +18,10 @@ namespace OpenKingdomsUnity.Tests
         {
             savedScale = Time.timeScale;
             Time.timeScale = 20f;
+            // The bootstrap may have started the real engine. This test is
+            // about the capsule demo.
+            foreach (var e in Object.FindObjectsByType<EngineDriver>(FindObjectsSortMode.None))
+                Object.DestroyImmediate(e.gameObject);
         }
 
         [TearDown]

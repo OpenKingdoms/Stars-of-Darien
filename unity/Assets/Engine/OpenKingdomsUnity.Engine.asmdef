@@ -1,0 +1,7 @@
+{
+    "name": "OpenKingdomsUnity.Engine",
+    "rootNamespace": "OpenKingdomsUnity.Engine",
+    "references": ["OpenKingdomsUnity"],
+    "allowUnsafeCode": false,
+    "autoReferenced": true
+}
