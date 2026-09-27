@@ -147,6 +147,19 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(1, facing);
         }
 
+        [Test, Order(9)]
+        public void TheWholeBattleIsCountedAndNoMatchIsOutOfStep()
+        {
+            var units = new UnitState[1024];
+            int drawn = backend.ReadUnits(units);
+            int all = OkEngine.okx_unit_count(0);
+            Assert.GreaterOrEqual(all, drawn, "the count sees through the fog");
+            Assert.Greater(OkEngine.okx_unit_count(backend.LocalPlayer), 0);
+            Assert.AreEqual(0, OkEngine.okx_net_match(out var m));
+            Assert.AreEqual(0, m.live, "a skirmish is no match");
+            Assert.AreEqual(0, m.desynced);
+        }
+
         [Test, Order(8)]
         public void TheSidebarsButtonsListCastAndToggle()
         {

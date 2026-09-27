@@ -180,6 +180,15 @@ namespace OpenKingdomsUnity.Engine
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxNetMatch
+    {
+        public int live, desynced;
+        public uint tick, haltedAfter;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 96)] public string waiting;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 512)] public string bundle;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct OkxNetRoomInfo
     {
         public uint id;
@@ -208,7 +217,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 17;
+        public const int ApiVersion = 18;
         public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;
         public const int WhyOk = 0, WhyMana = 1, WhyUnsupported = 2;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
@@ -274,6 +283,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_net_last_chat([Out] byte[] from, int fromCap, [Out] byte[] text, int textCap);
         [DllImport(Lib)] public static extern int okx_net_start();
         [DllImport(Lib)] public static extern int okx_net_load_begin();
+        [DllImport(Lib)] public static extern int okx_net_match(out OkxNetMatch match);
 
         public static string NetWhy => Marshal.PtrToStringAnsi(okx_net_why()) ?? "";
         [DllImport(Lib)] public static extern int okx_group_recall(int group);
@@ -288,6 +298,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_tick_rate();
         [DllImport(Lib)] public static extern int okx_tick(int n);
         [DllImport(Lib)] public static extern uint okx_tick_count();
+        [DllImport(Lib)] public static extern int okx_unit_count(int player);
         [DllImport(Lib)] public static extern int okx_local_player();
         [DllImport(Lib)] public static extern int okx_outcome();
         [DllImport(Lib)] public static extern int okx_audio(int enable, int volume, int music);
