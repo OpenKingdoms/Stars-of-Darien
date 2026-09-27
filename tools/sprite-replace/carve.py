@@ -91,6 +91,12 @@ def carve(r, spr):
     fx, fz = r["footprint"]
     words = (r["description"] + " " + r["category"]).lower()
     rounded = any(wd in words for wd in ROUND_WORDS)
+    # A living tree gets a trunk and a crown: the sprite sees it from above,
+    # so carving alone would fill the whole height with canopy. A dead tree
+    # keeps thin branches, carved like any other object.
+    tree = "tree" in words and "dead" not in words
+    if "dead" in words:
+        rounded = False
     # The box: east-west from the sprite itself (things overhang their
     # footprint), north-south from the footprint, or as deep as wide for
     # plants, and up to the feature's height.
@@ -112,6 +118,15 @@ def carve(r, spr):
 
     solid = bytearray(nx * ny * nz)
     ymid = (y0 + y1) / 2
+    if tree:
+        wide = (x1 - x0) > 0.6 * H
+        trunk_top = H * (0.32 if wide else 0.14)
+        base = spr.row_span(hy - 2) or spr.row_span(hy - 6) or (hx - 2, hx + 2)
+        trunk_x = ((base[0] + base[1]) / 2 - hx) / CELL
+        trunk_r = min(0.45, max(0.14, (base[1] - base[0]) / 2 / CELL))
+        crown_r = (x1 - x0) / 2
+        crown_c = (trunk_top * 0.7 + H) / 2
+        crown_h = (H - trunk_top * 0.7) / 2
     if not rounded:
         spr.edge_distance()
 
@@ -123,9 +138,19 @@ def carve(r, spr):
             for i in range(nx):
                 x, y, z = centre(i, j, k)
                 sx, sy = screen(hx, hy, x, y, z)
+                if tree and z < trunk_top:
+                    # the trunk, hidden behind the crown in the sprite
+                    if (x - trunk_x) ** 2 + (y - ymid) ** 2 <= trunk_r * trunk_r:
+                        solid[idx(i, j, k)] = 1
+                    continue
                 if not spr.inside(sx, sy):
                     continue
-                if rounded:
+                if tree:
+                    # the crown: a rounded mass, as wide as the sprite
+                    f = 1.0 - ((z - crown_c) / crown_h) ** 2
+                    if f <= 0 or (x - (x0 + x1) / 2) ** 2 + (y - ymid) ** 2 > crown_r * crown_r * f:
+                        continue
+                elif rounded:
                     # the width of the silhouette at this height, seen at the
                     # middle of the object, sets the radius of this slice
                     span = spr.row_span(screen(hx, hy, 0, (y0 + y1) / 2, z)[1])
@@ -212,7 +237,10 @@ def paint(ob, r, spr):
         n = poly.normal
         for li in poly.loop_indices:
             x, y, z = me.vertices[me.loops[li].vertex_index].co
-            if n.y <= -0.3 or n.z > 0.6:
+            if n.z < -0.3:
+                # undersides: the painting turned under, as for the sides
+                px, py, pz = xc + (y - yc) * stretch, yc, z
+            elif n.y <= -0.3 or n.z > 0.6:
                 # faces the classic camera saw: the sprite exactly
                 px, py, pz = x, y, z
             elif abs(n.y) >= abs(n.x):
@@ -231,11 +259,11 @@ def paint(ob, r, spr):
     bsdf.inputs["Roughness"].default_value = 1.0
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = spr.img
-    tex.interpolation = "Closest"
+    tex.interpolation = "Linear"
     tex.extension = "EXTEND"
     nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-    nt.links.new(tex.outputs["Color"], bsdf.inputs["Emission Color"])
-    bsdf.inputs["Emission Strength"].default_value = 0.55
+    # Plain lit colour: in the game the sun and shadows light it like
+    # everything else.
     me.materials.append(mat)
     spr.img.pack()
 
@@ -248,12 +276,12 @@ def render(ob, out, name):
     scene.render.resolution_y = 512
     scene.render.film_transparent = True
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-    sun.data.energy = 2.5
+    sun.data.energy = 3.5
     sun.rotation_euler = (math.radians(40), 0, math.radians(30))
     scene.collection.objects.link(sun)
     w = bpy.data.worlds.new("w")
     w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs["Strength"].default_value = 1.2
+    w.node_tree.nodes["Background"].inputs["Strength"].default_value = 1.8
     scene.world = w
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     scene.collection.objects.link(cam)
@@ -293,4 +321,5 @@ def main():
           "size %.2f x %.2f x %.2f cells" % tuple(ob.dimensions))
 
 
-main()
+if __name__ == "__main__":
+    main()
