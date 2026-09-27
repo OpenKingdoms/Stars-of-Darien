@@ -15,3 +15,7 @@ unity/.vs/
 # The native plugin is built from core/, never committed
 unity/Assets/Plugins/x86_64/
 unity/Assets/Plugins/WebGL/
+unity/*.slnx
+# Written by the editor for in-app purchasing, not used here
+unity/Assets/Resources/
+unity/Assets/Resources.meta
