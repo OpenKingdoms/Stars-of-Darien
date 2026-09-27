@@ -124,6 +124,10 @@ def main():
             else:
                 ob = carve.carve(r, spr)[0]
             carve.paint(ob, r, spr)
+            if r.get("texture"):
+                # a model standing in for a painted card of a unit's 3DO
+                ob["replacesTexture"] = r["texture"]
+                ob["replacesPiece"] = r["piece"]
             if fr:
                 frond.cut_out(ob)
             thumbs(ob, out, name)

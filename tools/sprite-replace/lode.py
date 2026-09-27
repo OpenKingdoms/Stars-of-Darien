@@ -21,12 +21,23 @@ from PIL import Image
 
 import extract
 
-LODES = {  # object: (texture archive, palette)
-    "ARALODE": ("aradevic", "ara_textures.pcx"),
-    "TARLODE": ("tardevic", "tar_textures.pcx"),
-    "VERLODE": ("verdevic2", "ver_textures.pcx"),
-    "ZONLODE": ("zonbldg", "zon_textures.pcx"),
-}
+# models that are painted cards leaning toward the classic camera
+LODES = ["ARALODE", "TARLODE", "VERLODE", "ZONLODE", "ARAMANA", "TARMANA", "VERMANA", "ZONMANA",
+         "ZONFIRE", "ZONGLYPH", "NPCTHESH"]
+PALETTES = {"ara": "ara_textures.pcx", "tar": "tar_textures.pcx", "ver": "ver_textures.pcx",
+            "zon": "zon_textures.pcx", "npc": "npc_textures.pcx"}
+
+
+def find_texture(data_dir, name):
+    """The texture archive holding a texture, and the texture's entry."""
+    folder = os.path.join(data_dir, "data", "textures")
+    for fn in sorted(os.listdir(folder)):
+        if fn.lower().endswith(".gaf"):
+            d, entries = extract.gaf_entries(os.path.join(folder, fn))
+            for k, v in entries.items():
+                if k.lower() == name.lower():
+                    return d, v
+    raise KeyError(name)
 
 
 # built by hand where carving cannot find the shape
@@ -58,12 +69,12 @@ def cards(b, off=0):
 def main(data_dir, out_dir):
     os.makedirs(os.path.join(out_dir, "sprites"), exist_ok=True)
     rows = []
-    for obj, (archive, pal_name) in LODES.items():
+    for obj in LODES:
+        pal_name = PALETTES[obj[:3].lower()]
         b = open(os.path.join(data_dir, "data", "objects3d", obj.lower() + ".3do"), "rb").read()
         # the stone is the tallest card; the logo plates and skulls are small
         piece, tex, quad = max(cards(b), key=lambda c: max(p[1] for p in c[2]) - min(p[1] for p in c[2]))
-        d, entries = extract.gaf_entries(os.path.join(data_dir, "data", "textures", archive + ".gaf"))
-        f = next(v for k, v in entries.items() if k.lower() == tex.lower())
+        d, f = find_texture(data_dir, tex)
         pal = extract.palette(os.path.join(data_dir, "data", "palettes", pal_name))
         idx = extract.decode(d, f)
         # textures mark their clear pixels with the colour in the corner
@@ -84,7 +95,7 @@ def main(data_dir, out_dir):
         hy = round(span + bot[2] - bot[1] * 0.5)
         pic.save(os.path.join(out_dir, "sprites", obj + ".png"))
         rows.append({
-            "name": obj, "world": obj[:3].lower(), "description": "Lodestone", "category": "lodestone",
+            "name": obj, "world": obj[:3].lower(), "description": "Painted card", "category": "card",
             "piece": piece, "texture": tex, "footprint": [2, 2],
             "height": round(top[1]), "sprite": {"w": pic.width, "h": pic.height, "hotspot": [hx, hy]},
             "shape": SHAPES.get(obj, "lode"), "maps": 0, "status": "sprite",
