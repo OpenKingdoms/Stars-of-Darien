@@ -380,7 +380,10 @@ namespace OpenKingdomsUnity.Engine
             {
                 if (tick != f.Tick)
                 {
-                    f.Speed = new Vector2(u.x - f.X, u.z - f.Z).magnitude * S * tps / Mathf.Max(1u, tick - f.Tick);
+                    // Whole pixels a tick, so smoothed over about eight ticks.
+                    uint ticks = Math.Max(1u, tick - f.Tick);
+                    float now = new Vector2(u.x - f.X, u.z - f.Z).magnitude * S * tps / ticks;
+                    f.Speed += (now - f.Speed) * (1f - Mathf.Exp(-ticks / 8f));
                     if (alt < f.Alt - 0.01f) f.Down = true;
                     else if (alt > f.Alt + 0.01f) f.Down = false;
                     f.Tick = tick; f.X = u.x; f.Z = u.z; f.Alt = alt;
