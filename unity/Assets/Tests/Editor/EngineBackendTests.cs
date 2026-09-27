@@ -27,8 +27,11 @@ namespace OpenKingdomsUnity.Tests
         static SkirmishSetup TwoCastles()
         {
             var s = new SkirmishSetup { MapId = "two castles", Seed = 7, LineOfSight = false, MapRevealed = true };
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = "ARAMON", Colour = 0, Team = 1 });
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "TAROS", Colour = 1, Team = 2 });
+            // As GameRoot's default lineup has it: teams from 0, closed seats after.
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = "ARAMON", Colour = 0, Team = 0 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "TAROS", Colour = 1, Team = 1 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 4, Team = 2 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 5, Team = 3 });
             return s;
         }
 
@@ -56,7 +59,11 @@ namespace OpenKingdomsUnity.Tests
             for (; pumps < 5000 && !p.Done && !p.Failed; pumps++) p = backend.PumpLoading();
             Assert.Greater(pumps, 2, "the load comes in slices");
             Assert.IsTrue(p.Done, p.Error);
+            // Two sides on teams 0 and 1 are enemies, so nobody has won yet.
             Assert.AreEqual(GameStatus.Running, backend.Status);
+            backend.Advance(30);
+            Assert.AreEqual(GameStatus.Running, backend.Status);
+            Assert.AreNotEqual(backend.Players[0].Team, backend.Players[1].Team);
             var t = backend.Terrain;
             Assert.IsNotNull(t);
             Assert.AreEqual(1f, t.CellSize);
