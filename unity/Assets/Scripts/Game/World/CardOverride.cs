@@ -15,6 +15,8 @@ namespace OpenKingdomsUnity.Game.World
     public sealed class CardOverride
     {
         public const string Folder = OverrideIndex.Root + "/Generated/Units";
+        // A hand-made card, Units/<OBJECT>.glb with its keys in <OBJECT>.json, beats a generated one.
+        public const string HandMadeFolder = OverrideIndex.Root + "/Units";
 
         public OverrideModel Model;
         public string ReplacesPiece = "", ReplacesTexture = "";
@@ -35,7 +37,8 @@ namespace OpenKingdomsUnity.Game.World
             if (string.IsNullOrEmpty(objectName)) return null;
             if (cache.TryGetValue(objectName, out var c)) return c;
             c = null;
-            string path = Path.Combine(OverrideLoader.ProjectDir, Folder, objectName.ToUpperInvariant() + ".glb");
+            string path = Path.Combine(OverrideLoader.ProjectDir, HandMadeFolder, objectName.ToUpperInvariant() + ".glb");
+            if (!File.Exists(path) || !File.Exists(Path.ChangeExtension(path, ".json"))) path = Path.Combine(OverrideLoader.ProjectDir, Folder, objectName.ToUpperInvariant() + ".glb");
             if (!File.Exists(path)) path = Path.Combine(OverrideLoader.ProjectDir, Folder, objectName + ".glb");
             if (File.Exists(path))
             {
@@ -50,10 +53,24 @@ namespace OpenKingdomsUnity.Game.World
                         ReplacesPiece = extras != null ? extras.ReplacesPiece ?? "" : "",
                         ReplacesTexture = extras != null ? extras.ReplacesTexture ?? "" : "",
                     };
+                    ReadSidecar(Path.ChangeExtension(path, ".json"), c);
                 }
             }
             cache[objectName] = c;
             return c;
+        }
+
+        // The sidecar's keys win over the glb's extras.
+        static void ReadSidecar(string path, CardOverride c)
+        {
+            if (!File.Exists(path)) return;
+            try
+            {
+                var o = MiniJson.Parse(File.ReadAllText(path));
+                c.ReplacesPiece = MiniJson.Text(o, "replacesPiece", c.ReplacesPiece) ?? "";
+                c.ReplacesTexture = MiniJson.Text(o, "replacesTexture", c.ReplacesTexture) ?? "";
+            }
+            catch (Exception e) { Debug.LogWarning($"Unit override sidecar {path} was not read: {e.Message}"); }
         }
 
         public static void Forget() => cache.Clear();

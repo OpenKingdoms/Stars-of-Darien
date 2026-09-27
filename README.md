@@ -29,6 +29,8 @@ A small real-time battle on a 64 by 64 map, with every rule decided by the C cor
 
 ## Getting started
 
+Artists who only want to try models in the game need none of the steps below. `docs/STUDIO_MODE.md` covers cloning, Unity and Studio Mode.
+
 1. Run `scripts/build-core.sh`. It needs CMake and a C compiler (Visual Studio on Windows). Set `OKCORE_BUILD` to put the build tree elsewhere.
 2. Open `unity/` in Unity Hub with Unity 6 LTS. Hub will offer to pick the editor version on first open.
 3. Press Play in any scene. The game builds itself. `docs/ITERATE.md` lists the controls.

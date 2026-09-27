@@ -1,0 +1,3 @@
+okengine-api17.dll  okengine API 17, from the OpenKingdoms branch unity-embed at 548905f, published for openkingdoms-unity main 93aadb1
+okcore-abi2.dll     okcore ABI 2, built from core/ at 93aadb1
+SDL2.dll            SDL 2, the build okengine links against (zlib license)

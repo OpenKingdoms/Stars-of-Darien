@@ -52,6 +52,19 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AUnitModelWithASidecarIsACardNotTheWholeUnit()
+        {
+            var i = OverrideIndex.Build(new[]
+            {
+                "Assets/Overrides/Units/ARALODE.glb", "Assets/Overrides/Units/ARALODE.json",
+                "Assets/Overrides/Units/araking.glb", "Assets/Overrides/Features/tree.json", "Assets/Overrides/Features/tree.glb",
+            });
+            Assert.IsNull(i.Find(OverrideKind.Unit, "aralode"), "a card replaces one piece, drawn by CardOverride");
+            Assert.AreEqual("Assets/Overrides/Units/araking.glb", i.Find(OverrideKind.Unit, "ARAKING"));
+            Assert.AreEqual("Assets/Overrides/Features/tree.glb", i.Find(OverrideKind.Feature, "tree"), "only unit models have card sidecars");
+        }
+
+        [Test]
         public void OtherFilesAndFoldersAreIgnored()
         {
             var i = OverrideIndex.Build(new[]

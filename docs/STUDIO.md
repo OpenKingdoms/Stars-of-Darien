@@ -1,6 +1,8 @@
 # Studio
 
-The studio is the set of tools inside the Unity editor for looking at the game's content and replacing it. Everything here works on `IGameBackend`, so it runs on the real engine when `okengine.dll` and your game files are present, and on the mock engine when they are not.
+The studio is the set of tools inside the Unity editor for looking at the game's content and replacing it. Everything here works on `IGameBackend`, so it runs on the real engine when `okengine.dll` and your game files are present, and on the mock engine when they are not. A fresh clone gets `okengine.dll` from `engine/` when the editor starts (see `engine/README.md`), and OpenKingdoms, then Settings, says which engine runs and where it looks for the game.
+
+For artists, Studio Mode puts all of this in one place. `docs/STUDIO_MODE.md` is its guide.
 
 ## Playing the remaster
 
@@ -15,6 +17,9 @@ A model dropped into one of these folders replaces the original at load, with no
 | `unity/Assets/Overrides/Units/` | Hand-made unit models, named after the unit | Yes |
 | `unity/Assets/Overrides/Features/` | Hand-made feature models, named after the feature | Yes |
 | `unity/Assets/Overrides/Generated/` | Feature models made on your own machine from your own sprites by `tools/sprite-replace/batch.py` | Never, it is in `.gitignore` |
+| `unity/Assets/Overrides/Drop/` | Models Studio Mode is trying out, not read by the game | Never, it is in `.gitignore` |
+
+A unit model with a `.json` of the same name beside it in `Units` (`ARALODE.glb` and `ARALODE.json`) is a card model. It replaces only the piece named by `replacesPiece` in the JSON, with `replacesTexture` its texture, and the unit keeps its other pieces. Studio Mode writes both files for a unit card.
 
 The file name is what counts, in any case: `araking.glb` replaces the unit or model named AraKing, and `AraTree01.glb` replaces the feature AraTree01. A unit is looked up by its unit name first and then by its model name. A feature is looked up by its name, then its sprite sequence name, then its model name.
 
@@ -36,9 +41,13 @@ Plain lit materials work best: a base colour texture, no emission. Transparent p
 
 `.glb` files are read by the game's own loader (`GlbLoader`), in the editor and in a built game alike, with no extra package. `.fbx` and `.prefab` files load through Unity's asset database, so they work in the editor only for now. The engine has its own loader for shipped or modded builds, which reads `.glb` files from `unity/Assets/StreamingAssets/Overrides/` under the same names. Use the `Overrides` folders above while you iterate in the editor.
 
+## Studio Mode
+
+OpenKingdoms, then Studio Mode, opens a scene of its own (`Assets/Scenes/Studio.unity`, made on first use and never committed) with the remaster's sky, sun, weather and sea over a neutral island or a map's own ground, and docks the Studio View, the Studio panel and Studio Drop. A model dropped on it stands on a turntable beside a monarch and the original it replaces, with the footprint, the anchor, the classic and free views and a ghost of the original. The panel checks the model, fixes its size, anchor and turn, writes it into `Overrides` with Use in game and starts a battle with Play here. The code is in `unity/Assets/Game/Editor/StudioMode`, and `docs/STUDIO_MODE.md` is the guide.
+
 ## Studio windows
 
-All three live under OpenKingdoms, then Studio. They share one backend in edit mode, the engine when it and your game files are present and the mock otherwise. The Use mock button in their toolbar switches. The backend is let go before Play, since the engine runs one game at a time, and comes back afterwards.
+The browsers live under OpenKingdoms, then Studio. They share one backend in edit mode, the engine when it and your game files are present and the mock otherwise. The Use mock button in their toolbar switches. The backend is let go before Play, since the engine runs one game at a time, and comes back afterwards.
 
 The Unit Browser lists every unit the backend knows, filtered by kingdom or by a search. The selected unit turns on a turntable in the team colour you pick. Drag to turn it yourself and use the wheel to zoom. When the unit has script animations, pick one and it plays, posed by the engine's own unit script. The panel under the preview lists the model's pieces, which are the names a drop-in model's nodes can use to follow them.
 

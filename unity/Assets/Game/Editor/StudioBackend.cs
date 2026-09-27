@@ -64,7 +64,7 @@ namespace OpenKingdomsUnity.Studio
             var type = Type.GetType("OpenKingdomsUnity.Engine.EngineBackend, OpenKingdomsUnity.Engine");
             if (settings == null || type == null) { Problem = "The engine binding is not in this project."; return null; }
             var available = settings.GetProperty("EngineAvailable")?.GetValue(null) as bool?;
-            if (available != true) { Problem = "okengine.dll or the game files are missing, so the mock engine runs."; return null; }
+            if (available != true) { Problem = SettingsWindow.Summary(out _) + " See OpenKingdoms > Settings."; return null; }
             try { return (IGameBackend)Activator.CreateInstance(type); }
             catch (Exception e)
             {

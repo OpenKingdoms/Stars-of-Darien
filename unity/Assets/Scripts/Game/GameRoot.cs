@@ -108,6 +108,10 @@ namespace OpenKingdomsUnity.Game
         // game starts straight on it, skipping the menus.
         public const string AutoStartKey = "oku.autostart.map";
 
+        // For the studio's Play here: AutoStarting may change the setup of
+        // an auto-started game, and WorldLoaded runs once a world is built.
+        public static Action<GameRoot> AutoStarting, WorldLoaded;
+
         void Start()
         {
             string map = PlayerPrefs.GetString(AutoStartKey, "");
@@ -119,6 +123,7 @@ namespace OpenKingdomsUnity.Game
                 if (m.Id != map) continue;
                 Flow.Fire(FlowEvent.OpenSkirmish);
                 Setup.MapId = map;
+                AutoStarting?.Invoke(this);
                 Screens.StartGame();
                 return;
             }
@@ -251,6 +256,7 @@ namespace OpenKingdomsUnity.Game
                         World.Build(CurrentMap(), Options);
                         input = new OrderInput(Backend, World, Options.ClassicControls);
                         Flow.Fire(FlowEvent.Loaded);
+                        WorldLoaded?.Invoke(this);
                     }
                     break;
                 case FlowState.Playing:

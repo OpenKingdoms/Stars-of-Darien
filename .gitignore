@@ -24,3 +24,11 @@ unity/Assets/Resources.meta
 unity/Assets/Overrides/Generated/
 unity/Assets/Overrides/Generated.meta
 __pycache__/
+
+# Studio Mode: its scene is made on first use, and dropped models and
+# screenshots stay on the artist's machine
+unity/Assets/Scenes/Studio.unity
+unity/Assets/Scenes/Studio.unity.meta
+unity/Assets/Overrides/Drop/
+unity/Assets/Overrides/Drop.meta
+Captures/

@@ -14,7 +14,25 @@ namespace OpenKingdomsUnity.Engine
         public const string DefaultGameDir = "C:/GOG Games/Total Annihilation Kingdoms";
         public const string DefaultDataDir = "C:/Projects/TAK-RE/data/extracted";
 
-        public static string GameDir => FromEnv("OK_GAME_DIR", DefaultGameDir);
+        // OpenKingdoms > Settings in the editor can name another folder, and
+        // OK_GAME_DIR still wins over it.
+        public const string GameDirPref = "oku.gameDir";
+        public static string GameDir => FromEnv("OK_GAME_DIR", EditorGameDir() ?? DefaultGameDir);
+
+        static string EditorGameDir()
+        {
+#if UNITY_EDITOR
+            string d = UnityEditor.EditorPrefs.GetString(GameDirPref, "");
+            return string.IsNullOrEmpty(d) ? null : d;
+#else
+            return null;
+#endif
+        }
+
+        // Why the engine must not be called this session, or null. The
+        // editor's engine installer sets it when Unity has another API
+        // version of okengine loaded, which only a restart replaces.
+        public static string Blocked;
         public static string DataDir
         {
             get
@@ -32,7 +50,7 @@ namespace OpenKingdomsUnity.Engine
 
         // The engine can run when its library and the game files are here.
         public static bool EngineAvailable =>
-            File.Exists(Path.Combine(PluginDir, "okengine.dll")) && Directory.Exists(GameDir);
+            Blocked == null && File.Exists(Path.Combine(PluginDir, "okengine.dll")) && Directory.Exists(GameDir);
 
         // Destroy in play, DestroyImmediate in the editor.
         public static void Release(UnityEngine.Object o)
