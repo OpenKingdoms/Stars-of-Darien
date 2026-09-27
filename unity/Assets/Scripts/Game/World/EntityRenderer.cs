@@ -52,6 +52,40 @@ namespace OpenKingdomsUnity.Game.World
         Mesh flat;
         Material ghostGood, ghostBad;
 
+        // Lines from selected units to where their orders take them.
+        Material lineMove, lineAttack, lineBuild, linePatrol;
+        readonly Dictionary<int, Vector3> positions = new Dictionary<int, Vector3>();
+
+        void AddOrderLines()
+        {
+            if (Selected.Count == 0 || Selected.Count > 60) return;
+            positions.Clear();
+            for (int i = 0; i < UnitCount; i++) positions[Units[i].Handle] = Units[i].Position;
+            foreach (int h in Selected)
+            {
+                if (!positions.TryGetValue(h, out var from)) continue;
+                var o = backend.ReadOrder(h);
+                Material mat;
+                switch (o.Kind)
+                {
+                    case OrderKind.Move: mat = lineMove; break;
+                    case OrderKind.Attack: case OrderKind.AttackGround: mat = lineAttack; break;
+                    case OrderKind.Build: case OrderKind.Repair: mat = lineBuild; break;
+                    case OrderKind.Patrol: case OrderKind.Guard: mat = linePatrol; break;
+                    default: continue;
+                }
+                Vector3 to = o.Target;
+                if (o.TargetUnit >= 0 && positions.TryGetValue(o.TargetUnit, out var tp)) to = tp;
+                else if (o.Building >= 0 && positions.TryGetValue(o.Building, out var bp)) to = bp;
+                var d = to - from;
+                d.y = 0;
+                if (d.magnitude < 0.5f) continue;
+                var mid = (from + to) * 0.5f + Vector3.up * 0.08f;
+                overlay.Add(flat, 0, mat, Matrix4x4.TRS(mid, Quaternion.LookRotation(d.normalized), new Vector3(0.08f, 1, d.magnitude)));
+                overlay.Add(ring, 0, mat, Matrix4x4.TRS(to + Vector3.up * 0.08f, Quaternion.identity, new Vector3(0.35f, 1, 0.35f)));
+            }
+        }
+
         void AddGhost()
         {
             if (Ghost == null) return;
@@ -94,6 +128,10 @@ namespace OpenKingdomsUnity.Game.World
             flat = Keep(FlatQuad());
             ghostGood = Keep(Looks.Overlay(new Color(0.3f, 1f, 0.35f, 0.35f)));
             ghostBad = Keep(Looks.Overlay(new Color(1f, 0.25f, 0.2f, 0.4f)));
+            lineMove = Keep(Looks.Overlay(new Color(0.4f, 1f, 0.4f, 0.55f)));
+            lineAttack = Keep(Looks.Overlay(new Color(1f, 0.3f, 0.25f, 0.6f)));
+            lineBuild = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.3f, 0.6f)));
+            linePatrol = Keep(Looks.Overlay(new Color(0.4f, 0.7f, 1f, 0.55f)));
             shaftMat = Keep(Looks.Model(null));
             shaftMat.color = new Color(0.35f, 0.25f, 0.15f);
         }
@@ -122,6 +160,7 @@ namespace OpenKingdomsUnity.Game.World
             }
 
             AddGhost();
+            AddOrderLines();
             solid.Draw();
             billboards.Draw();
             overlay.Draw();
