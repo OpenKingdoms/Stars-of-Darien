@@ -65,6 +65,7 @@ namespace OpenKingdomsUnity.Game.World
 
             SetWeather(GameOptions.Resolve(weather, climate));
             BuildPost(climate);
+            BuildReflections(mapSize);
         }
 
         // Bloom, colour grading, tonemapping and a soft vignette, under URP.
@@ -93,6 +94,28 @@ namespace OpenKingdomsUnity.Game.World
             post.transform.SetParent(root.transform, false);
             post.isGlobal = true;
             post.sharedProfile = profile;
+        }
+
+        // The sky as every model's reflections, so metals and gems read as
+        // metal and gem. One probe renders only the sky, a face a frame, so
+        // it follows the sun and the weather for next to nothing.
+        public ReflectionProbe Reflections { get; private set; }
+
+        void BuildReflections(float mapSize)
+        {
+            Reflections = new GameObject("Sky reflections").AddComponent<ReflectionProbe>();
+            Reflections.transform.SetParent(root.transform, false);
+            Reflections.transform.position = new Vector3(mapSize / 2, 0, -mapSize / 2);
+            Reflections.mode = ReflectionProbeMode.Realtime;
+            Reflections.refreshMode = ReflectionProbeRefreshMode.EveryFrame;
+            Reflections.timeSlicingMode = ReflectionProbeTimeSlicingMode.IndividualFaces;
+            Reflections.clearFlags = ReflectionProbeClearFlags.Skybox;
+            Reflections.cullingMask = 0;
+            Reflections.resolution = 128;
+            Reflections.hdr = true;
+            Reflections.size = Vector3.one * 100000f;
+            Reflections.intensity = 1f;
+            Reflections.importance = 0;
         }
 
         public void SetPostEffects(bool on, Camera cam)

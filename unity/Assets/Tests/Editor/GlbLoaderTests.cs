@@ -63,7 +63,7 @@ namespace OpenKingdomsUnity.Tests
 
         // A triangle with a vertex colour and a material using a picture
         // whose texels are all clear, in the given alpha mode.
-        static byte[] Painted(string alphaMode)
+        static byte[] Painted(string alphaMode, string extra = "")
         {
             var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             tex.SetPixels32(new[] { new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0) });
@@ -80,7 +80,7 @@ namespace OpenKingdomsUnity.Tests
             string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}]," +
                 "\"nodes\":[{\"name\":\"tri\",\"mesh\":0}]," +
                 "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"COLOR_0\":1,\"TEXCOORD_0\":2},\"material\":0}]}]," +
-                "\"materials\":[{" + mat + "\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
+                "\"materials\":[{" + mat + extra + "\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
                 "\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}]," +
                 $"\"buffers\":[{{\"byteLength\":{bin.Count}}}]," +
                 "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}," +
@@ -128,6 +128,67 @@ namespace OpenKingdomsUnity.Tests
             {
                 var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
                 Assert.AreEqual(0.3f, mat.GetFloat("_Cutoff"), 1e-4f);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void AnEmissiveMaterialGlowsAtItsStrength()
+        {
+            string extra = "\"emissiveFactor\":[1,0.5,0.25],\"emissiveTexture\":{\"index\":0}," +
+                "\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":4}},";
+            var root = GlbLoader.Load(Painted("OPAQUE", extra), "glowing", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.IsTrue(mat.IsKeywordEnabled("_EMISSION"), "emission is on");
+                var c = mat.GetVector("_EmissionColor");
+                Assert.AreEqual(4f, c.x, 1e-4f, "factor times strength, bright enough to bloom");
+                Assert.AreEqual(2f, c.y, 1e-4f);
+                Assert.AreEqual(1f, c.z, 1e-4f);
+                Assert.IsNotNull(mat.GetTexture("_EmissionMap"), "with its map");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void ABlendedMaterialIsTransparent()
+        {
+            var root = GlbLoader.Load(Painted("BLEND"), "halo", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.GreaterOrEqual(mat.renderQueue, (int)UnityEngine.Rendering.RenderQueue.Transparent);
+                Assert.AreEqual((float)UnityEngine.Rendering.BlendMode.SrcAlpha, mat.GetFloat("_SrcBlend"));
+                Assert.AreEqual((float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha, mat.GetFloat("_DstBlend"));
+                Assert.AreEqual(0f, mat.GetFloat("_ZWrite"), "writes no depth");
+                Assert.IsFalse(mat.GetShaderPassEnabled("ShadowCaster"), "casts no shadow");
+                var opaque = GlbLoader.Load(Painted("OPAQUE"), "solid", out _);
+                var om = opaque.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.Less(om.renderQueue, (int)UnityEngine.Rendering.RenderQueue.Transparent, "an opaque one stays solid");
+                Assert.AreEqual(1f, om.GetFloat("_ZWrite"));
+                UnityEngine.Object.DestroyImmediate(opaque);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void MetalRoughnessAndClearCoatAreLitPhysically()
+        {
+            string extra = "\"extensions\":{\"KHR_materials_clearcoat\":{\"clearcoatFactor\":0.7,\"clearcoatRoughnessFactor\":0.1}},";
+            var root = GlbLoader.Load(Painted("OPAQUE", extra), "gilt", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.IsTrue(mat.IsKeywordEnabled("_OKU_PBR"), "lit as URP's Lit is");
+                Assert.AreEqual(1f, mat.GetFloat("_Metallic"), 1e-4f, "glTF's default is fully metal");
+                Assert.AreEqual(0f, mat.GetFloat("_Smoothness"), 1e-4f, "and fully rough");
+                Assert.IsTrue(mat.IsKeywordEnabled("_CLEARCOAT"));
+                Assert.AreEqual(0.7f, mat.GetFloat("_ClearCoat"), 1e-4f);
+                Assert.AreEqual(0.9f, mat.GetFloat("_ClearCoatSmoothness"), 1e-4f);
             }
             finally { UnityEngine.Object.DestroyImmediate(root); }
         }
