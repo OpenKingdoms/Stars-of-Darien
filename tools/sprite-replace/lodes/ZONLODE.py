@@ -31,8 +31,10 @@ PY = -0.48            # posts, rope and orb share this plane
 PX = 1.344            # post centres
 PR = 0.285            # post radius
 PH = 5.95             # post height at the rim
-ORB_C = Vector((0.0, PY, 2.85))
-ORB_R = 0.71
+ORB_C0, ORB_R0 = Vector((0.0, PY, 2.85)), 0.71   # the orb as the picture draws it
+ORB_R = 0.89                         # a quarter bigger than the picture's
+ORB_C = Vector((0.0, PY, 2.72))      # lowered so the collar and crest keep their height
+K = ORB_R / ORB_R0
 TILT = math.radians(30)   # the orb's crown leans back toward the classic camera's up
 POLE = Vector((0.0, math.sin(TILT), math.cos(TILT)))
 BACK = POLE.cross(Vector((1, 0, 0)))  # completes the orb frame (x, BACK, POLE)
@@ -385,26 +387,42 @@ def orb_point(psi, theta, r=ORB_R):
                     * math.sin(theta)) * r
 
 
-ORB_SEG, ORB_RINGS = 48, 24
+ORB_SEG, ORB_RINGS = 64, 32
 OCX, OCY = zk.screen(ORB_C, HOT)   # the orb's centre in the picture
-GLINT = (24.8, 30.3, 2.6, 4.4)     # the burnished spot: picture x, row and its half-sizes in px
+OCX0, OCY0 = zk.screen(ORB_C0, HOT)
 RPX = ORB_R * 16
 
 
-def glint(P, N, cap_only=False):
-    """The burnished glint on the upper left front and its fainter streak
-    running down under it (or with cap_only the gleam along the collar's
-    lower left), for points P with normals N (arrays)."""
+def pic(x, row):
+    """A mark placed on the picture's orb, carried onto the bigger one."""
+    return OCX + (x - OCX0) * K, OCY + (row - OCY0) * K
+
+
+GLINT = (*pic(24.6, 30.0), 1.3 * K, 2.1 * K)   # the hot spot: picture x, row and its half-sizes in px
+
+
+def glint(P, N, cap_only=False, parts=False):
+    """The hot spot on the upper left front: a hard white core in a soft
+    bloom, with a thin streak running down under it (or with cap_only the
+    gleam along the collar's lower left), for points P with normals N
+    (arrays). With parts, the core, bloom and streak come back apart."""
     sx = HOT[0] + 16 * P[..., 0]
     sy = HOT[1] - (zk.SY * P[..., 1] + zk.SZ * P[..., 2])
     gx, gy, rx, ry = GLINT
     front = smoothstep(0.1, 0.35, N @ np.array(-zk.VIEW))
-    core = np.exp(-((sx - gx) / rx) ** 2 - ((sy - gy) / ry) ** 2)
-    tail = 0.5 * np.exp(-((sx - gx + 1.4) / (rx * 0.8)) ** 2 - ((sy - gy - 5.5) / (ry * 1.0)) ** 2)
-    cap = 0.85 * np.exp(-((sx - 21.2) / 2.2) ** 2 - ((sy - 26.8) / 1.3) ** 2)  # along the collar's lower left
+    d = np.sqrt(((sx - gx) / rx) ** 2 + ((sy - gy) / ry) ** 2)
+    core = (1 - smoothstep(0.5, 0.95, d)) * front
+    bloom = np.exp(-(d / 2.4) ** 2) * front
+    tx, ty = pic(23.9, 35.2)
+    dt = np.sqrt(((sx - tx) / (0.75 * K)) ** 2 + ((sy - ty) / (3.4 * K)) ** 2)
+    tail = 0.6 * (1 - smoothstep(0.35, 1.0, dt)) * front
+    if parts:
+        return core, bloom, tail
+    cx, cy = pic(21.2, 26.8)
+    cap = 0.85 * np.exp(-((sx - cx) / (2.2 * K)) ** 2 - ((sy - cy) / (1.3 * K)) ** 2)
     if cap_only:
         return cap * front
-    return np.maximum(core, tail) * front
+    return np.clip(np.maximum(core + 0.4 * bloom, tail), 0, 1)
 
 
 def orb(mat):
@@ -418,10 +436,12 @@ def orb(mat):
     return zk.smooth(zk.make("orb", bm, [mat]), 80)
 
 
-def orb_paint(W=256, H=128):
-    """Old bronze: dark oxidised brown over most of it, cleaner brass on the
-    upper left with a burnished glint, a few red-violet patina specks on the
-    right. Returns colour, metal-rough, emission and height."""
+def orb_paint(W=512, H=256):
+    """Polished bronze: a dark ground reflected round the lower rim under a
+    soft horizon, a bright band of sky just above it fading to a warm mid
+    tone over the crown, a hard hot spot on the upper left, a warm rim light
+    low on the right and a faint glow from within. Returns colour,
+    metal-rough, emission and height."""
     u = (np.arange(W) + 0.5) / W
     v = (np.arange(H) + 0.5) / H
     U, V = np.meshgrid(u, v)
@@ -436,37 +456,53 @@ def orb_paint(W=256, H=128):
     Q = n * 3.0
     blot = nz.fbm(Q[..., 0], Q[..., 1], Q[..., 2], 4)
     fine = nz.fbm(Q[..., 0] * 7, Q[..., 1] * 7, Q[..., 2] * 7 + 5, 3)
-    pit = nz.value(Q[..., 0] * 30, Q[..., 1] * 30, Q[..., 2] * 30 + 9)
-    # brass left clean on the upper left, oxidised toward the lower right and underneath
-    clean = smoothstep(-0.05, 0.75, -0.8 * sx + 0.7 * sy + 0.35 * (blot - 0.5)) * smoothstep(-0.2, 0.3, facing)
-    ox = smoothstep(-0.35, 0.45, 0.9 * sx - 0.5 * sy + 0.5 * (blot - 0.5))
-    c = np.broadcast_to(rgb((74, 54, 28)), n.shape).copy()
-    c = mix(c, rgb((136, 116, 70)), clean * 0.85)
-    c = mix(c, rgb((62, 42, 18)), ox * 0.9)
-    # darker still just right of the strap, as the picture's dark reflection there
-    shade = np.exp(-((sx - 0.24) / 0.22) ** 2 - ((sy + 0.02) / 0.5) ** 2) * smoothstep(0.0, 0.3, facing)
-    c = c * (1 - 0.55 * shade)[..., None]
-    c = mix(c, rgb((36, 27, 15)), smoothstep(0.72, 0.9, pit) * ox * 0.7)
-    # red-violet patina specks on the right half
-    spk = nz.value(Q[..., 0] * 11 + 40, Q[..., 1] * 11, Q[..., 2] * 11)
-    m_s = smoothstep(0.76, 0.86, spk) * smoothstep(0.0, 0.3, sx) * smoothstep(0.35, 0.6, blot)
-    c = mix(c, rgb((88, 52, 62)), m_s * 0.8)
-    c = c * (0.93 + 0.14 * fine)[..., None]
-    g = glint(P, n)
-    # a broad sheen round the glint, fading to the dark left edge
+    # the world as a camera at the classic elevation facing each point would see it reflected
+    # there, so the horizon runs round the orb as a level ring
+    ce, se = math.cos(zk.E), math.sin(zk.E)
+    nh = np.sqrt(np.clip(1 - n[..., 2] ** 2, 0, 1))
+    rz = -se + 2 * (ce * nh + se * n[..., 2]) * n[..., 2]
+    lit = smoothstep(-0.6, 0.8, -0.75 * sx + 0.65 * sy + 0.25 * (blot - 0.5))   # the picture's light, upper left
+    ground = mix(rgb((34, 20, 8)), rgb((84, 54, 22)), smoothstep(-0.9, -0.1, rz))
+    sky = mix(rgb((238, 196, 114)), rgb((196, 142, 66)), smoothstep(0.05, 0.3, rz))
+    sky = mix(sky, rgb((150, 102, 44)), smoothstep(0.35, 0.9, rz))
+    sky = sky * (0.7 + 0.45 * lit)[..., None]
+    c = mix(ground, sky, smoothstep(-0.12, 0.1, rz + 0.06 * (fine - 0.5)))
+    # a broad warm sheen round the hot spot
     sxp, syp = HOT[0] + 16 * P[..., 0], HOT[1] - (zk.SY * P[..., 1] + zk.SZ * P[..., 2])
-    halo = np.exp(-((sxp - 23.0) / 4.0) ** 2 - ((syp - 31.5) / 6.0) ** 2) * smoothstep(0.1, 0.4, facing)
-    c = mix(c, rgb((150, 142, 104)), halo * 0.45)
-    c = mix(c, rgb((238, 236, 206)), np.clip(g * 1.25, 0, 1))
-    rough = 0.34 - 0.14 * clean + 0.36 * ox - 0.1 * g + 0.15 * shade
-    metal = 0.55 + 0.1 * clean - 0.3 * ox
+    hx, hy = pic(23.0, 31.5)
+    halo = np.exp(-((sxp - hx) / (4.0 * K)) ** 2 - ((syp - hy) / (6.0 * K)) ** 2) * smoothstep(0.1, 0.4, facing)
+    c = mix(c, rgb((222, 184, 110)), halo * 0.45)
+    # darker right of the strap, as the picture's dark reflection there
+    shade = np.exp(-((sx - 0.34) / 0.15) ** 2 - ((sy + 0.02) / 0.45) ** 2) * smoothstep(0.0, 0.3, facing)
+    c = c * (1 - 0.45 * shade)[..., None]
+    # a faint tarnish and the red-violet specks on the right, kept from the old bronze
+    ox = smoothstep(0.1, 0.8, 0.9 * sx - 0.5 * sy + 0.5 * (blot - 0.5))
+    c = mix(c, rgb((60, 38, 16)), ox * 0.25)
+    spk = nz.value(Q[..., 0] * 11 + 40, Q[..., 1] * 11, Q[..., 2] * 11)
+    m_s = smoothstep(0.78, 0.86, spk) * smoothstep(0.0, 0.3, sx) * smoothstep(0.35, 0.6, blot)
+    c = mix(c, rgb((110, 58, 70)), m_s * 0.45)
+    # warm light thrown back up onto the lower right rim
+    toward = (0.6 * sx - 0.8 * sy) / np.maximum(np.hypot(sx, sy), 1e-6)
+    rim = smoothstep(0.03, 0.12, facing) * (1 - smoothstep(0.24, 0.4, facing)) * smoothstep(0.5, 0.9, toward)
+    c = mix(c, rgb((240, 158, 74)), rim * 0.85)
+    # the hot spot: white in its hard core, golden where it blooms and down its streak
+    core, bloom, streak = glint(P, n, parts=True)
+    g = np.clip(np.maximum(core + 0.4 * bloom, streak), 0, 1)
+    c = mix(c, rgb((246, 212, 136)), np.clip(0.9 * bloom + streak, 0, 1))
+    c = mix(c, rgb((255, 248, 222)), core)
+    rough = 0.12 + 0.05 * ox + 0.03 * shade - 0.05 * g
+    metal = 0.7 - 0.1 * ox
     mr = np.stack([np.zeros_like(rough), rough, metal], axis=-1)
-    emit = rgb((255, 250, 232)) * smoothstep(0.35, 1.0, g)[..., None]
-    h = 0.0015 * fine - 0.002 * smoothstep(0.72, 0.9, pit) * ox
+    # the hot spot burns white; a faint amber glow from within fills the face
+    glow = smoothstep(0.3, 1.0, facing) ** 2 * (1 - 0.8 * core)
+    emit = (rgb((255, 244, 214)) * core[..., None] + rgb((255, 200, 110)) * (0.22 * bloom + 0.35 * streak)[..., None]
+            + rgb((255, 140, 50)) * (0.2 * glow)[..., None]
+            + rgb((255, 150, 70)) * (0.06 * rim)[..., None])
+    h = 0.0003 * fine
     return c, mr, emit, h
 
 
-def bronze_material(name, col, mr, emit, emit_strength, nimg=None, nstrength=1.0):
+def bronze_material(name, col, mr, emit, emit_strength, nimg=None, nstrength=1.0, spec=0.2):
     """Colour, metal-rough (green rough, blue metal, as glTF packs them) and
     emission textures on one set of UVs."""
     m = zk.tex_mat(name, col, nimg=nimg, nstrength=nstrength)
@@ -486,7 +522,7 @@ def bronze_material(name, col, mr, emit, emit_strength, nimg=None, nstrength=1.0
         nt.links.new(uvn.outputs["UV"], te.inputs["Vector"])
         nt.links.new(te.outputs["Color"], b.inputs["Emission Color"])
         b.inputs["Emission Strength"].default_value = emit_strength
-    b.inputs["Specular IOR Level"].default_value = 0.2  # keeps the dull patina from greying
+    b.inputs["Specular IOR Level"].default_value = spec  # low keeps a dull patina from greying
     return m
 
 
@@ -531,7 +567,7 @@ def strap_paint(psi, t0, t1, fade, W=256):
     c = np.where((k < 0.5)[..., None], mix(gold, mid, k * 2), mix(mid, pat, k * 2 - 1))
     g = glint(P, n)
     c = mix(c, rgb((246, 244, 222)), np.clip(g * 1.3, 0, 1))
-    rough = 0.3 + 0.35 * k
+    rough = 0.22 + 0.33 * k
     metal = 0.5 - 0.2 * k
     mr = np.stack([np.zeros_like(rough), rough, metal], axis=-1)
     emit = rgb((255, 250, 232)) * smoothstep(0.35, 1.0, g)[..., None]
@@ -542,7 +578,8 @@ def strap_paint(psi, t0, t1, fade, W=256):
 
 
 # the rib's course along the orb's upper left edge, in picture pixels
-RIB = [(24.8, 25.2), (23.4, 25.7), (21.3, 27.1), (19.3, 28.7), (17.9, 30.3), (16.9, 32.0), (16.4, 33.7), (16.2, 35.4)]
+RIB = [pic(x, row) for x, row in ((24.8, 25.2), (23.4, 25.7), (21.3, 27.1), (19.3, 28.7), (17.9, 30.3),
+                                  (16.9, 32.0), (16.4, 33.7), (16.2, 35.4))]
 
 
 def lift(x, row, fmin=0.16):
@@ -591,7 +628,7 @@ def rib_paint(W=128):
     c = mix(mix(rgb((244, 206, 96)), rgb((236, 182, 74)), smoothstep(0.2, 0.6, t)), rgb((118, 72, 28)), k)
     g = glint(P, n, cap_only=True)
     c = mix(c, rgb((250, 226, 120)), np.clip(g * 1.2, 0, 1))
-    mr = np.stack([np.zeros_like(t), 0.3 + 0.3 * k, 0.3 + 0.0 * k], axis=-1)
+    mr = np.stack([np.zeros_like(t), 0.22 + 0.3 * k, 0.3 + 0.0 * k], axis=-1)
     emit = rgb((255, 214, 96)) * (0.5 * smoothstep(0.3, 1.0, g))[..., None]
 
     def rep(x):
@@ -601,7 +638,8 @@ def rib_paint(W=128):
 
 def gem(gem_mat, gold):
     # where the picture has it, on the face the classic camera sees
-    sx, sy = (29.5 - OCX) / 16.0 / ORB_R, (OCY - 31) / 16.0 / ORB_R
+    gx, gy = pic(29.5, 31)
+    sx, sy = (gx - OCX) / RPX, (OCY - gy) / RPX
     toward = -zk.VIEW
     n = (Vector((1, 0, 0)) * sx + zk.SCREEN_UP * sy + toward * math.sqrt(1 - sx * sx - sy * sy)).normalized()
     base = ORB_C + n * ORB_R
@@ -705,12 +743,12 @@ EMIT = 3.2   # emission strength of the burnished glint
 oc, omr, oem, oh = orb_paint()
 BRONZE = bronze_material("zl_bronze", zk.image("zl_orb_col", oc), zk.image("zl_orb_mr", omr, noncolor=True),
                          zk.image("zl_orb_emit", oem), EMIT,
-                         nimg=zk.normal_image("zl_orb_nrm", oh, 2 * math.pi * ORB_R / 256, math.pi * ORB_R / 128,
-                                              1.0), nstrength=0.6)
+                         nimg=zk.normal_image("zl_orb_nrm", oh, 2 * math.pi * ORB_R / oh.shape[1],
+                                              math.pi * ORB_R / oh.shape[0], 1.0), nstrength=0.6, spec=0.5)
 GEM = hk.pbr("zl_gem", lin((14, 22, 50)), rough=0.06, emit=lin((20, 42, 110)), strength=0.25)
 
 PSI1 = math.pi / 2 - math.radians(5.5)   # the strap runs just left of the crown's meridian
-S1 = strap_paint(PSI1, 0.0, 2 * math.pi, (32.5, 39.5))
+S1 = strap_paint(PSI1, 0.0, 2 * math.pi, (pic(0, 32.5)[1], pic(0, 39.5)[1]))
 S2 = rib_paint()
 STRAP1 = bronze_material("zl_strap", zk.image("zl_strap_col", S1[0]), zk.image("zl_strap_mr", S1[1], noncolor=True),
                          zk.image("zl_strap_emit", S1[2]), EMIT)

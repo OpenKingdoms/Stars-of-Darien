@@ -459,12 +459,12 @@ for side in (-1, 1):
                   inner=(GOLD_PALE, 0.5), suckers=(GOLD_PALE, 0.5, 0.94, 7), inward=curl)
     parts += tube(arm_pts(BACK, side), 0.15, 0.02, n=2, power=1.8, mat=GOLD_BACK, name="arm_back")
 
-# the crystal floating over the head: flattened front to back so its crown
-# comes to the picture's point, a ridge toward the camera
+# the crystal floating over the head: a thick, heavy gem, a little flattened
+# front to back so its crown still comes to the picture's point
 ZG = 7.55
-parts.append(crystal([(0.64, ZG - 1.0, 0.5), (1.0, ZG - 0.12, 0.0), (1.0, ZG + 0.12, 0.0),
-                      (0.72, ZG + 0.58, 0.5)],
-                     8.81, 4.94, 8, 0.57, 0.33, (CRYSTAL, CRYSTAL_LT)))
+parts.append(crystal([(0.72, ZG - 1.0, 0.5), (1.0, ZG - 0.18, 0.0), (1.0, ZG + 0.18, 0.0),
+                      (0.74, ZG + 0.66, 0.5)],
+                     9.55, 4.94, 8, 0.68, 0.52, (CRYSTAL, CRYSTAL_LT)))
 
 ob = hk.finish(parts, r"D:\OKReplace\lodes\hand\models\VERLODE.glb",
                {"replacesTexture": "verlode_regularlodestone", "replacesPiece": "VerLode"})

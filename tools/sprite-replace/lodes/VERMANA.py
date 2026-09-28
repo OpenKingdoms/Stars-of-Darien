@@ -96,7 +96,7 @@ def brilliant(R, crown, pav, tilt, centre, seg, mats, mid=0.84, low=0.6):
     table up and tipped by tilt about x (negative leans the table back).
     mats: deep, mid, the bright crown facets, two pavilion blues, then the
     table's pale blue and its whiter left half."""
-    rings = [(low * R, -pav * 0.42, 0.5), (R, -0.035, 0.0), (R, 0.035, 0.0),
+    rings = [(low * R, -pav * 0.42, 0.5), (R, -0.05, 0.0), (R, 0.05, 0.0),
              (mid * R, crown * 0.5, 0.5), (0.53 * R, crown, 0.0)]
     bm = bmesh.new()
     vr = [[bm.verts.new((r * math.cos(2 * math.pi * (k + h) / seg), r * math.sin(2 * math.pi * (k + h) / seg), z))
@@ -304,9 +304,12 @@ def flute(a, z):
     return 1.0
 
 
+# the column and capital are drawn heavier than the picture's, CS wider
+CS = 1.26
 prof = [(0.0, 0.0), (0.7, 0.0), (0.735, 0.06), (0.735, 0.13), (0.7, 0.19), (0.64, 0.24), (0.655, 0.3),
         (0.64, 0.36), (0.63, SHAFT[0]), (0.63, 1.5), (0.63, 2.6), (0.63, 3.7), (0.63, SHAFT[1]),
-        (0.66, 4.77), (0.62, 4.82), (0.6, 5.0), (0.6, 5.9), (0.62, 6.0), (0.62, 6.1), (0.0, 6.1)]
+        (0.67, 4.76), (0.675, 4.8), (0.64, 4.85), (0.6, 5.0), (0.6, 5.9), (0.62, 6.0), (0.62, 6.1), (0.0, 6.1)]
+prof = [(r * CS, z) for r, z in prof]
 parts.append(hk.smooth(cyl_uv(lathe(prof, 48, MARBLE, "column", rmod=flute), CY), 50))
 
 # the drape: pale marble cloth pinned under the ring at four points and
@@ -314,7 +317,8 @@ parts.append(hk.smooth(cyl_uv(lathe(prof, 48, MARBLE, "column", rmod=flute), CY)
 # a couple of soft folds that follow its sag and a rolled hem
 K, S = 32, 8
 Z_TOP = 5.96
-rows = [[(0.6 * math.cos(2 * math.pi * k / K), CY + 0.6 * math.sin(2 * math.pi * k / K), Z_TOP)
+R0 = 0.6 * CS
+rows = [[(R0 * math.cos(2 * math.pi * k / K), CY + R0 * math.sin(2 * math.pi * k / K), Z_TOP)
          for k in range(K)]]
 hem, under = [], []
 for s in range(S + 1):
@@ -326,33 +330,35 @@ for s in range(S + 1):
         z_low = 5.22 - 0.46 * sag ** 0.9
         t = s / S
         z = Z_TOP - t * (Z_TOP - z_low)
-        r = (0.6 + 0.045 + 0.03 * math.sin(math.pi * min(1.0, 1.6 * t))
-             + sag * (0.075 * math.sin(math.pi * (0.25 + 0.6 * t)) + 0.016 * math.sin(4 * math.pi * t) * t))
+        r = CS * (0.6 + 0.045 + 0.03 * math.sin(math.pi * min(1.0, 1.6 * t))
+                  + sag * (0.075 * math.sin(math.pi * (0.25 + 0.6 * t)) + 0.016 * math.sin(4 * math.pi * t) * t))
         ring.append((r * math.cos(a), CY + r * math.sin(a), z))
         if s == S:
-            hem.append(((r + 0.018) * math.cos(a), CY + (r + 0.018) * math.sin(a), z - 0.035))
-            under.append((0.6 * math.cos(a), CY + 0.6 * math.sin(a), z - 0.03))
+            hem.append(((r + 0.022) * math.cos(a), CY + (r + 0.022) * math.sin(a), z - 0.035))
+            under.append((R0 * math.cos(a), CY + R0 * math.sin(a), z - 0.03))
     rows.append(ring)
 rows += [hem, under]
 drape = rings_mesh(rows, MARBLE_LT, "drape", cap_bottom=False, cap_top=False)
 parts.append(hk.smooth(cyl_uv(drape, CY), 60))
 
 # a thin pale ring on the drape's top, under the gold
-parts.append(hk.smooth(lathe([(0.6, 5.92), (0.68, 5.95), (0.7, 6.02), (0.68, 6.09), (0.6, 6.12)],
-                             32, PALE, "ring"), 50))
+parts.append(hk.smooth(lathe([(r * CS, z) for r, z in ((0.6, 5.92), (0.68, 5.95), (0.7, 6.02), (0.68, 6.09),
+                                                        (0.6, 6.12))], 32, PALE, "ring"), 50))
 
 # the gold collar: a heavy band round the capital, the marble showing in
 # its middle, that the claws spring from
-parts.append(hk.smooth(lathe([(0.0, 6.2), (0.5, 6.04), (0.57, 6.09), (0.6, 6.18), (0.58, 6.28), (0.52, 6.34),
-                              (0.44, 6.35), (0.39, 6.3), (0.37, 6.22), (0.0, 6.2)], 24, GOLD_OLD, "collar"), 40))
-parts.append(hk.smooth(lathe([(0.0, 6.2), (0.375, 6.2), (0.37, 6.25), (0.3, 6.3), (0.0, 6.32)], 20, MARBLE,
+parts.append(hk.smooth(lathe([(r * CS, z) for r, z in ((0.0, 6.2), (0.5, 6.04), (0.57, 6.09), (0.6, 6.18),
+                                                        (0.58, 6.28), (0.52, 6.34), (0.44, 6.35), (0.39, 6.3),
+                                                        (0.37, 6.22), (0.0, 6.2))], 32, GOLD_OLD, "collar"), 40))
+parts.append(hk.smooth(lathe([(r * CS, z) for r, z in ((0.0, 6.2), (0.375, 6.2), (0.37, 6.27), (0.3, 6.34),
+                                                        (0.16, 6.39), (0.0, 6.4))], 24, MARBLE,
                              "capital_top"), 50))
 
 # the brilliant, tipped back from the classic camera as the painting has
 # it: the table high in the outline, the long pavilion's point low; it
 # floats over the collar in four claws
-R, CROWN, PAV, TILT = 0.76, 0.4, 1.66, math.radians(-15)
-MID, LOW = 0.82, 0.64
+R, CROWN, PAV, TILT = 0.92, 0.47, 1.76, math.radians(-15)
+MID, LOW = 0.84, 0.72
 n = Vector((0.0, -math.sin(TILT), math.cos(TILT)))
 GEM_MATS = (SAPPHIRE, SAPPHIRE_MID, SAPPHIRE_LT, SAPPHIRE_PAV, SAPPHIRE_PAV2, TABLE, TABLE_W)
 probe = brilliant(R, CROWN, PAV, TILT, Vector((0.0, 0.0, 0.0)), 16, GEM_MATS, MID, LOW)
@@ -382,10 +388,10 @@ for deg in (45, 135):
     u = Vector((math.cos(a), math.sin(a), 0.0))
     w = (u - n * u.dot(n)).normalized()
     hug = [G - n * (PAV * f) + w * (pav_r(PAV * f) + 0.045) for f in (0.86, 0.74)]
-    root = Vector((0.46 * math.cos(a), CY + 0.46 * math.sin(a), 6.3))
+    root = Vector((0.46 * CS * math.cos(a), CY + 0.46 * CS * math.sin(a), 6.3))
     lift = root.lerp(hug[0], 0.5) + w * 0.07
     end = G - n * (PAV * 0.62) + w * (pav_r(PAV * 0.62) + 0.02)
-    parts.append(body([root, lift] + hug + [end], lambda s0, s1: 0.115 - 0.035 * min(1.0, s0 / 0.8),
+    parts.append(body([root, lift] + hug + [end], lambda s0, s1: 0.13 - 0.035 * min(1.0, s0 / 0.8),
                       w, flat=0.42, sides=8, n=2, mat=GOLD, name="claw", tip_round=0.05))
 
 # the dolphins: each rests its belly on the collar and curls its tail up
@@ -395,12 +401,16 @@ for deg in (45, 135):
 girdle = G + Vector((-R - 0.02, -0.06, 0.01))
 u = Vector((-math.sqrt(0.5), -math.sqrt(0.5), 0.0))
 W_FRONT = (u - n * u.dot(n)).normalized()
-TAIL = [G - n * (PAV * 0.88) + W_FRONT * (pav_r(PAV * 0.88) + 0.06), Vector((-0.31, -0.15, 6.7)),
-        Vector((-0.5, -0.07, 6.37))]
+TAIL = [G - n * (PAV * 0.88) + W_FRONT * (pav_r(PAV * 0.88) + 0.06), Vector((-0.39, CY - 0.45 * CS, 6.7)),
+        Vector((-0.5 * CS, CY - 0.37 * CS, 6.37))]
 S_RING = (TAIL[1] - TAIL[0]).length + (TAIL[2] - TAIL[1]).length
-SPINE = [(18.0, 58.2, -0.06), (14.2, 55.2, -0.1), (11.6, 51.4, -0.1),
-         (10.4, 47.2, -0.08), (10.2, 43.0, -0.02), (10.8, 38.9, 0.14), (14.8, 36.0, 0.26)]
+SPINE = [(18.0, 58.2, -0.06), (14.2, 55.2, -0.1), (11.4, 51.4, -0.1),
+         (10.0, 47.2, -0.08), (9.5, 43.0, -0.02), (9.7, 38.9, 0.14), (13.6, 36.0, 0.26)]
 FIN = [(10.4, 49.2, -0.12), (6.4, 50.6, -0.12), (3.0, 52.0, -0.11), (1.0, 53.0, -0.1)]
+
+
+# the dolphins thickened to suit the heavier stone, the body more than the head
+DS, DH = 1.12, 1.04
 
 
 def dolphin_size(s0, s1):
@@ -411,17 +421,18 @@ def dolphin_size(s0, s1):
     else:
         taper = min(1.0, 0.36 + 0.64 * (s0 - S_RING) / 1.3)
     if s1 < 0.28:
-        return 0.035 + 0.04 * s1 / 0.28
+        return DH * (0.035 + 0.04 * s1 / 0.28)
     if s1 < 0.56:
-        return 0.075 + 0.225 * math.sin(0.5 * math.pi * (s1 - 0.28) / 0.28)
-    return min(0.3 + 0.02 * min(1.0, (s1 - 0.56) / 0.4), 0.32 * taper)
+        return DH * (0.075 + 0.225 * math.sin(0.5 * math.pi * (s1 - 0.28) / 0.28))
+    k = DH + (DS - DH) * min(1.0, (s1 - 0.56) / 0.5)
+    return k * min(0.3 + 0.02 * min(1.0, (s1 - 0.56) / 0.4), 0.32 * taper)
 
 
 Y = Vector((0.0, 1.0, 0.0))
 for side in (-1, 1):
     pts = [q.copy() for q in TAIL] + [P(*q) for q in SPINE] + [girdle.copy()]
     group = [body(pts, dolphin_size, Y, flat=0.7, sides=12, n=3, mat=GOLD, name="dolphin", tip_round=0.035)]
-    group.append(body([P(*q) for q in FIN], lambda s0, s1: 0.07 + 0.15 * min(1.0, s1 / 0.7), Y,
+    group.append(body([P(*q) for q in FIN], lambda s0, s1: DS * (0.07 + 0.15 * min(1.0, s1 / 0.7)), Y,
                       flat=0.22, sides=6, n=3, mat=GOLD, name="fin", tip_round=0.06))
     # flukes: two thin lobes swept up from the tail's end, lying round the
     # pavilion
@@ -429,8 +440,8 @@ for side in (-1, 1):
     T = (pts[1] - pts[0]).normalized()
     spread = T.cross(W_FRONT).normalized()
     for sgn in (-1, 1):
-        lobe = [t0 + T * 0.08, t0 - T * 0.01 + spread * sgn * 0.09, t0 - T * 0.05 + spread * sgn * 0.18]
-        group.append(body(lobe, lambda s0, s1: 0.07 * min(1.0, s1 / 0.14) ** 0.7 + 0.004,
+        lobe = [t0 + T * 0.08, t0 - T * 0.01 + spread * sgn * 0.09 * DS, t0 - T * 0.05 + spread * sgn * 0.18 * DS]
+        group.append(body(lobe, lambda s0, s1: DS * (0.07 * min(1.0, s1 / 0.14) ** 0.7 + 0.004),
                           W_FRONT, flat=0.3, sides=6, n=2, mat=GOLD, name="fluke"))
     # small jet eyes either side of the head, above and behind the beak
     head = P(*SPINE[5])
@@ -438,9 +449,9 @@ for side in (-1, 1):
     Lh = (Y - Th * Y.dot(Th)).normalized()
     Dh = Th.cross(Lh)
     for sgn in (-1, 1):
-        e = head + Th * 0.14 + Dh * 0.07 + Lh * sgn * 0.185
+        e = head + Th * 0.14 + Dh * 0.07 * DH + Lh * sgn * 0.185 * DH
         bm = bmesh.new()
-        bmesh.ops.create_uvsphere(bm, u_segments=6, v_segments=4, radius=0.04)
+        bmesh.ops.create_uvsphere(bm, u_segments=6, v_segments=4, radius=0.045)
         for v in bm.verts:
             v.co += e
         group.append(hk.smooth(hk._object("eye", bm, JET), 80))
