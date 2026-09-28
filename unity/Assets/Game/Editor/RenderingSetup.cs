@@ -57,6 +57,10 @@ namespace OpenKingdomsUnity.Studio
                 }
                 rso.ApplyModifiedPropertiesWithoutUndo();
             }
+            // The depth texture is ready before the sea draws.
+            var depthMode = new SerializedObject(renderer);
+            Set(depthMode, "m_CopyDepthMode", 0);
+            depthMode.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(renderer);
 
             var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(PipelinePath);
@@ -77,6 +81,8 @@ namespace OpenKingdomsUnity.Studio
             Set(pso, "m_AdditionalLightsRenderingMode", 1);
             Set(pso, "m_RequireDepthTexture", false);
             Set(pso, "m_RequireOpaqueTexture", false);
+            // The sea asks for the opaque picture per camera, at full size.
+            Set(pso, "m_OpaqueDownsampling", 0);
             pso.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(pipeline);
 

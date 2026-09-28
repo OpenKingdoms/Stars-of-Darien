@@ -57,6 +57,8 @@ namespace OpenKingdomsUnity.Game
             new MapInfo { Id = "mock_highlands", Name = "Highland Road", Description = "Rolling hills with a lake at the centre.", MaxPlayers = 4, Size = new Vector2(160, 128), Climate = "grass" },
             new MapInfo { Id = "mock_frost", Name = "Frost Pass", Description = "A cold valley between two ridges.", MaxPlayers = 2, Size = new Vector2(96, 96), Climate = "snow" },
             new MapInfo { Id = "mock_dunes", Name = "Red Dunes", Description = "Dry land and an oasis.", MaxPlayers = 4, Size = new Vector2(128, 96), Climate = "desert" },
+            new MapInfo { Id = "mock_moat", Name = "Castle Moat", Description = "A high rim around a lake, as on Castle.", MaxPlayers = 4, Size = new Vector2(96, 96), Climate = "grass" },
+            new MapInfo { Id = "mock_bay", Name = "Quiet Bay", Description = "A long bay between a sandy beach and a cliff.", MaxPlayers = 2, Size = new Vector2(128, 128), Climate = "grass" },
         };
 
         readonly List<SideInfo> sides = new List<SideInfo>
@@ -404,7 +406,7 @@ namespace OpenKingdomsUnity.Game
             // Passive units never pick a fight, defensive ones only close by.
             var stance = StanceOf(u.Handle);
             var role = RoleOf(u.Def);
-            bool fights = role != Role.Monarch && role != Role.Healer && role != Role.Wagon && stance != Stance.Passive;
+            bool fights = role != Role.Monarch && role != Role.Healer && role != Role.Wagon && role != Role.Boat && stance != Stance.Passive;
             if (u.Target < 0 && fights) u.Target = NearestEnemy(u, stance == Stance.Defensive ? 3f : u.Goal == null ? 9f : 4f);
 
             Vector2 pos = new Vector2(u.Pos.x, u.Pos.z);
@@ -455,7 +457,9 @@ namespace OpenKingdomsUnity.Game
                     var sz = Terrain.Size;
                     next.x = Mathf.Clamp(next.x, 1, sz.x - 1);
                     next.y = Mathf.Clamp(next.y, -sz.y + 1, -1);
-                    if (!d.CanFly && Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f) { u.Goal = null; Arrived(u); }
+                    // Flyers go anywhere, boats keep to water deep enough to float, the rest to land.
+                    bool wet = Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f;
+                    if (!d.CanFly && wet != (role == Role.Boat)) { u.Goal = null; Arrived(u); }
                     else
                     {
                         u.Pos = new Vector3(next.x, Terrain.Sample(next.x, next.y) + u.Alt, next.y);
@@ -730,7 +734,7 @@ namespace OpenKingdomsUnity.Game
                 into[n++] = new UnitState
                 {
                     Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = IdOf(u.Player), Flags = f,
-                    Position = u.Pos, Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
+                    Position = u.Pos + Vector3.up * Lift(u), Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
                     Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
                     Mana = ManaOf(u.Handle), MaxMana = mana.ContainsKey(u.Handle) ? MageMana : 0,
                     Altitude = u.Alt, Speed = u.Dying ? 0f : u.Speed,
@@ -738,6 +742,10 @@ namespace OpenKingdomsUnity.Game
             }
             return n;
         }
+
+        // As EngineBackend does: a ship afloat is drawn in the surface.
+        float Lift(Unit u) => Terrain == null ? 0f
+            : Afloat.Height(Afloat.KindOf(unitDefs[u.Def]), u.Pos.y, Terrain.SeaLevel) - u.Pos.y;
 
         public int ReadFeatures(FeatureState[] into)
         {
@@ -770,7 +778,7 @@ namespace OpenKingdomsUnity.Game
         public int ReadUnitPose(int handle, PiecePose[] into)
         {
             if (!byHandle.TryGetValue(handle, out var u)) return 0;
-            var world = Matrix4x4.TRS(u.Pos, Quaternion.Euler(0, u.Heading, u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0), Vector3.one);
+            var world = Matrix4x4.TRS(u.Pos + Vector3.up * Lift(u), Quaternion.Euler(0, u.Heading, u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0), Vector3.one);
             string anim = u.Attacking ? "attack" : u.Alt > 0f ? "fly" : u.Moving ? "walk" : "idle";
             float t = u.Attacking ? u.AttackPhase : u.Alt > 0f ? u.FlyTime : u.WalkPhase;
             int n = PoseModel(u.Model, anim, t, into);
@@ -1139,6 +1147,21 @@ namespace OpenKingdomsUnity.Game
                 into[i] = inSight ? (byte)2 : fogSeen[i] == 0 ? (byte)0 : lineOfSight ? (byte)1 : (byte)2;
             }
             return need;
+        }
+
+        // Marks ground within a radius as seen before, for tests.
+        public void Explore(Vector3 centre, float radius)
+        {
+            if (Terrain == null) return;
+            int width = Terrain.HeightsW, height = Terrain.HeightsH;
+            if (fogSeen.Length != width * height) fogSeen = new byte[width * height];
+            float cell = Terrain.CellSize;
+            for (int y = 0; y < height; y++)
+                for (int x = 0; x < width; x++)
+                {
+                    float dx = x * cell - centre.x, dz = -y * cell - centre.z;
+                    if (dx * dx + dz * dz <= radius * radius) fogSeen[y * width + x] = 1;
+                }
         }
 
         // What the local player's units see now, remembered as seen. The

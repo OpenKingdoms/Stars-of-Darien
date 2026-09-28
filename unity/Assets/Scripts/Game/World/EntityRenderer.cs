@@ -247,14 +247,15 @@ namespace OpenKingdomsUnity.Game.World
                 int n = Mathf.Min(backend.ReadUnitPose(handle, poses), model.Pieces.Length);
                 var def = backend.UnitDefs[Units[i].Def];
                 float lift = def.IsBuilding ? SiteLift(Units[i].Position) : 0f;
+                var sway = swayOf.TryGetValue(handle, out var sm) ? sm : Matrix4x4.identity;
                 var card = CardOverride.For(def.ObjectName);
                 for (int p = 0; p < n; p++)
                     if (model.Pieces[p] != null && !poses[p].Hidden && (card == null || !card.Hides(model.Data.Pieces[p].Name)))
-                        list.Add((model.Pieces[p], 0, null, Matrix4x4.Translate(Vector3.up * lift) * poses[p].Matrix * model.Unscale));
+                        list.Add((model.Pieces[p], 0, null, sway * Matrix4x4.Translate(Vector3.up * lift) * poses[p].Matrix * model.Unscale));
                 if (card != null)
                 {
                     var u = Units[i];
-                    var at = Matrix4x4.TRS(u.Position + Vector3.up * lift, Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
+                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * lift, Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
                     foreach (var part in card.Model.Parts) list.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot));
                 }
             }
@@ -336,8 +337,16 @@ namespace OpenKingdomsUnity.Game.World
 
             UnitCount = backend.ReadUnits(Units);
             DrawnSize.Clear();
+            Hulls.Clear();
+            swayOf.Clear();
             for (int i = 0; i < UnitCount; i++) AddUnit(ref Units[i], cam);
             SweepFlyers();
+            if (rocking.Count > swayOf.Count)
+            {
+                sunk.Clear();
+                foreach (int h in rocking.Keys) if (!swayOf.ContainsKey(h)) sunk.Add(h);
+                foreach (int h in sunk) rocking.Remove(h);
+            }
 
             AddFeatures(cam);
 
@@ -365,6 +374,48 @@ namespace OpenKingdomsUnity.Game.World
 
         public bool IsDrawn(int handle) => DrawnSize.ContainsKey(handle);
 
+        // Half the beam and half the length of each ship's hull drawn this frame.
+        public readonly Dictionary<int, Vector2> Hulls = new Dictionary<int, Vector2>();
+
+        // A ship rides the swell: heave, pitch and roll from the surface at
+        // its bow, stern and sides, eased so it rocks rather than shakes.
+        readonly Dictionary<int, Vector3> rocking = new Dictionary<int, Vector3>();
+        readonly Dictionary<int, Matrix4x4> swayOf = new Dictionary<int, Matrix4x4>();
+        readonly List<int> sunk = new List<int>();
+
+        // The sway last drawn for a unit, identity for one not afloat.
+        public Matrix4x4 SwayOf(int handle) => swayOf.TryGetValue(handle, out var m) ? m : Matrix4x4.identity;
+
+        Matrix4x4 Sway(in UnitState u, Bounds rest)
+        {
+            var t = backend.Terrain;
+            if (t == null || t.SeaLevel <= 0) return Matrix4x4.identity;
+            float ground = backend.GroundHeight(u.Position.x, u.Position.z);
+            if (ground > t.SeaLevel - 0.2f) return Matrix4x4.identity;
+            float damp = WaterWaves.Damp(t.SeaLevel - ground);
+            float yaw = u.Heading * Mathf.Deg2Rad;
+            var fwd = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
+            var right = new Vector2(fwd.y, -fwd.x);
+            float len = Mathf.Max(rest.extents.z, 0.5f) * 0.8f, beam = Mathf.Max(rest.extents.x, 0.3f) * 0.8f;
+            var c = new Vector2(u.Position.x, u.Position.z);
+            float bow = Surface(c + fwd * len, damp), stern = Surface(c - fwd * len, damp);
+            float starboard = Surface(c + right * beam, damp), port = Surface(c - right * beam, damp);
+            var want = new Vector3((bow + stern + port + starboard) * 0.25f * 0.8f,
+                -Mathf.Atan2(bow - stern, 2 * len) * Mathf.Rad2Deg * 0.6f,
+                Mathf.Atan2(starboard - port, 2 * beam) * Mathf.Rad2Deg * 0.6f);
+            if (!rocking.TryGetValue(u.Handle, out var now)) now = want;
+            now += (want - now) * (1f - Mathf.Exp(-Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f) / 0.3f));
+            rocking[u.Handle] = now;
+            var pivot = new Vector3(u.Position.x, t.SeaLevel, u.Position.z);
+            var turn = Quaternion.Euler(0, u.Heading, 0);
+            var tilt = turn * Quaternion.Euler(now.y, 0, now.z) * Quaternion.Inverse(turn);
+            var m = Matrix4x4.Translate(pivot + Vector3.up * now.x) * Matrix4x4.Rotate(tilt) * Matrix4x4.Translate(-pivot);
+            swayOf[u.Handle] = m;
+            return m;
+        }
+
+        static float Surface(Vector2 p, float damp) => WaterWaves.Height(p.x, p.y, damp);
+
         void AddUnit(ref UnitState u, Camera cam)
         {
             if (Hidden != null && Hidden(u)) return;
@@ -374,20 +425,22 @@ namespace OpenKingdomsUnity.Game.World
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
             float height = 1.5f, radius = 0.6f, air = 0f;
+            var kind = Afloat.KindOf(def);
+            var sway = kind == FloatKind.Ship && model != null ? Sway(u, model.RestBounds) : Matrix4x4.identity;
             if (model != null && model.Override != null)
             {
-                int n = Pose(u, def, model, out air);
+                int n = Pose(u, def, model, sway, out air);
                 AddOverride(model, n);
             }
             else if (model != null)
             {
-                int n = Pose(u, def, model, out air);
+                int n = Pose(u, def, model, sway, out air);
                 // A unit that is mostly a painted card draws its 3D model in
                 // place of the card, facing with the unit, on any plinth.
                 var card = def != null ? CardOverride.For(def.ObjectName) : null;
                 if (card != null)
                 {
-                    var at = Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f),
+                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f),
                         Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
                     foreach (var part in card.Model.Parts) solid.Add(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
                 }
@@ -404,10 +457,19 @@ namespace OpenKingdomsUnity.Game.World
                 radius = Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.z) * 0.9f, 0.4f, 6f);
             }
             DrawnSize[u.Handle] = new Vector2(height, radius);
+            if (kind == FloatKind.Ship && model != null)
+            {
+                // Sails and oars reach wider than the hull does.
+                var e = model.RestBounds.extents;
+                Hulls[u.Handle] = new Vector2(Mathf.Min(e.x, e.z * 0.3f), e.z);
+            }
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;
             bool selected = Selected.Contains(u.Handle);
             var ground = u.Position + Vector3.up * (0.05f + air);
+            // A ring round a unit afloat lies on the water, not under it.
+            float sea = backend.Terrain != null ? backend.Terrain.SeaLevel : -1f;
+            if (kind != FloatKind.None && sea > 0) ground.y = Mathf.Max(ground.y, sea + 0.08f);
             if (u.Handle == Watch) WatchedRing = ground;
             if (selected)
                 overlay.Add(ring, 0, ringMat, Matrix4x4.TRS(ground, Quaternion.identity, new Vector3(radius, 1, radius)));
@@ -433,13 +495,14 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // The unit's pieces in posed[], piece space to world: the script's
-        // pose, any plinth, a flyer's wings and the animation nudges.
+        // pose, any plinth, a ship's sway, a flyer's wings and the animation nudges.
         // Returns the piece count and how far a flyer is drawn lifted.
-        int Pose(in UnitState u, UnitDef def, PresentedModel model, out float air)
+        int Pose(in UnitState u, UnitDef def, PresentedModel model, Matrix4x4 sway, out float air)
         {
             int n = Mathf.Min(Mathf.Min(backend.ReadUnitPose(u.Handle, poses), model.Pieces.Length), MaxPieces);
-            // A building on a site with a plinth stands on the plinth.
-            var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
+            // A building on a site with a plinth stands on the plinth, a
+            // ship rides the swell.
+            var lift = sway * (def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity);
             for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
             air = Fly(u, def, model, n);
             // Nudges from the animation editor, for every animation and

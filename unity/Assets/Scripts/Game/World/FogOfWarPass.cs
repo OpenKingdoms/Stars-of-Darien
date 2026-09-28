@@ -14,6 +14,7 @@ namespace OpenKingdomsUnity.Game.World
     {
         static readonly int DepthId = Shader.PropertyToID("_OkuDepth");
         static readonly int InvViewProjId = Shader.PropertyToID("_OkuInvViewProj");
+        static readonly int EyeId = Shader.PropertyToID("_OkuFogEye");
         static readonly int BlitTextureId = Shader.PropertyToID("_BlitTexture");
         static readonly int BlitScaleBiasId = Shader.PropertyToID("_BlitScaleBias");
         static readonly MaterialPropertyBlock block = new MaterialPropertyBlock();
@@ -57,6 +58,7 @@ namespace OpenKingdomsUnity.Game.World
             public Material material;
             public TextureHandle source, depth;
             public Matrix4x4 invViewProj;
+            public Vector3 eye;
         }
 
         public override void RecordRenderGraph(RenderGraph graph, ContextContainer frameData)
@@ -75,6 +77,7 @@ namespace OpenKingdomsUnity.Game.World
                 data.source = source;
                 data.depth = res.cameraDepthTexture;
                 data.invViewProj = (cam.GetProjectionMatrix() * cam.GetViewMatrix()).inverse;
+                data.eye = cam.worldSpaceCameraPos;
                 builder.UseTexture(source);
                 builder.UseTexture(data.depth);
                 builder.SetRenderAttachment(dest, 0);
@@ -85,6 +88,7 @@ namespace OpenKingdomsUnity.Game.World
                     block.SetTexture(DepthId, d.depth);
                     block.SetVector(BlitScaleBiasId, new Vector4(1, 1, 0, 0));
                     block.SetMatrix(InvViewProjId, d.invViewProj);
+                    block.SetVector(EyeId, d.eye);
                     ctx.cmd.DrawProcedural(Matrix4x4.identity, d.material, 0, MeshTopology.Triangles, 3, 1, block);
                 });
             }

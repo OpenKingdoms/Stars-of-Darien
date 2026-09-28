@@ -80,6 +80,40 @@ namespace OpenKingdomsUnity.Game.World
             return low - 1.5f;
         }
 
+        // The plain of haze past the ring, out to the far clip, so no gap
+        // shows between land and sky: a frame of four quads around the map
+        // grown by the ring, never over the map or the ring itself.
+        public static Mesh HazeFrame(MapTerrain t, float far = 4000f)
+        {
+            var size = t.Size;
+            float w = Width * t.CellSize, y = Shelf(t) - 0.05f;
+            float x0 = -w, x1 = size.x + w, zn = w, zs = -size.y - w;
+            float fx0 = x0 - far, fx1 = x1 + far, fzn = zn + far, fzs = zs - far;
+            var v = new List<Vector3>();
+            void Quad(float ax, float az, float bx, float bz)
+            {
+                v.Add(new Vector3(ax, y, az)); v.Add(new Vector3(bx, y, az));
+                v.Add(new Vector3(bx, y, bz)); v.Add(new Vector3(ax, y, bz));
+            }
+            Quad(fx0, fzn, fx1, zn);    // north
+            Quad(fx0, zs, fx1, fzs);    // south
+            Quad(fx0, zn, x0, zs);      // west
+            Quad(x1, zn, fx1, zs);      // east
+            var tris = new List<int>();
+            for (int q = 0; q < 4; q++) { int b = q * 4; tris.AddRange(new[] { b, b + 1, b + 2, b, b + 2, b + 3 }); }
+            var mesh = new Mesh { name = "haze frame", hideFlags = HideFlags.DontSave };
+            mesh.SetVertices(v);
+            var n = new Vector3[v.Count];
+            var uv2 = new Vector2[v.Count];
+            for (int i = 0; i < n.Length; i++) { n[i] = Vector3.up; uv2[i] = Vector2.one * 999; }
+            mesh.normals = n;
+            mesh.uv = new Vector2[v.Count];
+            mesh.uv2 = uv2;
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
         // The ring as one mesh: a grid over the map grown by the ring's
         // width, with the inside cut out. uv is the mirrored point on the
         // map picture, uv2.x the distance past the edge in cells.
