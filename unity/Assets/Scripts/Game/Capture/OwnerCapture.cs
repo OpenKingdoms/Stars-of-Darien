@@ -4,7 +4,7 @@
 // Keys.tdf gives F12 to ClearChat and keeps F9 for screenshots.
 using System;
 using System.Collections;
-using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -44,7 +44,9 @@ namespace OpenKingdomsUnity.Game.Capture
         bool hideToast;
         GUIStyle toastStyle;
         Texture2D toastBack;
-        readonly List<Action> afterRendering = new List<Action>();
+        // Whether the screen comes back upside down: -1 until a capture has
+        // been checked against Unity's own picture of it, then 0 or 1.
+        static int flipped = -1, checks;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AddAtStartup() => Ensure();
@@ -86,11 +88,15 @@ namespace OpenKingdomsUnity.Game.Capture
             }, null));
         }
 
-        // Runs once this frame is on the screen: at the end of the frame, or
-        // in batch mode, where that never comes, once every camera has drawn.
+        // The size of a capture: the screen's, or 1280 by 720 in batch mode
+        // when there is no screen.
+        public static Vector2Int CaptureSize => Screen.width > 0 && Screen.height > 0 ? new Vector2Int(Screen.width, Screen.height) : new Vector2Int(1280, 720);
+
+        // Runs once this frame is on the screen, at the end of the frame. In
+        // batch mode no frame reaches a screen, so it runs now.
         void AfterThisFrame(Action a)
         {
-            if (Application.isBatchMode) afterRendering.Add(a);
+            if (Application.isBatchMode) a();
             else StartCoroutine(EndOfFrame(a));
         }
 
@@ -100,36 +106,93 @@ namespace OpenKingdomsUnity.Game.Capture
             a();
         }
 
-        void OnEnable() => RenderPipelineManager.endContextRendering += Rendered;
-        void OnDisable() => RenderPipelineManager.endContextRendering -= Rendered;
-
-        void Rendered(ScriptableRenderContext context, List<Camera> cameras)
-        {
-            if (afterRendering.Count == 0) return;
-            bool screen = false;
-            foreach (var c in cameras) screen |= c != null && c.targetTexture == null && c.cameraType == CameraType.Game;
-            if (!screen) return;
-            var due = afterRendering.ToArray();
-            afterRendering.Clear();
-            foreach (var a in due) a();
-        }
-
         // The whole screen as the player sees it, menus and all, read back
         // without waiting on the GPU. failed runs when it can't be.
         void Grab(Action<byte[], int, int, bool> got, Action failed)
         {
+            if (Application.isBatchMode) { GrabCameras(got, failed); return; }
             int w = Screen.width, h = Screen.height;
             if (w <= 0 || h <= 0) { Fail("the screen has no size", failed); return; }
             var rt = new RenderTexture(w, h, 0) { name = "owner capture" };
             try { ScreenCapture.CaptureScreenshotIntoRenderTexture(rt); }
             catch (Exception e) { Destroy(rt); Fail(e.Message, failed); return; }
-            // The back buffer lands upside down where textures start at the top.
-            bool flip = SystemInfo.graphicsUVStartsAtTop;
+            // Some graphics APIs hand the screen back upside down. The first
+            // capture is checked against Unity's own picture, read the slow
+            // way once, and the answer kept. A screen that reads the same both
+            // ways is tried again, three times at most.
+            Texture2D check = flipped < 0 && checks++ < 3 ? ScreenCapture.CaptureScreenshotAsTexture() : null;
+            AsyncGPUReadback.Request(rt, 0, TextureFormat.RGBA32, req =>
+            {
+                if (rt != null) { rt.Release(); Destroy(rt); }
+                if (req.hasError) { if (check != null) Destroy(check); Fail("the picture could not be read back", failed); return; }
+                var px = req.GetData<byte>().ToArray();
+                if (check != null)
+                {
+                    int found = Flipped(px, w, h, check);
+                    if (found >= 0) flipped = found;
+                    Destroy(check);
+                }
+                got(px, w, h, flipped >= 0 ? flipped == 1 : SystemInfo.graphicsUVStartsAtTop);
+            });
+        }
+
+        // 1 when the rows read back come top first against the check picture,
+        // which Unity keeps bottom first, 0 when bottom first, and -1 when the
+        // picture reads the same both ways.
+        public static int Flipped(byte[] px, int w, int h, Texture2D check)
+        {
+            if (check == null || check.width != w || check.height != h || px.Length < w * h * 4) return -1;
+            var c = check.GetPixels32();
+            long same = 0, turned = 0;
+            foreach (int y in new[] { 0, h / 8, h / 4, h / 3 })
+                for (int x = 0; x < w; x += Math.Max(1, w / 64))
+                {
+                    int o = (y * w + x) * 4;
+                    Color32 a = c[y * w + x], b = c[(h - 1 - y) * w + x];
+                    same += Math.Abs(px[o] - a.r) + Math.Abs(px[o + 1] - a.g) + Math.Abs(px[o + 2] - a.b);
+                    turned += Math.Abs(px[o] - b.r) + Math.Abs(px[o + 1] - b.g) + Math.Abs(px[o + 2] - b.b);
+                }
+            if (same * 2 < turned) return 0;
+            if (turned * 2 < same) return 1;
+            return -1;
+        }
+
+        // In batch mode: every camera drawn in order into a texture, with the
+        // overlay menus drawn by the last, as the screen would show them.
+        void GrabCameras(Action<byte[], int, int, bool> got, Action failed)
+        {
+            var size = CaptureSize;
+            var cams = Camera.allCameras.Where(c => c.targetTexture == null).OrderBy(c => c.depth).ToList();
+            if (cams.Count == 0) { Fail("no camera draws the screen", failed); return; }
+            var top = cams[cams.Count - 1];
+            var rt = new RenderTexture(size.x, size.y, 24) { name = "owner capture" };
+            var overlays = FindObjectsByType<Canvas>(FindObjectsSortMode.None).Where(c => c.isRootCanvas && c.isActiveAndEnabled && c.renderMode == RenderMode.ScreenSpaceOverlay).ToList();
+            try
+            {
+                foreach (var c in overlays)
+                {
+                    c.renderMode = RenderMode.ScreenSpaceCamera;
+                    c.worldCamera = top;
+                    c.planeDistance = top.nearClipPlane + 0.1f;
+                }
+                Canvas.ForceUpdateCanvases();
+                foreach (var cam in cams)
+                {
+                    var was = cam.targetTexture;
+                    cam.targetTexture = rt;
+                    cam.Render();
+                    cam.targetTexture = was;
+                }
+            }
+            finally
+            {
+                foreach (var c in overlays) if (c != null) { c.renderMode = RenderMode.ScreenSpaceOverlay; c.worldCamera = null; }
+            }
             AsyncGPUReadback.Request(rt, 0, TextureFormat.RGBA32, req =>
             {
                 if (rt != null) { rt.Release(); Destroy(rt); }
                 if (req.hasError) { Fail("the picture could not be read back", failed); return; }
-                got(req.GetData<byte>().ToArray(), w, h, flip);
+                got(req.GetData<byte>().ToArray(), size.x, size.y, false);
             });
         }
 
