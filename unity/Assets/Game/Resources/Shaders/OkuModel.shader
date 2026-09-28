@@ -29,6 +29,21 @@ Shader "OpenKingdoms/Presentation/Model"
             half _Cutoff, _Glossiness, _Rim, _Cull, _Emission;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
+        // Something being built: solid up to the cut, a glowing edge just
+        // under it, and above it a faint screen-door ghost in team colour.
+        float _BuildCut;        // world height of the cut
+        float _BuildBand;       // how deep the glow reaches under it
+        float _BuildGlow;       // how strong the glow is
+        half4 _BuildTint;       // the team colour
+        float _OkuBuildGhost;   // how much of the ghost shows, 0 to 1
+        // A 4 by 4 ordered pattern, 0 to 1, by screen pixel.
+        float OkuBayer(float2 px)
+        {
+            uint2 p = uint2(px) & 3;
+            uint i = p.y * 4 + p.x;
+            const float m[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+            return (m[i] + 0.5) / 16;
+        }
         ENDHLSL
         Pass
         {
@@ -44,6 +59,7 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fog
+            #pragma multi_compile_local _ _OKU_BUILD
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
@@ -68,8 +84,22 @@ Shader "OpenKingdoms/Presentation/Model"
                 // A face seen from behind, where culling is off, is lit as
                 // its other side.
                 half3 n = normalize(i.normalWS) * (front ? 1 : -1);
+            #if defined(_OKU_BUILD)
+                float above = i.positionWS.y - _BuildCut;
+                if (above > 0)
+                {
+                    clip(_OkuBuildGhost * 0.3 - OkuBayer(i.positionCS.xy));
+                    half3 ghost = _BuildTint.rgb * (0.35 + 0.25 * saturate(n.y * 0.5 + 0.5));
+                    return half4(MixFog(ghost * OkuFogLight(i.positionWS), i.fog), 1);
+                }
+            #endif
                 half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, _Glossiness, _Rim);
                 rgb += c.rgb * _Emission;
+            #if defined(_OKU_BUILD)
+                // The glow rides the walls at the cut, not floors lying in it.
+                half edge = saturate(1 + above / max(_BuildBand, 1e-3));
+                rgb += half3(1.6, 1.15, 0.55) * edge * edge * (1 - abs(n.y) * 0.85) * _BuildGlow * (0.6 + 0.4 * c.rgb);
+            #endif
                 rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
@@ -86,10 +116,11 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
+            #pragma multi_compile_local _ _OKU_BUILD
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
             float3 _LightDirection;
             float3 _LightPosition;
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; };
             Varyings vert(Attributes v)
             {
                 Varyings o;
@@ -109,11 +140,15 @@ Shader "OpenKingdoms/Presentation/Model"
             #endif
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.color = v.color;
+                o.height = p.y;
                 return o;
             }
             half4 frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a * i.color.a * _Color.a - _Cutoff);
+            #if defined(_OKU_BUILD)
+                clip(_BuildCut - i.height);
+            #endif
                 return 0;
             }
             ENDHLSL
@@ -129,19 +164,25 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; };
+            #pragma multi_compile_local _ _OKU_BUILD
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; };
             Varyings vert(Attributes v)
             {
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
-                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                float3 p = TransformObjectToWorld(v.positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(p);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.color = v.color;
+                o.height = p.y;
                 return o;
             }
             half frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a * i.color.a * _Color.a - _Cutoff);
+            #if defined(_OKU_BUILD)
+                if (i.height > _BuildCut) clip(_OkuBuildGhost * 0.3 - OkuBayer(i.positionCS.xy));
+            #endif
                 return i.positionCS.z;
             }
             ENDHLSL
