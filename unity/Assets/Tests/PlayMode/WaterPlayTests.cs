@@ -297,6 +297,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(ls, ld * 1.25f, "the shallows, over the sand, are lighter than the deep");
         }
 
+        // The foam at the shore pulses as the wash rolls in and its lace
+        // drifts, so it is judged over one wash, from four pictures.
         [UnityTest]
         public IEnumerator FoamLinesTheShore()
         {
@@ -308,14 +310,25 @@ namespace OpenKingdomsUnity.Tests
             // Just inside the water's edge, and well out from it.
             var edge = OnScreen(rt, SeaPoints(40, 56, -74, -54, 0.01f, 0.08f, 0.25f));
             var open = OnScreen(rt, SeaPoints(40, 60, -74, -54, 1.6f, 2.0f, 0.25f));
-            var shot = Shot(Cam, rt);
-            RenderTexture.ReleaseTemporary(rt);
-            Save(shot, "water-test-foam.png");
             Assert.Greater(edge.Count, 30, "the shore is in view");
             Assert.Greater(open.Count, 30);
             bool White(Color32 c) => Mathf.Min(c.r, Mathf.Min(c.g, c.b)) > 150 && Saturation(c) < 0.22f;
-            float atEdge = edge.Count(p => White(Px(shot, p))) / (float)edge.Count;
-            float offshore = open.Count(p => White(Px(shot, p))) / (float)open.Count;
+            float atEdge = 0, offshore = 0;
+            const int shots = 4;
+            for (int k = 0; k < shots; k++)
+            {
+                if (k > 0)
+                {
+                    float until = Time.realtimeSinceStartup + 1.3f;
+                    while (Time.realtimeSinceStartup < until) yield return null;
+                }
+                var shot = Shot(Cam, rt);
+                if (k == 0) Save(shot, "water-test-foam.png");
+                atEdge += edge.Count(p => White(Px(shot, p))) / (float)edge.Count / shots;
+                offshore += open.Count(p => White(Px(shot, p))) / (float)open.Count / shots;
+                Object.Destroy(shot);
+            }
+            RenderTexture.ReleaseTemporary(rt);
             Debug.Log($"Foam: {atEdge:P0} of the water's edge is white, {offshore:P0} of open water");
             Assert.Greater(atEdge, 0.3f, "foam lines the water's edge");
             Assert.Less(offshore, 0.1f, "and not the open water");
