@@ -67,9 +67,11 @@ namespace OpenKingdomsUnity.Game
         // each at its current frame. Returns the full count.
         int ReadEffects(EffectState[] into);
         // Each piece's transform, piece space to world, for a unit (by
-        // handle) or a model feature (by index). Returns the piece count.
+        // handle), a model feature (by index) or a model shot (by
+        // ProjectileState.Id). Returns the piece count.
         int ReadUnitPose(int handle, PiecePose[] into);
         int ReadFeaturePose(int index, PiecePose[] into);
+        int ReadProjectilePose(int id, PiecePose[] into);
         // The unit script function driving a unit's pose now, one of its
         // UnitDef.Animations ("walk", "attack1"), or "" when idle or unknown.
         string UnitAnimation(int handle);
@@ -84,6 +86,10 @@ namespace OpenKingdomsUnity.Game
         RgbaImage UnitPicture(int def);
         // An effect's frames side by side, for EffectState.Strip.
         RgbaImage EffectStrip(int strip);
+        // Each frame of a strip in order: its quad, how long the original
+        // shows it and how it blends. Null when the backend cannot say, and
+        // a frame it does not know yet has Width 0.
+        EffectFrame[] EffectFrames(int strip);
         // A pose of a model outside any game, in model space, for the
         // studio. The animation is one of UnitDef.Animations. Returns the
         // piece count, or 0 when the backend cannot pose it.
@@ -488,19 +494,47 @@ namespace OpenKingdomsUnity.Game
         public bool Flat;
     }
 
+    // How a shot in flight is drawn, the engine's OKX_PROJ_*.
+    public static class ShotKind
+    {
+        public const int Dot = 0;       // no art of its own: a small bright disc
+        public const int Model = 1;     // a 3D model, posed by ReadProjectilePose
+        public const int Picture = 2;   // an animated picture, drawn from its effect
+        public const int Beam = 3;      // a ray from Source to Position
+    }
+
+    // A beam's look, as the weapon's hweffect names it.
+    public enum BeamKind : byte { Lightning, CreonLightning, CreonParalyzer, CreonLightbeam, Fire }
+
+    // The original's lightmap, a ground light round a shot or where it
+    // lands. Auto when the backend does not know, and the art decides.
+    public enum FxLight : byte { Auto, None, Small, Medium, Large }
+
     public struct ProjectileState
     {
-        public int Id;
+        public int Id;              // stable while it flies
         public int Player;
-        public int Kind;            // weapon id, for the look
+        public int Kind;            // ShotKind, how it is drawn
         public Vector3 Position, Velocity;
-        public int Model;           // -1 to draw a streak
+        public int Model;           // for ShotKind.Model, else -1
+        public int Colour;          // the owner's team colour
+        // A model shot's attitude in degrees, as the engine turns it.
+        public float Heading, Pitch, Roll;
+        // A beam runs from Source, the firing piece, to Position, where the
+        // ray stopped, in three colours from the core out.
+        public Vector3 Source;
+        public BeamKind Beam;
+        public Color32 BeamInner, BeamMiddle, BeamOuter;
+        public int Age, Life;       // ticks since it fired, and a beam's emit time (0 unknown)
+        public int Seed;            // steady for the shot, for a beam's jag
+        public FxLight Light;
+        public bool Shadow;         // the weapon throws the original's shot shadow
     }
 
     public struct EffectState
     {
-        public int Id;              // stable while it lives
-        public int Strip;           // for EffectStrip()
+        public int Id;              // stable while it lives; a shot's picture is -1 - its ProjectileState.Id
+        public int Strip;           // for EffectStrip() and EffectFrames()
         public bool IsProjectile;   // a shot in flight drawn as a picture, else an impact effect
         public Vector3 Position;    // world
         // The current frame as a camera-facing quad, like the sprite
@@ -509,6 +543,24 @@ namespace OpenKingdomsUnity.Game
         // UvMax.x across and 0 to UvMax.y down (row 0 at the top).
         public float Top, Bottom, OffsetX, Width;
         public Vector2 UvMin, UvMax;
+        public int Frame;           // the current frame, an index into EffectFrames()
+        public float Phase;         // 0 to 1 through the current frame
+        public bool Loops;          // plays round, else ends after its last frame
+        public bool Additive;       // the frame adds light (SRCALPHA, ONE), else it alpha blends
+        public FxLight Light;
+        public int Follow;          // the unit it rides with, as a caster's nimbus does, else -1
+        public int Struck;          // the unit an impact hit, else -1
+        public int Age;             // ticks since it began
+    }
+
+    // One frame of an effect strip, placed and sampled as EffectState
+    // places its current frame.
+    public struct EffectFrame
+    {
+        public float Top, Bottom, OffsetX, Width;
+        public Vector2 UvMin, UvMax;
+        public int Ticks;           // how long the original shows it, in ticks
+        public bool Additive;
     }
 
     public struct PiecePose

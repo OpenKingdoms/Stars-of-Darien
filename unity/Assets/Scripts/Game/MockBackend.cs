@@ -124,6 +124,8 @@ namespace OpenKingdomsUnity.Game
         {
             public int Id, Player, Target, Damage, From;
             public Vector3 Pos, Vel;
+            public FxWeapon Look;       // how it is drawn, and what it leaves where it lands
+            public uint Born;
         }
 
         public MockBackend()
@@ -247,6 +249,7 @@ namespace OpenKingdomsUnity.Game
             byHandle.Clear();
             features.Clear();
             arrows.Clear();
+            ClearFx();
             players.Clear();
             economy.Clear();
             chunks.Clear();
@@ -390,7 +393,7 @@ namespace OpenKingdomsUnity.Game
                     if (u.DyingFor > 1.5f) { units.RemoveAt(i); byHandle.Remove(u.Handle); }
                     continue;
                 }
-                if (aboard.Contains(u.Handle)) continue;
+                if (aboard.Contains(u.Handle) || staged.Contains(u.Handle)) continue;
                 if (u.Built < 1f)
                 {
                     if (BuildSeconds > 0) u.Built = Mathf.Min(1f, u.Built + dt / BuildSeconds);
@@ -409,9 +412,15 @@ namespace OpenKingdomsUnity.Game
                 {
                     Hurt(t, a.Damage, a.From);
                     arrows.RemoveAt(i);
+                    if (a.Look?.Impact != null) SpawnBlast(FxStripId(a.Look.Impact), GroundAt(a.Pos), struck: t.Handle);
                 }
-                else if (a.Pos.y < GroundHeight(a.Pos.x, a.Pos.z) - 0.2f) arrows.RemoveAt(i);
+                else if (a.Pos.y < GroundHeight(a.Pos.x, a.Pos.z) - 0.2f)
+                {
+                    arrows.RemoveAt(i);
+                    if (a.Look?.Impact != null) SpawnBlast(FxStripId(a.Look.Impact), GroundAt(a.Pos));
+                }
             }
+            StepFx(dt);
 
             if (Tick % Tps == 0) CheckOutcome();
         }
@@ -556,7 +565,8 @@ namespace OpenKingdomsUnity.Game
             var to = t.Pos + Vector3.up * 0.8f;
             float time = Mathf.Max(0.3f, (to - from).magnitude / 18f);
             var vel = (to - from) / time + Vector3.up * 0.5f * 9.8f * time;
-            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel, From = u.Handle });
+            var look = FxWeaponNamed(RoleOf(u.Def) == Role.Mage ? "MOCK FIREBALL" : "MOCK ARROW");
+            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel, From = u.Handle, Look = look, Born = Tick });
         }
 
         void Hurt(Unit t, int dmg, int by = -1)
@@ -816,17 +826,6 @@ namespace OpenKingdomsUnity.Game
             return n;
         }
 
-        public int ReadProjectiles(ProjectileState[] into)
-        {
-            int n = 0;
-            foreach (var a in arrows)
-            {
-                if (n >= into.Length) break;
-                into[n++] = new ProjectileState { Id = a.Id, Player = IdOf(a.Player), Kind = 0, Position = a.Pos, Velocity = a.Vel, Model = -1 };
-            }
-            return n;
-        }
-
         public int ReadUnitPose(int handle, PiecePose[] into)
         {
             if (!byHandle.TryGetValue(handle, out var u)) return 0;
@@ -955,7 +954,6 @@ namespace OpenKingdomsUnity.Game
 
         public Economy ReadEconomy(int player) => PosOf(player) is int k && k >= 0 && k < economy.Count ? economy[k] : default;
 
-        public int ReadEffects(EffectState[] into) => 0;
 
         public string UnitAnimation(int handle)
         {
@@ -1112,7 +1110,6 @@ namespace OpenKingdomsUnity.Game
             savedAt = save != null ? new DateTime(save.savedAt, DateTimeKind.Utc).ToLocalTime() : default;
             return save != null && !string.IsNullOrEmpty(save.map);
         }
-        public RgbaImage EffectStrip(int strip) => null;
 
         // ---- HUD helpers ----
 

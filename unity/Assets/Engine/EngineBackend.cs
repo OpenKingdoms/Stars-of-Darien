@@ -22,6 +22,8 @@ namespace OpenKingdomsUnity.Engine
         readonly Dictionary<int, (int def, int colour)> modelSource = new Dictionary<int, (int def, int colour)>();
         OkxProjectile[] projBuf = new OkxProjectile[256];
         OkxEffect[] effectBuf = new OkxEffect[256];
+        readonly EngineFx fx = new EngineFx(StripSize);
+        uint fxTick = uint.MaxValue;
         readonly int[] buildBuf = new int[256];
         readonly Dictionary<int, ModelData> modelCache = new Dictionary<int, ModelData>();
         OkxUnit[] unitBuf = new OkxUnit[1024];
@@ -335,6 +337,8 @@ namespace OpenKingdomsUnity.Engine
             modelSource.Clear();
             flights.Clear();
             nextFlightSweep = 0;
+            fx.Reset();
+            fxTick = uint.MaxValue;
             terrain = null;
             players.Clear();
             status = GameStatus.Idle;
@@ -496,23 +500,34 @@ namespace OpenKingdomsUnity.Engine
 
         public int ReadProjectiles(ProjectileState[] into)
         {
-            int n = OkEngine.okx_projectiles(null, 0);
-            if (projBuf.Length < n) projBuf = new OkxProjectile[Mathf.NextPowerOfTwo(n)];
-            n = Mathf.Min(OkEngine.okx_projectiles(projBuf, projBuf.Length), projBuf.Length);
-            int count = Mathf.Min(n, into?.Length ?? 0);
-            for (int i = 0; i < count; i++)
-            {
-                var p = projBuf[i];
-                into[i] = new ProjectileState
-                {
-                    Id = p.id, Player = p.player, Kind = p.kind, Model = p.model,
-                    Position = EngineSettings.ToUnity(p.x, p.y, p.z),
-                    // Pixels a tick to units a second.
-                    Velocity = new Vector3(p.vx, p.vy, -p.vz) * (S * OkEngine.okx_tick_rate())
-                };
-            }
-            return n;
+            RefreshFx();
+            return fx.Projectiles(into);
         }
+
+        public int ReadProjectilePose(int id, PiecePose[] into)
+        {
+            int nodes = OkEngine.okx_projectile_pose(id, pose, 128);
+            return nodes > 0 ? WritePose(nodes, into, false) : 0;
+        }
+
+        // The engine's shots and effects, read once a tick and completed by
+        // EngineFx with what API 20 does not report.
+        void RefreshFx()
+        {
+            uint now = Tick;
+            if (now == fxTick) return;
+            fxTick = now;
+            int np = OkEngine.okx_projectiles(null, 0);
+            if (projBuf.Length < np) projBuf = new OkxProjectile[Mathf.NextPowerOfTwo(np)];
+            np = Mathf.Min(OkEngine.okx_projectiles(projBuf, projBuf.Length), projBuf.Length);
+            int ne = OkEngine.okx_effects(null, 0);
+            if (effectBuf.Length < ne) effectBuf = new OkxEffect[Mathf.NextPowerOfTwo(ne)];
+            ne = Mathf.Min(OkEngine.okx_effects(effectBuf, effectBuf.Length), effectBuf.Length);
+            fx.Update(now, OkEngine.okx_tick_rate(), effectBuf, Mathf.Max(0, ne), projBuf, Mathf.Max(0, np));
+        }
+
+        static Vector2Int StripSize(int strip) =>
+            OkEngine.okx_effect_strip(strip, null, 0, out int w, out int h) > 0 ? new Vector2Int(w, h) : Vector2Int.zero;
 
         int WritePose(int nodes, PiecePose[] into, bool withHidden)
         {
@@ -976,25 +991,11 @@ namespace OpenKingdomsUnity.Engine
 
         public int ReadEffects(EffectState[] into)
         {
-            int n = OkEngine.okx_effects(null, 0);
-            if (effectBuf.Length < n) effectBuf = new OkxEffect[Mathf.NextPowerOfTwo(n)];
-            n = Mathf.Min(OkEngine.okx_effects(effectBuf, effectBuf.Length), effectBuf.Length);
-            int count = Mathf.Min(n, into?.Length ?? 0);
-            for (int i = 0; i < count; i++)
-            {
-                var e = effectBuf[i];
-                into[i] = new EffectState
-                {
-                    Id = e.kind == OkEngine.EffectProjectile ? -1 - e.id : e.id,
-                    Strip = e.sprite, IsProjectile = e.kind == OkEngine.EffectProjectile,
-                    Position = EngineSettings.ToUnity(e.x, e.y, e.z),
-                    Top = (e.top - e.y) * S, Bottom = (e.bottom - e.y) * S,
-                    OffsetX = e.offX * S, Width = e.w * S,
-                    UvMin = new Vector2(e.u0, 0f), UvMax = new Vector2(e.u1, e.v1)
-                };
-            }
-            return n;
+            RefreshFx();
+            return fx.Effects(into);
         }
+
+        public EffectFrame[] EffectFrames(int strip) => fx.Frames(strip);
 
         public RgbaImage EffectStrip(int strip)
         {

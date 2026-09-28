@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Game.World
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
             Warm();
-            Effects = new EffectRenderer(backend);
+            Effects = new EffectRenderer(backend, Models);
             Fog = new FogView(backend);
             Fog.Update(true);
             Entities.Hidden = u => !Fog.InSight(u.Position) && !Friendly(u.Player);
@@ -104,9 +104,10 @@ namespace OpenKingdomsUnity.Game.World
             using (new Unity.Profiling.ProfilerMarker("Oku.Shadows").Auto()) Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
             using (new Unity.Profiling.ProfilerMarker("Oku.Fog").Auto()) Fog.Update();
             using (new Unity.Profiling.ProfilerMarker("Oku.Entities").Auto()) Entities.Render(cam);
-            using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
             // An edit in the map editor can make a sea where there was none.
             WaterView.Prepare(cam, Terrain.Sea != null);
+            // After the sea's camera needs, since soft effects add their own.
+            using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
             using (new Unity.Profiling.ProfilerMarker("Oku.Water").Auto()) Terrain.Sea?.Update(Atmosphere, Entities, backend, cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }

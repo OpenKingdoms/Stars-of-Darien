@@ -293,6 +293,25 @@ namespace OpenKingdomsUnity.Game
                 b.Box(mast, new Vector3(0, 1.3f, 0.06f), new Vector3(1.4f, 1.2f, 0.04f), team);
                 return b.Finish(obj);
             }
+            if (obj == "mockarrow" || obj == "mockbolt" || obj == "mockspear")
+            {
+                // A shot flying along +z: shaft, head in front, fletching behind.
+                float len = obj == "mockspear" ? 1.4f : obj == "mockbolt" ? 0.6f : 0.9f;
+                int root = b.AddPiece("base", -1, Vector3.zero);
+                b.Box(root, Vector3.zero, new Vector3(0.04f, 0.04f, len), Wood);
+                b.Box(root, new Vector3(0, 0, len * 0.5f + 0.06f), new Vector3(0.07f, 0.07f, 0.14f), Steel);
+                if (obj != "mockspear") b.Box(root, new Vector3(0, 0, -len * 0.5f + 0.08f), new Vector3(0.14f, 0.02f, 0.16f), new Color32(225, 220, 205, 255));
+                return b.Finish(obj);
+            }
+            if (obj == "mockstone" || obj == "mockmeteor")
+            {
+                float r = obj == "mockmeteor" ? 0.9f : 0.6f;
+                var rock = obj == "mockmeteor" ? new Color32(90, 60, 45, 255) : new Color32(120, 115, 105, 255);
+                int root = b.AddPiece("base", -1, Vector3.zero);
+                b.Box(root, Vector3.zero, new Vector3(r, r * 0.8f, r * 0.9f), rock);
+                b.Box(root, new Vector3(r * 0.2f, r * 0.25f, 0), new Vector3(r * 0.6f, r * 0.5f, r * 0.7f), rock);
+                return b.Finish(obj);
+            }
             if (obj.EndsWith("lodge"))
             {
                 int root = b.AddPiece("base", -1, Vector3.zero);

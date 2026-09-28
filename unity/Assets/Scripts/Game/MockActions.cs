@@ -231,6 +231,9 @@ namespace OpenKingdomsUnity.Game
             foreach (var o in units)
                 if (!o.Dying && o.Player != caster.Player && (o.Pos - point).sqrMagnitude < radius * radius) Hurt(o, (int)(damage * Mathf.Max(DamageScale, 0.01f)), caster.Handle);
             caster.Heading = Mathf.Atan2(point.x - caster.Pos.x, point.z - caster.Pos.z) * Mathf.Rad2Deg;
+            // The spell's look: the damage above is already done.
+            var aim = unit >= 0 && byHandle.TryGetValue(unit, out var tu) ? tu.Pos + Vector3.up * 0.8f : point;
+            FireFx(FxWeaponNamed(id == "PrimaryWeapon" ? "MOCK FIREBALL SPELL" : "MOCK FROST SPELL"), caster.Pos + Vector3.up * 1.2f, aim, caster.Handle, unit, -1);
         }
 
         bool Load(Unit wagon, int unit, Rect? area)

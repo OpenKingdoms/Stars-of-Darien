@@ -1,8 +1,8 @@
-// EntityRenderer.cs - draws units, features and projectiles each frame
-// from the backend's snapshots, all through GPU instancing: every model
-// piece at the pose the backend computed, sprite features as upright
-// quads turned to the camera, arrows as thin shafts, and selection rings
-// and health bars on top.
+// EntityRenderer.cs - draws units and features each frame from the
+// backend's snapshots, all through GPU instancing: every model piece at
+// the pose the backend computed, sprite features as upright quads turned
+// to the camera, and selection rings and health bars on top. Shots in
+// flight are the EffectRenderer's.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -25,7 +25,6 @@ namespace OpenKingdomsUnity.Game.World
         public readonly UnitState[] Units = new UnitState[MaxUnits];
         public int UnitCount { get; private set; }
         readonly FeatureState[] features = new FeatureState[MaxFeatures];
-        readonly ProjectileState[] shots = new ProjectileState[MaxProjectiles];
         readonly PiecePose[] poses = new PiecePose[MaxPieces];
         readonly Matrix4x4[] posed = new Matrix4x4[MaxPieces];
         public readonly HashSet<int> Selected = new HashSet<int>();
@@ -68,8 +67,8 @@ namespace OpenKingdomsUnity.Game.World
             return ok;
         }
 
-        readonly Mesh quad, ring, shaft, barQuad;
-        readonly Material ringMat, barBack, barGood, barMid, barLow, shaftMat;
+        readonly Mesh quad, ring, barQuad;
+        readonly Material ringMat, barBack, barGood, barMid, barLow;
         // Each feature as drawn, rebuilt only when what it is changes.
         readonly List<FeatureEntry> featureEntries = new List<FeatureEntry>();
 
@@ -296,7 +295,6 @@ namespace OpenKingdomsUnity.Game.World
             quad.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
             barQuad = Keep(Quad(0f));
             ring = Keep(Ring(0.85f, 1f, 40));
-            shaft = Keep(Box(new Vector3(0.04f, 0.04f, 0.9f)));
             ringMat = Keep(Looks.Overlay(new Color(0.45f, 1f, 0.45f, 0.9f)));
             barBack = Keep(Looks.Overlay(new Color(0, 0, 0, 0.75f)));
             barGood = Keep(Looks.Overlay(new Color(0.3f, 0.95f, 0.3f, 1f)));
@@ -311,8 +309,6 @@ namespace OpenKingdomsUnity.Game.World
             lineAttack = Keep(Looks.Overlay(new Color(1f, 0.3f, 0.25f, 0.6f)));
             lineBuild = Keep(Looks.Overlay(new Color(1f, 0.85f, 0.3f, 0.6f)));
             linePatrol = Keep(Looks.Overlay(new Color(0.4f, 0.7f, 1f, 0.55f)));
-            shaftMat = Keep(Looks.Model(null));
-            shaftMat.color = new Color(0.35f, 0.25f, 0.15f);
         }
 
         T Keep<T>(T o) where T : Object { owned.Add(o); return o; }
@@ -352,16 +348,6 @@ namespace OpenKingdomsUnity.Game.World
                 foreach (var h in new List<int>(buildShown.Keys)) if (!buildSeen.Contains(h)) buildShown.Remove(h);
 
             AddFeatures(cam);
-
-            int shotCount = backend.ReadProjectiles(shots);
-            for (int i = 0; i < shotCount; i++)
-            {
-                var s = shots[i];
-                // Picture shots come through the effects instead.
-                if (s.Kind == 2) continue;
-                var dir = s.Velocity.sqrMagnitude > 1e-4f ? s.Velocity.normalized : Vector3.forward;
-                solid.Add(shaft, 0, shaftMat, Matrix4x4.TRS(s.Position, Quaternion.LookRotation(dir), Vector3.one));
-            }
 
             AddGhost();
             AddOrderLines();
@@ -1002,22 +988,6 @@ namespace OpenKingdomsUnity.Game.World
             m.SetColors(c);
             m.SetTriangles(t, 0);
             m.RecalculateNormals();
-            return m;
-        }
-
-        static Mesh Box(Vector3 size)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            var src = go.GetComponent<MeshFilter>().sharedMesh;
-            var m = Object.Instantiate(src);
-            Looks.Release(go);
-            var v = m.vertices;
-            for (int i = 0; i < v.Length; i++) v[i] = Vector3.Scale(v[i], size);
-            m.vertices = v;
-            var cols = new Color32[v.Length];
-            for (int i = 0; i < cols.Length; i++) cols[i] = new Color32(255, 255, 255, 255);
-            m.colors32 = cols;
-            m.RecalculateBounds();
             return m;
         }
 
