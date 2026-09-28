@@ -194,9 +194,19 @@ namespace OpenKingdomsUnity.Tests
         public IEnumerator NoFeatureIsDrawnOnGroundNeverSeen()
         {
             yield return Begin(true);
+            // One tree by the monarch, in sight, and one in the far corner.
+            var monarch = Units().First(u => u.Player == mock.LocalPlayer && mock.RoleOf(u.Def) == MockBackend.Role.Monarch);
+            var size = mock.Terrain.Size;
+            int near = mock.PlaceFeature(0, Mathf.RoundToInt(monarch.Position.x + 2), Mathf.RoundToInt(-monarch.Position.z));
+            int far = mock.PlaceFeature(0, Mathf.RoundToInt(monarch.Position.x < size.x / 2 ? size.x - 6 : 6), Mathf.RoundToInt(-monarch.Position.z < size.y / 2 ? size.y - 6 : 6));
+            Assert.GreaterOrEqual(near, 0);
+            Assert.GreaterOrEqual(far, 0);
+            yield return new WaitForSecondsRealtime(FogView.Interval + 0.1f);
             yield return null;
             var fs = new FeatureState[4096];
             int n = mock.ReadFeatures(fs);
+            Assert.AreNotEqual(0, root.World.Fog.State(fs[near].Position), "the tree by the monarch is in sight");
+            Assert.AreEqual(0, root.World.Fog.State(fs[far].Position), "the one in the far corner is not");
             Assert.Greater(n, 0);
             int hidden = 0, shown = 0;
             for (int i = 0; i < n; i++)
