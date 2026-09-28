@@ -227,6 +227,7 @@ namespace OpenKingdomsUnity.Game.World
             var factor = MiniJson.Arr(pbr, "baseColorFactor");
             if (factor != null && factor.Count == 4) m.color = new Color(F(factor[0]), F(factor[1]), F(factor[2]), F(factor[3]));
             m.SetFloat("_Glossiness", (1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1)) * 0.5f);
+            Physical(ctx, json, pbr, m);
             // A plain emissive colour becomes the shader's self light.
             var glow = MiniJson.Arr(json, "emissiveFactor");
             if (glow != null && glow.Count == 3 && MiniJson.Obj(json, "emissiveTexture") == null)
@@ -238,12 +239,72 @@ namespace OpenKingdomsUnity.Game.World
             }
             // The glTF alpha mode: OPAQUE ignores alpha, so nothing is cut out
             // and no clear texel opens a hole, MASK cuts at alphaCutoff (0.5
-            // by default), and BLEND is cut at a half as effects are.
+            // by default), and BLEND blends over what is behind it.
             string mode = MiniJson.Text(json, "alphaMode", "OPAQUE");
-            m.SetFloat("_Cutoff", mode == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : mode == "BLEND" ? 0.5f : 0f);
+            m.SetFloat("_Cutoff", mode == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : mode == "BLEND" ? 0.004f : 0f);
             if (mode == "OPAQUE") m.color = new Color(m.color.r, m.color.g, m.color.b, 1f);
+            if (mode == "BLEND") Blended(m);
+            Emission(ctx, json, m);
             ctx.Materials[index] = m;
             return m;
+        }
+
+        // The glTF metal and roughness, their texture, and a clear coat, lit
+        // physically. glTF's defaults are fully metal and fully rough.
+        static void Physical(Ctx ctx, object json, object pbr, Material m)
+        {
+            m.EnableKeyword("_OKU_PBR");
+            m.SetFloat("_Metallic", (float)MiniJson.Num(pbr, "metallicFactor", 1));
+            m.SetFloat("_Smoothness", 1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1));
+            var mrt = MiniJson.Obj(pbr, "metallicRoughnessTexture");
+            if (mrt != null)
+            {
+                var tex = TextureFor(ctx, MiniJson.Int(mrt, "index"));
+                if (tex != null) m.SetTexture("_MetalRoughMap", tex);
+            }
+            var coat = MiniJson.Obj(MiniJson.Obj(json, "extensions"), "KHR_materials_clearcoat");
+            if (coat != null)
+            {
+                float f = (float)MiniJson.Num(coat, "clearcoatFactor", 0);
+                if (f > 0)
+                {
+                    m.EnableKeyword("_CLEARCOAT");
+                    m.SetFloat("_ClearCoat", f);
+                    m.SetFloat("_ClearCoatSmoothness", 1f - (float)MiniJson.Num(coat, "clearcoatRoughnessFactor", 0));
+                }
+            }
+        }
+
+        // A soft glow or halo: drawn after the solid world, blended over it,
+        // writing no depth and casting no shadow.
+        public static void Blended(Material m)
+        {
+            m.SetFloat("_Surface", 1f);
+            m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+            m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_ZWrite", 0f);
+            m.SetShaderPassEnabled("ShadowCaster", false);
+            m.renderQueue = (int)RenderQueue.Transparent;
+            m.SetOverrideTag("RenderType", "Transparent");
+        }
+
+        // A textured glow: emissiveFactor times KHR_materials_emissive_strength,
+        // in linear light, over emissiveTexture.
+        static void Emission(Ctx ctx, object json, Material m)
+        {
+            var factor = MiniJson.Arr(json, "emissiveFactor");
+            var et = MiniJson.Obj(json, "emissiveTexture");
+            // A plain colour is the shader's self light, read above.
+            if (factor == null || factor.Count < 3 || et == null) return;
+            float strength = (float)MiniJson.Num(MiniJson.Obj(MiniJson.Obj(json, "extensions"), "KHR_materials_emissive_strength"), "emissiveStrength", 1);
+            var c = new Vector4(F(factor[0]), F(factor[1]), F(factor[2]), 1f) * strength;
+            c.w = 1f;
+            if (c.x <= 0 && c.y <= 0 && c.z <= 0) return;
+            m.SetVector("_EmissionColor", c);
+            var tex = TextureFor(ctx, MiniJson.Int(et, "index"));
+            if (tex != null) m.SetTexture("_EmissionMap", tex);
+            m.EnableKeyword("_EMISSION");
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
         }
 
         static bool DoubleSided(Ctx ctx, int material)

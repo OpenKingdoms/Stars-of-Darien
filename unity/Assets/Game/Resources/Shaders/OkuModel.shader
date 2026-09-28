@@ -14,6 +14,17 @@ Shader "OpenKingdoms/Presentation/Model"
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
         _OffsetFactor ("Depth offset factor", Float) = 0
         _OffsetUnits ("Depth offset units", Float) = 0
+        [HDR] _EmissionColor ("Emission", Color) = (0, 0, 0, 1)
+        _EmissionMap ("Emission map", 2D) = "white" {}
+        _Surface ("Blended", Float) = 0
+        [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Source blend", Float) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Destination blend", Float) = 0
+        _ZWrite ("Depth write", Float) = 1
+        _Metallic ("Metallic", Range(0, 1)) = 0
+        _Smoothness ("Smoothness, lit physically", Range(0, 1)) = 0.5
+        _MetalRoughMap ("Metal (b) and roughness (g)", 2D) = "white" {}
+        _ClearCoat ("Clear coat", Range(0, 1)) = 0
+        _ClearCoatSmoothness ("Clear coat smoothness", Range(0, 1)) = 1
     }
     // URP: the same look, lit by OkuLit.hlsl.
     SubShader
@@ -23,10 +34,16 @@ Shader "OpenKingdoms/Presentation/Model"
         HLSLINCLUDE
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+        TEXTURE2D(_EmissionMap); SAMPLER(sampler_EmissionMap);
+        TEXTURE2D(_MetalRoughMap); SAMPLER(sampler_MetalRoughMap);
         CBUFFER_START(UnityPerMaterial)
             float4 _MainTex_ST;
             half4 _Color;
             half _Cutoff, _Glossiness, _Rim, _Cull, _Emission;
+            half _OffsetFactor, _OffsetUnits;
+            half4 _EmissionColor;
+            half _Surface, _SrcBlend, _DstBlend, _ZWrite;
+            half _Metallic, _Smoothness, _ClearCoat, _ClearCoatSmoothness;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
         // Something being built: solid up to the cut, a glowing edge just
@@ -50,6 +67,8 @@ Shader "OpenKingdoms/Presentation/Model"
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
             Offset [_OffsetFactor], [_OffsetUnits]
+            Blend [_SrcBlend] [_DstBlend]
+            ZWrite [_ZWrite]
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -60,6 +79,9 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fog
             #pragma multi_compile_local _ _OKU_BUILD
+            #pragma shader_feature_local _EMISSION
+            #pragma shader_feature_local _OKU_PBR
+            #pragma shader_feature_local _CLEARCOAT
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
@@ -93,15 +115,45 @@ Shader "OpenKingdoms/Presentation/Model"
                     return half4(MixFog(ghost * OkuFogLight(i.positionWS), i.fog), 1);
                 }
             #endif
+            #if defined(_OKU_PBR)
+                // A drop-in model's own metal and roughness, lit as URP's Lit
+                // is, with the sky's reflections in its metals and gems.
+                half4 mr = SAMPLE_TEXTURE2D(_MetalRoughMap, sampler_MetalRoughMap, i.uv);
+                InputData input = (InputData)0;
+                input.positionWS = i.positionWS;
+                input.positionCS = i.positionCS;
+                input.normalWS = n;
+                input.viewDirectionWS = SafeNormalize(GetWorldSpaceViewDir(i.positionWS));
+                input.shadowCoord = TransformWorldToShadowCoord(i.positionWS);
+                input.fogCoord = i.fog;
+                input.bakedGI = SampleSH(n);
+                input.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(i.positionCS);
+                input.shadowMask = 1;
+                SurfaceData surf = (SurfaceData)0;
+                surf.albedo = c.rgb;
+                surf.metallic = _Metallic * mr.b;
+                surf.smoothness = saturate(1 - (1 - _Smoothness) * mr.g);
+                surf.occlusion = 1;
+                surf.alpha = c.a;
+                surf.normalTS = half3(0, 0, 1);
+                surf.clearCoatMask = _ClearCoat;
+                surf.clearCoatSmoothness = _ClearCoatSmoothness;
+                half3 rgb = UniversalFragmentPBR(input, surf).rgb;
+            #else
                 half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, _Glossiness, _Rim);
+            #endif
                 rgb += c.rgb * _Emission;
             #if defined(_OKU_BUILD)
                 // The glow rides the walls at the cut, not floors lying in it.
                 half edge = saturate(1 + above / max(_BuildBand, 1e-3));
                 rgb += half3(1.6, 1.15, 0.55) * edge * edge * (1 - abs(n.y) * 0.85) * _BuildGlow * (0.6 + 0.4 * c.rgb);
             #endif
+            #if defined(_EMISSION)
+                // Light the surface gives off itself, bright enough to bloom.
+                rgb += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, i.uv).rgb * _EmissionColor.rgb;
+            #endif
                 rgb *= OkuFogLight(i.positionWS);
-                return half4(MixFog(rgb, i.fog), 1);
+                return half4(MixFog(rgb, i.fog), _Surface > 0.5 ? c.a : 1);
             }
             ENDHLSL
         }
