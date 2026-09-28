@@ -217,7 +217,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 18;
+        public const int ApiVersion = 19;
         public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;
         public const int WhyOk = 0, WhyMana = 1, WhyUnsupported = 2;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
@@ -304,6 +304,9 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_audio(int enable, int volume, int music);
         [DllImport(Lib)] public static extern void okx_set_view(int cx, int cy, int w, int h);
         [DllImport(Lib)] public static extern int okx_command(int type, int handle, int x, int y, int target, int buildDef, int arg);
+        // Each unit to its own point, xy an x, z pair a unit in world pixels, as one order.
+        // heading is engine radians, taken on arrival and held when face is 1.
+        [DllImport(Lib)] public static extern int okx_move_formation(int[] handles, int[] xy, int n, int face, float heading, int groupPace, int queue);
 
         [DllImport(Lib)] public static extern int okx_terrain_info(out OkxTerrainInfo info);
         [DllImport(Lib)] public static extern int okx_terrain_heights([Out] float[] heights, int cap);

@@ -1,3 +1,3 @@
-okengine-api18.dll  okengine API 18, from okengine-published for main 7028d04 (unity-embed dbfc010)
+okengine-api19.dll  okengine API 19, API 19, main beae23b, okengine from unity-embed 7182b8d, published at openkingdoms-unity beae23b
 okcore-abi2.dll     okcore ABI 2, built from core/ at 93aadb1
 SDL2.dll            SDL 2, the build okengine links against (zlib license)

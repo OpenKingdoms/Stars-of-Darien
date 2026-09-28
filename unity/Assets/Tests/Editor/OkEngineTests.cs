@@ -96,6 +96,25 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AFormationSendsEachUnitToItsOwnPoint()
+        {
+            var units = new OkxUnit[512];
+            int n = OkEngine.okx_units(units, units.Length);
+            int me = OkEngine.okx_local_player();
+            int pick = -1;
+            for (int i = 0; i < n && pick < 0; i++) if (units[i].player == me) pick = i;
+            Assert.GreaterOrEqual(pick, 0);
+            var u = units[pick];
+            int[] handles = { u.handle };
+            int[] xy = { (int)u.x + 200, (int)u.z + 100 };
+            Assert.AreEqual(0, OkEngine.okx_move_formation(handles, xy, 1, 1, 1.5f, 1, 0));
+            OkEngine.okx_tick(3);
+            Assert.AreEqual(0, OkEngine.okx_unit_order(u.handle, out var o));
+            Assert.AreEqual(xy[0], o.x);
+            Assert.AreEqual(xy[1], o.y);
+        }
+
+        [Test]
         public void FeaturesAreModelsOrSprites()
         {
             int n = OkEngine.okx_features(null, 0);
