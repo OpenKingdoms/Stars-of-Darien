@@ -1,0 +1,3 @@
+okengine-api18.dll  okengine API 18, from okengine-published for main 7028d04 (unity-embed dbfc010)
+okcore-abi2.dll     okcore ABI 2, built from core/ at 93aadb1
+SDL2.dll            SDL 2, the build okengine links against (zlib license)

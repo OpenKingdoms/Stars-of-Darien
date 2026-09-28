@@ -227,6 +227,15 @@ namespace OpenKingdomsUnity.Game.World
             var factor = MiniJson.Arr(pbr, "baseColorFactor");
             if (factor != null && factor.Count == 4) m.color = new Color(F(factor[0]), F(factor[1]), F(factor[2]), F(factor[3]));
             m.SetFloat("_Glossiness", (1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1)) * 0.5f);
+            // A plain emissive colour becomes the shader's self light.
+            var glow = MiniJson.Arr(json, "emissiveFactor");
+            if (glow != null && glow.Count == 3 && MiniJson.Obj(json, "emissiveTexture") == null)
+            {
+                float e = Mathf.Max(F(glow[0]), Mathf.Max(F(glow[1]), F(glow[2])));
+                var strength = MiniJson.Obj(MiniJson.Obj(json, "extensions"), "KHR_materials_emissive_strength");
+                if (strength != null) e *= (float)MiniJson.Num(strength, "emissiveStrength", 1);
+                if (e > 0) m.SetFloat("_Emission", e);
+            }
             // The glTF alpha mode: OPAQUE ignores alpha, so nothing is cut out
             // and no clear texel opens a hole, MASK cuts at alphaCutoff (0.5
             // by default), and BLEND is cut at a half as effects are.

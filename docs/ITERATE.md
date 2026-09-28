@@ -57,9 +57,9 @@ The bottom panel has the minimap, what is selected and its orders, and the comma
 
 ## Testing the remaster
 
-The EditMode tests cover the screen flow, the mock engine, the terrain builder, the override rules, the glb reader and the studio windows. The PlayMode tests go from the main menu through skirmish setup and the loading screen into a running game and back, save and load a game, play a fight to its end, and time five hundred units on screen. All of them run on the mock engine, so they need no game files.
+The EditMode tests cover the screen flow, the mock engine, the terrain builder, the override rules, the glb reader, the studio windows, Studio Mode and the engine installer. The PlayMode tests go from the main menu through skirmish setup and the loading screen into a running game and back, save and load a game, play a fight to its end, and time five hundred units on screen. All of them run on the mock engine, so they need no game files.
 
-The capture test draws every screen into PNG files without a window. It runs only when `OKU_CAPTURE_DIR` names a folder. Set `OKU_CAPTURE_BACKEND=engine` to use the real engine, `OKU_CAPTURE_MAP` to pick a map by name, and `OKU_CAPTURE_W` and `OKU_CAPTURE_H` for another size than 1920 by 1080. With `OKU_CAPTURE_TREES=1` it also frames the thickest stand of trees with the fog and weather off.
+The capture test draws every screen into PNG files without a window. It runs only when `OKU_CAPTURE_DIR` names a folder. Set `OKU_CAPTURE_BACKEND=engine` to use the real engine, `OKU_CAPTURE_MAP` to pick a map by name, and `OKU_CAPTURE_W` and `OKU_CAPTURE_H` for another size than 1920 by 1080. With `OKU_CAPTURE_TREES=1` it also frames the thickest stand of trees with the fog and weather off. The pictures in `docs/images/studio-mode` come from the EditMode test `CapturesForTheGuide` on the mock, which runs only when `OKU_STUDIO_SHOTS` names a folder.
 
 ## Where things go
 

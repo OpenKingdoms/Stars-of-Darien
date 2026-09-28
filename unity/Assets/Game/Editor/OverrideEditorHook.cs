@@ -26,6 +26,7 @@ namespace OpenKingdomsUnity.Studio
                     if (p.StartsWith(OverrideIndex.Root))
                     {
                         OverrideLoader.Reset();
+                        CardOverride.Forget();
                         return;
                     }
         }

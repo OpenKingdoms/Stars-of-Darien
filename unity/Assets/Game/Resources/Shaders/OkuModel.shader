@@ -1,6 +1,6 @@
 // Models, features and sprites: texture times vertex colour times an
 // instanced tint, alpha tested, lit, casting and taking shadows, with a
-// faint rim of sky light.
+// faint rim of sky light and an optional self light (_Emission).
 Shader "OpenKingdoms/Presentation/Model"
 {
     Properties
@@ -10,6 +10,7 @@ Shader "OpenKingdoms/Presentation/Model"
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
         _Glossiness ("Smoothness", Range(0, 1)) = 0.2
         _Rim ("Rim light", Range(0, 1)) = 0.3
+        _Emission ("Self light", Range(0, 4)) = 0
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
         _OffsetFactor ("Depth offset factor", Float) = 0
         _OffsetUnits ("Depth offset units", Float) = 0
@@ -25,7 +26,7 @@ Shader "OpenKingdoms/Presentation/Model"
         CBUFFER_START(UnityPerMaterial)
             float4 _MainTex_ST;
             half4 _Color;
-            half _Cutoff, _Glossiness, _Rim, _Cull;
+            half _Cutoff, _Glossiness, _Rim, _Cull, _Emission;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
         ENDHLSL
@@ -65,6 +66,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * i.color * _Color;
                 clip(c.a - _Cutoff);
                 half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, _Glossiness, _Rim);
+                rgb += c.rgb * _Emission;
                 rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
@@ -155,6 +157,7 @@ Shader "OpenKingdoms/Presentation/Model"
         sampler2D _MainTex;
         half _Glossiness;
         half _Rim;
+        half _Emission;
         UNITY_INSTANCING_BUFFER_START(Props)
             UNITY_DEFINE_INSTANCED_PROP(fixed4, _Color)
         UNITY_INSTANCING_BUFFER_END(Props)
@@ -176,7 +179,7 @@ Shader "OpenKingdoms/Presentation/Model"
             half rim = 1 - saturate(dot(normalize(IN.viewDir), o.Normal));
             half fog = OkuFogLight(IN.worldPos);
             o.Albedo *= fog;
-            o.Emission = unity_AmbientSky.rgb * c.rgb * pow(rim, 3) * _Rim * 2 * fog;
+            o.Emission = (unity_AmbientSky.rgb * pow(rim, 3) * _Rim * 2 + _Emission) * c.rgb * fog;
         }
         ENDCG
     }

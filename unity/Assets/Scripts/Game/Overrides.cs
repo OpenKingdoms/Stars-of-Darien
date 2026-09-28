@@ -42,9 +42,19 @@ namespace OpenKingdomsUnity.Game
         public static OverrideIndex Build(IEnumerable<string> paths)
         {
             var index = new OverrideIndex();
+            // A unit model with a .json of the same name is a card (CardOverride).
+            var all = new List<string>();
+            var cards = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var raw in paths)
             {
                 var path = raw.Replace('\\', '/');
+                all.Add(path);
+                if (string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(Path.GetDirectoryName(path)?.Replace('\\', '/'), Folder(OverrideKind.Unit), StringComparison.OrdinalIgnoreCase))
+                    cards.Add(Path.GetFileNameWithoutExtension(path));
+            }
+            foreach (var path in all)
+            {
                 string ext = Path.GetExtension(path);
                 if (Rank(ext) < 0) continue;
                 string dir = Path.GetDirectoryName(path)?.Replace('\\', '/');
@@ -54,6 +64,7 @@ namespace OpenKingdomsUnity.Game
                 else if (string.Equals(dir, Folder(OverrideKind.Feature), StringComparison.OrdinalIgnoreCase)) kind = OverrideKind.Feature;
                 else if (string.Equals(dir, GeneratedFolder, StringComparison.OrdinalIgnoreCase)) { kind = OverrideKind.Feature; generated = true; }
                 else continue;
+                if (kind == OverrideKind.Unit && cards.Contains(Path.GetFileNameWithoutExtension(path))) continue;
                 if (generated) index.generatedPaths.Add(path);
                 string key = Key(kind, Path.GetFileNameWithoutExtension(path));
                 if (!index.best.TryGetValue(key, out var had) || Rank(path, generated) < Rank(had, index.generatedPaths.Contains(had)))
