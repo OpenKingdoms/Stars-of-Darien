@@ -138,6 +138,16 @@ namespace OpenKingdomsUnity.Studio
             Footprint = d.Footprint.x > 0 ? d.Footprint : Vector2Int.one, UnitDef = d.Id, ToScale = !Mock(b),
         };
 
+        // What a model named like something the game has replaces: a feature
+        // by name, a card unit by its model, or any unit by name or model.
+        public static StudioTarget Match(string name, IEnumerable<StudioTarget> features, IEnumerable<StudioTarget> cards, IEnumerable<StudioTarget> units)
+        {
+            bool Same(string a) => string.Equals(a, name, StringComparison.OrdinalIgnoreCase);
+            return features?.FirstOrDefault(t => Same(t.Name))
+                ?? cards?.FirstOrDefault(t => Same(t.ObjectName) && t.UnitDef >= 0)
+                ?? units?.FirstOrDefault(t => Same(t.Name) || Same(t.ObjectName));
+        }
+
         // The card piece to preselect: the one the table names when the model
         // has it, or else the first piece with an inactive "_off" twin.
         public static string CardPiece(IList<string> pieces, string preferred)

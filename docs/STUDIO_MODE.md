@@ -129,9 +129,39 @@ The Show part turns the monarch, the grid, the anchor, the original and the ghos
 
 ![A stand-in map's own ground with the sea around it](images/studio-mode/map-ground.jpg)
 
+## The gallery
+
+The gallery shows every model in a folder at once, on the studio's ground and in its light and weather. Press Gallery on the Studio panel or on the Studio View's toolbar, or pick OpenKingdoms, then Studio, then Gallery. It opens as a tab beside the Studio View.
+
+Each model stands at game scale on a small plinth of its own with its name floating over it. The plinths run in rows by name, left to right and then toward the camera. Each row and each column is as wide as its biggest model, so nothing overlaps however big one of them is. A monarch stands on a plinth at the start of the first row for scale, a real one with the game installed and the 4-cell stand-in without it.
+
+Folder, at the left of the toolbar, picks what to show. It starts on `Overrides/Generated/Units` and offers `Overrides/Generated`, `Overrides/Features` and `Overrides/Units`, or any folder through Pick a folder, and it remembers the last one. The search box beside it narrows the grid to the models whose names contain what you type, in any case.
+
+The view starts over the whole grid. Click a model to fly to it, and in the free view it turns on the spot like the turntable until you untick Turn. The right and left arrow keys, or N and P, fly to the next and the previous model in the grid's order, and Home or Escape goes back to the overview. Classic view and Free view work as they do in the Studio View. In the classic view a drag pans across the grid, in the free view it turns round the model, and the wheel zooms in both.
+
+Compare originals stands the thing each model replaces beside it on the same plinth, the original model for a unit or a 3D feature and the picture as the game draws it for a sprite feature. The gallery finds the original by the file's name, as the studio does when you drop a model in. It needs the game installed, since the stand-in world has none of the real originals. A model named after nothing the game has says "no original" under its name.
+
+The gallery keeps an eye on the folder. Export over a model and it reloads where it stands within a second or two. A new file takes its place in the grid, and a deleted one leaves it.
+
+A folder can hold hundreds of models. The gallery reads their sizes from the files first, which is quick, sets out the plinths, and then loads the models nearest the camera first, a few each frame, so the editor never stops for long. A bar at the top of the view shows how far it has got, and a see-through box stands in for each model until it loads. When the loaded models' pictures and meshes would take more than about 1.5 GB, the ones far from the camera wait until it comes near them, and the farthest are let go to make room. A model that can't be read shows a red box and "did not load" under its name.
+
+Screenshot on the gallery's toolbar saves the view as it is into the capture folder, the same as F9 (see the next part). Closing the gallery's tab lets its models go.
+
+## Sharing what you see
+
+F9 saves a picture of what you are looking at, and Shift+F9 records about five seconds of it at 12 frames a second. Both work in the game, whether it runs from Play Remaster, from Play here or as a built copy, and in the Studio View and the gallery. In the game the picture is the whole game screen, menus and all, without the editor around it. In the studio it is the view as drawn, without the toolbar. A note at the top of the screen, or over the window in the studio, says where each capture went.
+
+A picture is saved as `shot-YYYYMMDD-HHMMSS.png`. A clip is a folder `clip-YYYYMMDD-HHMMSS` holding `frame-001.png` to `frame-060.png`, and beside it a contact sheet `clip-YYYYMMDD-HHMMSS.png` with every frame in a grid, each with its number and its time from the start. The sheet is at most 2048 pixels wide, so the whole movement can be read from one picture. `LATEST.txt` in the same folder holds the full path of the newest picture or contact sheet.
+
+Captures go to `D:\OKBuild\owner-shots` on a computer that has a `D:\OKBuild` folder, and to the `Captures` folder at the top of the clone otherwise, which never leaves your computer. OpenKingdoms, then Settings, changes where. The picture is read back and written in the background, so a capture doesn't hold the game up.
+
+The keys are F9 and Shift+F9 because the original game gives F12 to clearing the chat and keeps F9 free for its own screenshots. In the Unity editor the game hears keys only while the Game view has focus, and the studio only while the Studio View or the gallery has focus.
+
 ## Settings
 
 OpenKingdoms, then Settings, holds the few things the studio needs to know about your computer. Game folder is where the original game is installed, and Browse picks it. The box under Engine says in plain words whether the real game and your game files will be used, or the stand-in world and why. Use these settings now applies a change to the open studio at once, without restarting Unity. It leaves Use the stand-in world as you set it.
+
+Under Captures, Capture folder is where F9 pictures and Shift+F9 clips go. Browse picks another folder, Default goes back to the default, and Open shows the folder. The `OKU_SHOTS_DIR` environment variable wins over this setting.
 
 Under Tools, both settings are optional. Sprite catalog is a folder that `tools/sprite-replace/extract.py` makes from your game files, listing every sprite feature with its picture. Making it needs Python, and the studio works without it. Blender is where `blender.exe` is, for the other studio windows that open Blender. The studio finds it by itself when Blender is installed in the usual place.
 

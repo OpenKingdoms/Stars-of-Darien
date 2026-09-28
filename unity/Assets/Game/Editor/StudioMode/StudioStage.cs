@@ -50,6 +50,7 @@ namespace OpenKingdomsUnity.Studio
         float weatherLight = 1f;
         string climate = "grass";
         bool sea = true;
+        public string ClimateName => climate;
         Bounds modelBounds = new Bounds(Vector3.up * 0.5f, Vector3.one);
         float originalWidth = 1f, monarchWidth = 1f, monarchHeight = StudioTargets.MonarchHeight;
         Vector2Int footprint = Vector2Int.one;
@@ -243,7 +244,7 @@ namespace OpenKingdomsUnity.Studio
 
         // Soft value noise in the ground's colour, so the eye has something
         // to read distance by without it looking like any real place.
-        static Texture2D GroundTexture(Color c)
+        internal static Texture2D GroundTexture(Color c)
         {
             const int n = 128;
             var t = new Texture2D(n, n, TextureFormat.RGBA32, true) { name = "neutral ground", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
@@ -489,8 +490,12 @@ namespace OpenKingdomsUnity.Studio
 
         // A stand-in monarch: a figure 4 cells tall on a two by two cell base,
         // the size of the game's monarchs.
-        GameObject Marker(Color team)
+        GameObject Marker(Color team) => Marker(team, owned);
+
+        // The stand-in monarch with its materials and mesh kept in owned.
+        internal static GameObject Marker(Color team, List<Object> owned)
         {
+            T Own<T>(T o) where T : Object { o.hideFlags = HideFlags.DontSave; owned.Add(o); return o; }
             var go = new GameObject("Monarch");
             var mat = Own(Looks.Model(null));
             mat.color = Color.Lerp(team, Color.white, 0.25f);
@@ -530,7 +535,7 @@ namespace OpenKingdomsUnity.Studio
 
         // A backend model at rest, its pieces placed by their offsets, less
         // the script's alternates and whatever skip names.
-        GameObject Rest(PresentedModel pm, string name, Func<Material, Material> remap, Func<string, bool> skip)
+        internal static GameObject Rest(PresentedModel pm, string name, Func<Material, Material> remap, Func<string, bool> skip)
         {
             var go = new GameObject(name);
             var d = pm.Data;

@@ -164,7 +164,7 @@ namespace OpenKingdomsUnity.Studio
 
         // A real monarch from the game, or null for the 4-cell stand-in, which
         // the stand-in world always gets since its units are not to scale.
-        static PresentedModel MonarchModel(IGameBackend b)
+        internal static PresentedModel MonarchModel(IGameBackend b)
         {
             if (b == null || b.Name == "Mock") return null;
             var def = StudioTargets.Monarch(b);
@@ -215,9 +215,7 @@ namespace OpenKingdomsUnity.Studio
         {
             if (Target.Kind != TargetKind.None) return;
             var b = StudioBackend.Get();
-            var hit = StudioTargets.Features(b, StudioTargets.Catalog()).FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
-                ?? StudioTargets.Units(b, true).FirstOrDefault(t => string.Equals(t.ObjectName, name, StringComparison.OrdinalIgnoreCase) && t.UnitDef >= 0)
-                ?? StudioTargets.Units(b, false).FirstOrDefault(t => string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase) || string.Equals(t.ObjectName, name, StringComparison.OrdinalIgnoreCase));
+            var hit = StudioTargets.Match(name, StudioTargets.Features(b, StudioTargets.Catalog()), StudioTargets.Units(b, true), StudioTargets.Units(b, false));
             SuggestedName = hit == null ? name : "";
             if (hit != null) SetTarget(hit);
         }
@@ -260,28 +258,18 @@ namespace OpenKingdomsUnity.Studio
             t.DrawnFrom = null;
             if (b != null && t.Kind != TargetKind.None)
             {
-                string obj = t.ObjectName;
-                if (!string.IsNullOrEmpty(obj))
+                pm = OriginalModel(b, t, TeamColour);
+                if (pm != null)
                 {
-                    int id = b.LoadModel(obj, TeamColour);
-                    pm = StudioBackend.Models?.Get(id);
-                    if (pm != null)
-                    {
-                        originalBounds = pm.RestBounds;
-                        OriginalPieces = pm.Data.Pieces.Select(p => p.Name).Where(n => !string.IsNullOrEmpty(n)).ToArray();
-                        if (!t.IsUnit) { t.DrawnHeight = pm.RestBounds.size.y; t.DrawnFrom = "model"; }
-                    }
+                    originalBounds = pm.RestBounds;
+                    OriginalPieces = pm.Data.Pieces.Select(p => p.Name).Where(n => !string.IsNullOrEmpty(n)).ToArray();
+                    if (!t.IsUnit) { t.DrawnHeight = pm.RestBounds.size.y; t.DrawnFrom = "model"; }
                 }
                 if (pm == null && t.Kind == TargetKind.Feature)
                 {
-                    if (FromMap(b, t, out rect) || Placed(b, t, out rect)) { t.DrawnHeight = rect.height; t.DrawnFrom = "map"; }
-                    else if (t.SpriteFile != null && File.Exists(t.SpriteFile) && t.SpriteSize.y > 0)
+                    if (FromMap(b, t, out spriteTex, out rect) || Placed(b, t, out spriteTex, out rect)) { t.DrawnHeight = rect.height; t.DrawnFrom = "map"; }
+                    else if (CatalogPicture(t, out spriteTex, out rect))
                     {
-                        spriteTex = new Texture2D(2, 2) { hideFlags = HideFlags.DontSave, wrapMode = TextureWrapMode.Clamp };
-                        spriteTex.LoadImage(File.ReadAllBytes(t.SpriteFile));
-                        // One pixel is a sixteenth of a cell across and an eighth
-                        // of a cell up, as the original's view draws height.
-                        rect = new Rect(-t.Hotspot.x / 16f, -(t.SpriteSize.y - t.Hotspot.y) / 8f, t.SpriteSize.x / 16f, t.SpriteSize.y / 8f);
                         t.DrawnHeight = rect.height;
                         t.DrawnFrom = "picture";
                     }
@@ -296,8 +284,36 @@ namespace OpenKingdomsUnity.Studio
             Stage?.SetOriginal(t, pm, spriteTex, rect);
         }
 
-        static bool FromMap(IGameBackend b, StudioTarget t, out Rect rect)
+        // The unit's or feature's own model from the game, or null.
+        internal static PresentedModel OriginalModel(IGameBackend b, StudioTarget t, int team)
         {
+            if (b == null || t == null || string.IsNullOrEmpty(t.ObjectName)) return null;
+            int id = b.LoadModel(t.ObjectName, team);
+            return StudioBackend.Models?.Get(id);
+        }
+
+        // A sprite feature's picture as the game draws it, from the loaded
+        // map, from one placed out of sight for a moment, or from the sprite
+        // catalog. The texture is the caller's to destroy.
+        internal static bool OriginalPicture(IGameBackend b, StudioTarget t, out Texture2D tex, out Rect rect) =>
+            FromMap(b, t, out tex, out rect) || Placed(b, t, out tex, out rect) || CatalogPicture(t, out tex, out rect);
+
+        static bool CatalogPicture(StudioTarget t, out Texture2D tex, out Rect rect)
+        {
+            tex = null;
+            rect = default;
+            if (t.SpriteFile == null || !File.Exists(t.SpriteFile) || t.SpriteSize.y <= 0) return false;
+            tex = new Texture2D(2, 2) { hideFlags = HideFlags.DontSave, wrapMode = TextureWrapMode.Clamp };
+            tex.LoadImage(File.ReadAllBytes(t.SpriteFile));
+            // One pixel is a sixteenth of a cell across and an eighth of a
+            // cell up, as the original's view draws height.
+            rect = new Rect(-t.Hotspot.x / 16f, -(t.SpriteSize.y - t.Hotspot.y) / 8f, t.SpriteSize.x / 16f, t.SpriteSize.y / 8f);
+            return true;
+        }
+
+        static bool FromMap(IGameBackend b, StudioTarget t, out Texture2D tex, out Rect rect)
+        {
+            tex = null;
             rect = default;
             if (t.FeatureDef < 0 || b.Status != GameStatus.Running) return false;
             var feats = new FeatureState[16384];
@@ -306,25 +322,27 @@ namespace OpenKingdomsUnity.Studio
             {
                 var f = feats[i];
                 if (f.Def != t.FeatureDef || f.Sprite < 0) continue;
-                return SpriteOf(b, f, out rect);
+                return SpriteOf(b, f, out tex, out rect);
             }
             return false;
         }
 
-        static bool SpriteOf(IGameBackend b, FeatureState f, out Rect rect)
+        static bool SpriteOf(IGameBackend b, FeatureState f, out Texture2D tex, out Rect rect)
         {
+            tex = null;
             rect = default;
             var img = b.Sprite(f.Sprite);
             if (img == null) return false;
-            spriteTex = OpenKingdomsUnity.Game.UI.UiKit.ToTexture(img, true);
+            tex = OpenKingdomsUnity.Game.UI.UiKit.ToTexture(img, true);
             rect = new Rect(-f.SpriteOffsetX, f.SpriteBottom, f.SpriteWidth, f.SpriteTop - f.SpriteBottom);
             return true;
         }
 
         // A feature the loaded map does not have, placed on an edge cell for
         // as long as it takes to read how the game draws it, then taken away.
-        static bool Placed(IGameBackend b, StudioTarget t, out Rect rect)
+        static bool Placed(IGameBackend b, StudioTarget t, out Texture2D tex, out Rect rect)
         {
+            tex = null;
             rect = default;
             if (t.FeatureDef < 0 || b.Status != GameStatus.Running || b.Terrain == null) return false;
             var size = b.Terrain.Size;
@@ -340,7 +358,7 @@ namespace OpenKingdomsUnity.Studio
                 {
                     int n = Mathf.Min(b.ReadFeatures(feats), feats.Length);
                     for (int i = 0; i < n; i++)
-                        if (feats[i].Index == index) return feats[i].Sprite >= 0 && SpriteOf(b, feats[i], out rect);
+                        if (feats[i].Index == index) return feats[i].Sprite >= 0 && SpriteOf(b, feats[i], out tex, out rect);
                 }
                 finally { b.RemoveFeature(index); }
             }

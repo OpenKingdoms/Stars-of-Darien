@@ -392,7 +392,7 @@ namespace OpenKingdomsUnity.Studio
         }
 
         // What GlbLoader made for one model only.
-        static void DisposeTemplate(GameObject template)
+        internal static void DisposeTemplate(GameObject template)
         {
             if (template == null) return;
             foreach (var r in template.GetComponentsInChildren<Renderer>(true))
