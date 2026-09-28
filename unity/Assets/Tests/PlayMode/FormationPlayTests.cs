@@ -20,6 +20,9 @@ namespace OpenKingdomsUnity.Tests
         GameRoot root;
         MockBackend mock;
         PointerFrame frame;
+        // When set, the pointer sits on this world point as the frame is
+        // read, through the same camera the game picks with.
+        System.Func<Vector3> follow;
 
         [TearDown]
         public void CleanUp()
@@ -46,11 +49,13 @@ namespace OpenKingdomsUnity.Tests
             f.Facing = FormationFacing.ByDrag;
             f.ClassicRightDrag = true;
             frame = new PointerFrame { Focused = true, Dpi = 96 };
+            follow = null;
             // Edges (presses, releases, keys) last one frame.
             f.Source = () =>
             {
                 var r = frame;
                 r.Seconds = Time.unscaledTime;
+                if (follow != null) r.Screen = Cam.WorldToScreenPoint(follow());
                 frame.LeftDown = frame.RightDown = frame.LeftUp = frame.RightUp = false;
                 frame.TabDown = frame.FDown = frame.GDown = frame.EscapeDown = false;
                 return r;
@@ -457,10 +462,14 @@ namespace OpenKingdomsUnity.Tests
             var at = new Vector2(enemy.Position.x, enemy.Position.z);
             Look(at);
             for (int i = 0; i < 5; i++) yield return null;
-            Assert.AreEqual(enemy.Handle, root.Orders.UnitAt(ScreenOf(at)), "the press lands on the enemy");
-            yield return Press(1, at);
+            Vector3 On() => enemy.Position + Vector3.up * 0.8f;
+            follow = On;
+            frame.RightDown = frame.RightHeld = true;
+            yield return null;
+            follow = null;
+            Assert.AreEqual(enemy.Handle, root.Orders.PointerUnit, "the press lands on the enemy");
             Assert.AreEqual(GestureState.Idle, root.Orders.Formation.Gesture.State, "no formation starts on an enemy");
-            frame.Screen += new Vector2(40, 0);
+            frame.Screen = (Vector2)Cam.WorldToScreenPoint(On()) + new Vector2(40, 0);
             yield return null;
             yield return Release(1);
             Assert.AreEqual(0, mock.FormationCalls.Count, "dragged 40 pixels it sends no formation");
@@ -523,6 +532,35 @@ namespace OpenKingdomsUnity.Tests
             March(knights, flyer, 30 * 12);
             var u = UnitOf(flyer[0]);
             Assert.Less((new Vector2(u.Position.x, u.Position.z) - toAir.Targets[0]).magnitude, 0.5f, "it flies to its slot");
+        }
+
+        [UnityTest]
+        public IEnumerator TheReadoutStaysOffTheFormation()
+        {
+            yield return Begin(false, extra: 8);
+            // Eight on a twelve cell line stand two ranks deep.
+            var knights = Own(MockBackend.Role.Knight, 8);
+            Select(knights);
+            var c = UnitOf(knights[0]).Position;
+            Look(new Vector2(c.x, c.z + 8));
+            for (int i = 0; i < 5; i++) yield return null;
+            var f = root.Orders.Formation;
+            var size = new Vector2(60, 20);
+            foreach (bool rightToLeft in new[] { false, true })
+            {
+                var a = new Vector2(c.x + (rightToLeft ? 6 : -6), c.z + 10);
+                var b = new Vector2(c.x + (rightToLeft ? -6 : 6), c.z + 10);
+                yield return Press(1, a);
+                yield return DragTo(a, b);
+                Assert.IsTrue(f.Live);
+                var box = f.ReadoutBox(size);
+                float px = ScreenOf(b).x;
+                if (rightToLeft) Assert.LessOrEqual(box.xMax, px, "the formation lies right of the pointer, so the readout goes left");
+                else Assert.GreaterOrEqual(box.xMin, px, "and right when the formation lies left");
+                // Facing away from the camera the ranks come toward it, below the pointer.
+                if (!rightToLeft) Assert.LessOrEqual(box.yMax, Screen.height - ScreenOf(b).y, "above the pointer when the ranks lie below");
+                yield return Release(1);
+            }
         }
     }
 }

@@ -406,17 +406,8 @@ namespace OpenKingdomsUnity.Game.World
             readoutStyle.fontSize = Mathf.RoundToInt(15f * Mathf.Max(1f, Screen.height / 1080f));
             readoutContent.text = Gesture.Shift ? readoutQueued : readout;
             var size = readoutStyle.CalcSize(readoutContent);
-            // Beside the pointer on the side away from the formation, so it
-            // never sits on the slots being placed.
-            bool left = false, above = false;
-            if (lastCam != null)
-            {
-                var c = lastCam.WorldToScreenPoint(anchor);
-                if (c.z > 0) { left = c.x > pointer.x; above = c.y < pointer.y; }
-            }
-            float gy = Screen.height - pointer.y;
-            float x = Mathf.Clamp(left ? pointer.x - 22f - size.x : pointer.x + 22f, 8f, Mathf.Max(8f, Screen.width - size.x - 8f));
-            float y = Mathf.Clamp(above ? gy - 18f - size.y : gy + 18f, 4f, Mathf.Max(4f, Screen.height - size.y - 8f));
+            var at = ReadoutBox(size);
+            float x = at.x, y = at.y;
             var box = new Rect(x - 6f, y - 3f, size.x + 12f, size.y + 6f);
             var old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
@@ -426,6 +417,23 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         public string ReadoutText => Gesture.Shift ? readoutQueued : readout;
+
+        // Where a readout of this size goes, in GUI space: beside the
+        // pointer on the side away from the formation, so it never sits on
+        // the slots being placed.
+        public Rect ReadoutBox(Vector2 size)
+        {
+            bool left = false, above = false;
+            if (lastCam != null)
+            {
+                var c = lastCam.WorldToScreenPoint(anchor);
+                if (c.z > 0) { left = c.x > pointer.x; above = c.y < pointer.y; }
+            }
+            float gy = Screen.height - pointer.y;
+            float x = Mathf.Clamp(left ? pointer.x - 22f - size.x : pointer.x + 22f, 8f, Mathf.Max(8f, Screen.width - size.x - 8f));
+            float y = Mathf.Clamp(above ? gy - 18f - size.y : gy + 18f, 4f, Mathf.Max(4f, Screen.height - size.y - 8f));
+            return new Rect(x, y, size.x, size.y);
+        }
 
         // ---- The ground, as near as the terrain tells it ----
 
