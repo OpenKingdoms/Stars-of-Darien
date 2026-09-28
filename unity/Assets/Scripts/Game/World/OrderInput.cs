@@ -7,7 +7,8 @@
 // In both, a drag selects the player's units (Shift adds), M, A, P and G
 // arm move, attack, patrol and guard, S stops, a build armed from the
 // menu shows its ghost, green where it can stand, and Ctrl with a digit
-// makes a group that the digit brings back.
+// makes a group that the digit brings back. A drag with the order button
+// lays out a formation (FormationInput).
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -39,11 +40,15 @@ namespace OpenKingdomsUnity.Game.World
         public Vector3 PointerAt { get; private set; }
         public int PointerUnit { get; private set; } = -1;
 
+        // The formation drag, which has the mouse while a drag is live.
+        public readonly FormationInput Formation;
+
         public OrderInput(IGameBackend backend, WorldView world, bool classic)
         {
             this.backend = backend;
             this.world = world;
             Classic = classic;
+            Formation = new FormationInput(backend, world, this);
         }
 
         public HashSet<int> Selected => world.Entities.Selected;
@@ -113,6 +118,7 @@ namespace OpenKingdomsUnity.Game.World
         // or else deselect.
         public void Cancel()
         {
+            if (Formation.Busy) { Formation.Abort(); return; }
             if (ArmedAction != null || Armed != null) { Disarm(); return; }
             if (Classic) { backend.Cancel(); PullSelection(); }
             else { Selected.Clear(); PushSelection(); }
@@ -146,11 +152,13 @@ namespace OpenKingdomsUnity.Game.World
             var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
             if (cam == null || Frozen) return;
             if (Classic) PullSelection();
-            bool overUi = EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
-            var m = Input.mousePosition;
+            // The mouse and keys this frame, or a test's frame in their place.
+            var p = Formation.Frame(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject());
+            bool overUi = p.OverUi;
+            var m = (Vector3)p.Screen;
             var units = world.Entities.Units;
             int count = world.Entities.UnitCount;
-            Keys();
+            if (!Formation.Live) Keys();
 
             // A queued site's ghost goes once its building stands there.
             if (Queued.Count > 0 && Time.frameCount % 15 == 0)
@@ -167,22 +175,13 @@ namespace OpenKingdomsUnity.Game.World
             PointerAt = at;
             PointerUnit = overUi ? -1 : Pick(cam, m, units, count, null);
 
-            if (ArmedAction != null && UpdateArmedAction(cam, m, overUi, onGround, at, units, count)) return;
+            bool armedHasMouse = ArmedAction != null && UpdateArmedAction(cam, m, overUi, onGround, at, units, count);
+            if (Formation.Update(cam, p, onGround, at, armedHasMouse) || armedHasMouse) return;
 
-            if (Input.GetMouseButtonDown(1) && !overUi)
-            {
-                if (Classic) { backend.Cancel(); DisarmHere(); return; }
-                if (Armed != null) { DisarmHere(); return; }
-                if (Selected.Count > 0)
-                {
-                    int enemy = Pick(cam, m, units, count, false);
-                    if (enemy >= 0) OrderAll(CommandKind.Attack, Vector3.zero, enemy);
-                    else if (onGround) MoveBlock(CommandKind.Move, at);
-                }
-            }
+            if (p.RightDown && !overUi && RightClick(cam, m, onGround, at)) return;
 
-            if (Input.GetMouseButtonDown(0) && !overUi) { dragFrom = m; dragging = true; }
-            if (!Input.GetMouseButtonUp(0) || !dragging) return;
+            if (p.LeftDown && !overUi) { dragFrom = m; dragging = true; }
+            if (!p.LeftUp || !dragging) return;
             dragging = false;
 
             if ((m - dragFrom).magnitude > DragPixels && Armed == null)
@@ -205,7 +204,30 @@ namespace OpenKingdomsUnity.Game.World
                 }
                 return;
             }
+            LeftClick(cam, m, onGround, at);
+        }
 
+        // The right button's press when it is no drag: the classic scheme
+        // cancels, the modern one attacks the enemy under it or moves there.
+        // True when the frame ends with it.
+        internal bool RightClick(Camera cam, Vector3 m, bool onGround, Vector3 at)
+        {
+            if (Classic) { backend.Cancel(); DisarmHere(); return true; }
+            if (Armed != null) { DisarmHere(); return true; }
+            if (Selected.Count > 0)
+            {
+                int enemy = Pick(cam, m, world.Entities.Units, world.Entities.UnitCount, false);
+                if (enemy >= 0) OrderAll(CommandKind.Attack, Vector3.zero, enemy);
+                else if (onGround) MoveBlock(CommandKind.Move, at);
+            }
+            return false;
+        }
+
+        // The left button's click when it was no drag.
+        internal void LeftClick(Camera cam, Vector3 m, bool onGround, Vector3 at)
+        {
+            var units = world.Entities.Units;
+            int count = world.Entities.UnitCount;
             if (Classic)
             {
                 int unit = Pick(cam, m, units, count, null);
@@ -268,6 +290,7 @@ namespace OpenKingdomsUnity.Game.World
         // scheme.
         public GameCursor PointerCursor()
         {
+            if (Formation.Live) return GameCursor.Move;
             if (PointerOverUi || (PointerUnit < 0 && !PointerOnGround)) return GameCursor.Normal;
             // A building armed on a spot that cannot take it.
             if (Armed == CommandKind.Build && !GhostOk) return GameCursor.Cannot;
@@ -470,6 +493,7 @@ namespace OpenKingdomsUnity.Game.World
         // The drag box, drawn from OnGUI.
         public void DrawBox()
         {
+            Formation.DrawReadout();
             if (!dragging) return;
             var m = Input.mousePosition;
             if ((m - dragFrom).magnitude <= DragPixels) return;

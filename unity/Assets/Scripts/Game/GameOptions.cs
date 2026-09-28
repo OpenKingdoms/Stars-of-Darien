@@ -1,4 +1,5 @@
 // GameOptions.cs - the player's settings, kept in PlayerPrefs.
+using OpenKingdomsUnity.Game.World;
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game
@@ -19,6 +20,12 @@ namespace OpenKingdomsUnity.Game
         public bool ClassicControls = true;
         // The pointer's scale, 0 to fit the screen, else 1 to 4 times.
         public int CursorScale = 0;
+        // Formation drags: the group keeps one pace, the classic scheme's
+        // right drag makes one, which way it faces, and the last shape used.
+        public bool FormationPace = true;
+        public bool ClassicRightDrag = true;
+        public FormationFacing FacingRule = FormationFacing.ByDrag;
+        public FormationShape Formation = FormationShape.Line;
 
         const string Prefix = "oku.";
 
@@ -35,6 +42,10 @@ namespace OpenKingdomsUnity.Game
             o.Music = PlayerPrefs.GetInt(Prefix + "music", 1) != 0;
             o.ClassicControls = PlayerPrefs.GetInt(Prefix + "classic", 1) != 0;
             o.CursorScale = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "cursor", 0), 0, 4);
+            o.FormationPace = PlayerPrefs.GetInt(Prefix + "formationpace", 1) != 0;
+            o.ClassicRightDrag = PlayerPrefs.GetInt(Prefix + "rightdrag", 1) != 0;
+            o.FacingRule = (FormationFacing)Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "facing", 0), 0, 1);
+            o.Formation = (FormationShape)Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "formation", 0), 0, 3);
             return o;
         }
 
@@ -50,6 +61,17 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.SetInt(Prefix + "music", Music ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "classic", ClassicControls ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "cursor", CursorScale);
+            PlayerPrefs.SetInt(Prefix + "formationpace", FormationPace ? 1 : 0);
+            PlayerPrefs.SetInt(Prefix + "rightdrag", ClassicRightDrag ? 1 : 0);
+            PlayerPrefs.SetInt(Prefix + "facing", (int)FacingRule);
+            PlayerPrefs.SetInt(Prefix + "formation", (int)Formation);
+            PlayerPrefs.Save();
+        }
+
+        // The shape Tab picked in a drag, kept for the next game.
+        public static void SaveFormation(FormationShape shape)
+        {
+            PlayerPrefs.SetInt(Prefix + "formation", (int)shape);
             PlayerPrefs.Save();
         }
 

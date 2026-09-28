@@ -36,13 +36,13 @@ namespace OpenKingdomsUnity.Game
             string[] anims = { "idle", "walk", "attack" };
             foreach (var s in sides)
             {
-                string p = s.Id.ToLowerInvariant();
+                string p = s.Id.ToLowerInvariant(), t = SideToken(s.Id);
                 roles[unitDefs.Count] = Role.Mage;
-                AddDef(p + "_mage", p + "archer", s.Id, "mage", "Mage", 160, 180, false, anims);
+                AddDef(p + "_mage", p + "archer", s.Id, t + " MAGIC ATTACK", "Mage", 160, 180, false, anims);
                 roles[unitDefs.Count] = Role.Healer;
-                AddDef(p + "_healer", p + "archer", s.Id, "healer", "Healer", 150, 150, false, anims);
+                AddDef(p + "_healer", p + "archer", s.Id, t + " PRIEST", "Healer", 150, 150, false, anims);
                 roles[unitDefs.Count] = Role.Wagon;
-                AddDef(p + "_wagon", p + "knight", s.Id, "transport", "Wagon", 300, 200, false, anims);
+                AddDef(p + "_wagon", p + "knight", s.Id, t + " TRANSPORT", "Wagon", 300, 200, false, anims);
             }
             // A winged flyer for every side, after the rest so no def moves.
             string[] flight = { "idle", "walk", "attack", "BeginFlight", "launch", "fly", "soar", "land" };

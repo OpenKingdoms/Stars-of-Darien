@@ -128,6 +128,14 @@ namespace OpenKingdomsUnity.Game
 
         // Orders, for one unit at a time. False when the engine refuses it.
         bool Command(in GameCommand command);
+        // A formation move: units[i] walks to targets[i] (world x, z), all
+        // starting on the same tick. With heading (degrees) each turns to it
+        // on arrival and holds it while idle. With groupSpeed none moves
+        // faster than the slowest in the call until it arrives or gets
+        // another order. queue appends after current orders. Units that are
+        // not the local player's, are dead or cannot move are skipped. True
+        // when at least one unit took the order.
+        bool MoveFormation(int[] units, Vector2[] targets, float? heading, bool groupSpeed, bool queue);
         Economy ReadEconomy(int player);
 
         // For the HUD. Where a building of def would stand for a site at
