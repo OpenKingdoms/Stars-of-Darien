@@ -1,9 +1,9 @@
 // FlightCaptures.cs - pictures of flyers in the air, for judging the wings:
-// a takeoff, a few frames of flapping and a glide, with the camera kept on
-// the flyer. Runs only with OKU_CAPTURE_DIR and OKU_CAPTURE_FLIGHT=1, on the
-// engine with OKU_CAPTURE_BACKEND=engine. The local player is Zhon, whose
-// monarch flies and whose beast handler raises bats. Files are
-// flight-<unit>-*.png and flight.txt.
+// a takeoff, six evenly spaced frames of one beat and a glide, with the
+// camera kept on the flyer. Runs only with OKU_CAPTURE_DIR and
+// OKU_CAPTURE_FLIGHT=1, on the engine with OKU_CAPTURE_BACKEND=engine. The
+// local player is Zhon, whose monarch flies and whose beast handler raises
+// bats. Files are flight-<unit>-*.png and flight.txt.
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -143,7 +143,7 @@ namespace OpenKingdomsUnity.Tests
         }
 
         // Flies one flyer back and forth with the camera on it, and takes a
-        // takeoff, three flaps and a glide.
+        // takeoff, six frames of one beat and a glide.
         static IEnumerator Capture(GameRoot root, Camera cam, Canvas canvas, string dir, int handle, List<string> log, List<bool> took)
         {
             var b = root.Backend;
@@ -162,9 +162,11 @@ namespace OpenKingdomsUnity.Tests
             cam3.yaw = 0f;
 
             int flaps = 0;
+            const int Beat = 6;
+            float lastPhase = -1f;
             bool tookOff = false, glided = false;
-            float nextFlap = 0f, deadline = Time.realtimeSinceStartup + 60f;
-            while (Time.realtimeSinceStartup < deadline && (!glided || flaps < 3))
+            float deadline = Time.realtimeSinceStartup + 60f;
+            while (Time.realtimeSinceStartup < deadline && (!glided || flaps < Beat))
             {
                 yield return null;
                 var u = Find(root, handle);
@@ -180,14 +182,15 @@ namespace OpenKingdomsUnity.Tests
                 cam3.focus = new Vector3(u.Position.x, cam3.focus.y, u.Position.z) + flat * (u.Altitude / Mathf.Tan(p));
                 cam3.Zoom(u.Altitude / Mathf.Sin(p) + 12f);
                 if (!ents.TryFlight(u.StableId, out var f)) continue;
+                float was = lastPhase;
+                lastPhase = f.Phase;
+                if (f.Mode != FlightMode.Flap && flaps < Beat) flaps = 0;
                 string state = $"mode {f.Mode} phase {f.Phase:0.00} glide {f.Glide:0.00} weight {f.Weight:0.00} offset {f.Offset:0.00} forced {f.Forced} altitude {u.Altitude:0.00} speed {u.Speed:0.00} airborne {(u.Flags & UnitFlags.Airborne) != 0}";
                 string shot = null;
                 if (!tookOff && (u.Flags & UnitFlags.Airborne) != 0 && u.Altitude > 1f) { tookOff = true; shot = "takeoff"; }
-                else if (f.Mode == FlightMode.Flap && f.Weight >= 1f && !f.Forced && flaps < 3 && Time.realtimeSinceStartup > nextFlap)
-                {
-                    shot = "flap-" + (++flaps);
-                    nextFlap = Time.realtimeSinceStartup + 0.23f;
-                }
+                else if (f.Mode == FlightMode.Flap && f.Weight >= 1f && f.Glide <= 0f && flaps < Beat && was >= 0f &&
+                         FlightAnimator.Crossed(was, f.Phase, flaps / (float)Beat))
+                    shot = "beat-" + flaps++;
                 else if (!glided && f.Mode == FlightMode.Glide && f.Glide > 0.95f) { glided = true; shot = "glide"; }
                 if (shot == null) continue;
                 yield return ScreenCaptures.Shoot(cam, canvas, Path.Combine(dir, $"flight-{name}-{shot}.png"));
