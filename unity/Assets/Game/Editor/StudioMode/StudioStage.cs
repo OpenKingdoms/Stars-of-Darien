@@ -92,6 +92,7 @@ namespace OpenKingdomsUnity.Studio
             Camera.farClipPlane = 1500f;
             Camera.fieldOfView = StudioView.ClassicFov;
             Camera.depthTextureMode |= DepthTextureMode.Depth;
+            WaterView.Prepare(Camera);
             Atmosphere.SetPostEffects(true, Camera);
 
             turntable = new GameObject("Turntable");
@@ -208,48 +209,15 @@ namespace OpenKingdomsUnity.Studio
             BuildSea();
         }
 
+        WaterView studioSea;
+
         void BuildSea()
         {
-            const float level = -0.35f, reach = 400f, cell = 4f, rect = 64f;
-            int nx = Mathf.CeilToInt(2 * reach / cell);
-            var verts = new Vector3[(nx + 1) * (nx + 1)];
-            for (int z = 0; z <= nx; z++)
-                for (int x = 0; x <= nx; x++)
-                    verts[z * (nx + 1) + x] = new Vector3(-reach + x * cell, 0, reach - z * cell);
-            var tris = new int[nx * nx * 6];
-            int k = 0;
-            for (int z = 0; z < nx; z++)
-                for (int x = 0; x < nx; x++)
-                {
-                    int nw = z * (nx + 1) + x, ne = nw + 1, sw = nw + nx + 1, se = sw + 1;
-                    tris[k++] = nw; tris[k++] = ne; tris[k++] = se;
-                    tris[k++] = nw; tris[k++] = se; tris[k++] = sw;
-                }
-            var mesh = Own(new Mesh { name = "studio sea", indexFormat = IndexFormat.UInt32, vertices = verts, triangles = tris });
-            mesh.RecalculateNormals();
-            mesh.bounds = new Bounds(Vector3.zero, new Vector3(2 * reach, 8, 2 * reach));
-            const int res = 128;
-            var depth = Own(new Texture2D(res, res, TextureFormat.R8, false, true) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear });
-            var px = new byte[res * res];
-            for (int j = 0; j < res; j++)
-                for (int i = 0; i < res; i++)
-                {
-                    float x = -rect + (i + 0.5f) * 2 * rect / res, z = -rect + (j + 0.5f) * 2 * rect / res;
-                    px[j * res + i] = (byte)(Mathf.Clamp01((level - GroundAt(x, z)) / 4f) * 255);
-                }
-            depth.SetPixelData(px, 0);
-            depth.Apply(false);
-            var mat = Own(Looks.Water());
-            mat.SetTexture("_DepthTex", depth);
-            mat.SetVector("_MapRect", new Vector4(-rect, -rect, 2 * rect, 2 * rect));
-            var go = new GameObject("Sea");
-            go.transform.SetParent(neutral.transform, false);
-            go.transform.position = new Vector3(0, level, 0);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = go.AddComponent<MeshRenderer>();
-            r.sharedMaterial = mat;
-            r.shadowCastingMode = ShadowCastingMode.Off;
-            r.receiveShadows = false;
+            const float level = -0.35f, reach = 400f, rect = 64f;
+            studioSea?.Dispose();
+            studioSea = new WaterView();
+            studioSea.Build(neutral.transform, new Vector2(2 * rect, 2 * rect), 1f, level, GroundAt, reach - rect, new Vector2(-rect, rect));
+            studioSea.SetClimate(climate);
         }
 
         public static Color ClimateColour(string c)
@@ -750,6 +718,8 @@ namespace OpenKingdomsUnity.Studio
         {
             if (Root == null) return;
             if (turning) TurntableYaw = (TurntableYaw + Mathf.Min(dt, 0.25f) * 25f) % 360f;
+            // The sea's clock, wind and weather.
+            studioSea?.Update(Atmosphere, null, null);
             if (Atmosphere != null)
                 foreach (var ps in Root.GetComponentsInChildren<ParticleSystem>())
                     ps.Simulate(Mathf.Min(dt, 0.1f), true, false, false);
@@ -871,6 +841,8 @@ namespace OpenKingdomsUnity.Studio
         public void Dispose()
         {
             ClearModel();
+            studioSea?.Dispose();
+            studioSea = null;
             terrain?.Dispose();
             terrain = null;
             Atmosphere?.Dispose();

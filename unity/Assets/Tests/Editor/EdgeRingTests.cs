@@ -65,6 +65,52 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(new Vector2(size.x - 3, -2), m);
         }
 
+        // On Castle the border stands above the sea, so haze laid over the
+        // whole map at the ring's far height hid the sea inside it.
+        [Test]
+        public void TheHazeLiesOnlyPastTheRing()
+        {
+            var b = new MockBackend { StageSeconds = 0 };
+            var s = GameRoot.DefaultSetup(b);
+            s.MapId = "mock_moat";
+            b.StartSkirmish(s);
+            for (int i = 0; i < 20 && !b.PumpLoading().Done; i++) { }
+            var t = b.Terrain;
+            Assert.Greater(EdgeRing.Shelf(t), t.SeaLevel, "the moat's shelf stands above its sea, as Castle's does");
+            var parent = new GameObject("test world");
+            var view = new TerrainView();
+            try
+            {
+                view.Build(b, parent.transform);
+                var haze = view.Apron.GetComponentsInChildren<MeshFilter>();
+                float w = EdgeRing.Width * t.CellSize, e = 0.01f;
+                var size = t.Size;
+                int checkedTris = 0;
+                foreach (var mf in haze)
+                {
+                    if (mf.gameObject == view.Apron) continue;
+                    var v = mf.sharedMesh.vertices;
+                    var tris = mf.sharedMesh.triangles;
+                    for (int i = 0; i < tris.Length; i += 3)
+                    {
+                        var a = v[tris[i]]; var c = v[tris[i + 1]]; var d = v[tris[i + 2]];
+                        float minX = Mathf.Min(a.x, c.x, d.x), maxX = Mathf.Max(a.x, c.x, d.x);
+                        float minZ = Mathf.Min(a.z, c.z, d.z), maxZ = Mathf.Max(a.z, c.z, d.z);
+                        bool overlaps = maxX > -w + e && minX < size.x + w - e && maxZ > -size.y - w + e && minZ < w - e;
+                        Assert.IsFalse(overlaps, $"a haze triangle from ({minX}, {minZ}) to ({maxX}, {maxZ}) lies over the map or the ring");
+                        checkedTris++;
+                    }
+                }
+                Assert.Greater(checkedTris, 0, "there is haze past the ring");
+            }
+            finally
+            {
+                view.Dispose();
+                Object.DestroyImmediate(parent);
+                b.Dispose();
+            }
+        }
+
         [Test]
         public void TheRingMeshLeavesTheMapItselfOpen()
         {

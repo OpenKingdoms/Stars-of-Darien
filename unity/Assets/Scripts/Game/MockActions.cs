@@ -13,7 +13,7 @@ namespace OpenKingdomsUnity.Game
 {
     public sealed partial class MockBackend
     {
-        public enum Role { Monarch, Knight, Archer, Lodge, Mage, Healer, Wagon }
+        public enum Role { Monarch, Knight, Archer, Lodge, Mage, Healer, Wagon, Boat }
         public enum Stance { Offensive, Defensive, Passive }
 
         readonly Dictionary<int, Role> roles = new Dictionary<int, Role>();
@@ -43,14 +43,32 @@ namespace OpenKingdomsUnity.Game
                 AddDef(p + "_healer", p + "archer", s.Id, "healer", "Healer", 150, 150, false, anims);
                 roles[unitDefs.Count] = Role.Wagon;
                 AddDef(p + "_wagon", p + "knight", s.Id, "transport", "Wagon", 300, 200, false, anims);
+                roles[unitDefs.Count] = Role.Boat;
+                AddDef(p + "_boat", "mockboat", s.Id, "BOAT ATTACK", "Boat", 400, 150, false, new[] { "idle" });
             }
+        }
+
+        // A boat for a player on the water at a point, for tests, reported
+        // at the sea floor as the engine reports ships.
+        public int SpawnBoat(int player, Vector3 at)
+        {
+            int index = players.FindIndex(p => p.Index == player);
+            if (index < 0 || Terrain == null) return -1;
+            foreach (var kv in roles)
+                if (kv.Value == Role.Boat && unitDefs[kv.Key].Side == players[index].Side)
+                {
+                    var u = Spawn(kv.Key, index, new Vector2(at.x, at.z));
+                    u.Heading = 0f;
+                    return u.Handle;
+                }
+            return -1;
         }
 
         void SpawnSpecialists(PlayerInfo p, int pos, Vector2 home)
         {
             foreach (var kv in roles)
             {
-                if (unitDefs[kv.Key].Side != p.Side) continue;
+                if (unitDefs[kv.Key].Side != p.Side || kv.Value == Role.Boat) continue;
                 int k = (int)kv.Value - (int)Role.Mage;
                 var u = Spawn(kv.Key, pos, home + new Vector2(-3 + k * 1.5f, -6));
                 if (kv.Value == Role.Mage) mana[u.Handle] = MageMana;

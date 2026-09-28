@@ -34,6 +34,10 @@ namespace OpenKingdomsUnity.Engine
         readonly byte[] statusBuf = new byte[128];
         GameStatus status = GameStatus.Idle;
         MapTerrain terrain;
+        // How far each unit afloat is drawn above the ground the engine
+        // reports, by handle, from the last ReadUnits.
+        readonly Dictionary<int, float> lifts = new Dictionary<int, float>();
+        FloatKind[] floatKinds = Array.Empty<FloatKind>();
 
         public string Name => "OpenKingdoms";
 
@@ -218,6 +222,8 @@ namespace OpenKingdomsUnity.Engine
                     BuildOptions = Buildables(i), Animations = OkEngine.Scripts(i)
                 });
             }
+            floatKinds = new FloatKind[unitDefs.Count];
+            for (int i = 0; i < unitDefs.Count; i++) floatKinds[i] = Afloat.KindOf(unitDefs[i]);
             featureDefs.Clear();
             int nf = OkEngine.okx_feature_def_count();
             for (int i = 0; i < nf; i++)
@@ -365,15 +371,19 @@ namespace OpenKingdomsUnity.Engine
             if (unitBuf.Length < n) unitBuf = new OkxUnit[Mathf.NextPowerOfTwo(n)];
             n = Mathf.Min(OkEngine.okx_units(unitBuf, unitBuf.Length), unitBuf.Length);
             int count = Mathf.Min(n, into?.Length ?? 0);
+            lifts.Clear();
             for (int i = 0; i < count; i++)
             {
                 var u = unitBuf[i];
                 var flags = u.state == OkEngine.UnitActive ? UnitFlags.Active : UnitFlags.Dying;
                 if (u.building != 0) flags |= UnitFlags.Building;
+                var at = EngineSettings.ToUnity(u.x, u.y, u.z);
+                float lift = Lift(u.def, at.y);
+                if (lift != 0f) { at.y += lift; lifts[u.handle] = lift; }
                 into[i] = new UnitState
                 {
                     Handle = u.handle, StableId = u.stableId, Def = u.def, Player = u.player, Flags = flags,
-                    Position = EngineSettings.ToUnity(u.x, u.y, u.z),
+                    Position = at,
                     Heading = Heading(u.heading), Pitch = u.pitch * Mathf.Rad2Deg, Roll = u.roll * Mathf.Rad2Deg,
                     Health = u.health, MaxHealth = u.maxHealth,
                     BuildProgress = u.building != 0 && u.maxHealth > 0 ? Mathf.Clamp01(u.health / (float)u.maxHealth) : 1f,
@@ -388,6 +398,15 @@ namespace OpenKingdomsUnity.Engine
                 if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
             }
             return n;
+        }
+
+        // The engine puts a ship on the sea floor. It is drawn in the
+        // surface instead, and a hovering unit on it.
+        float Lift(int def, float ground)
+        {
+            if (terrain == null || terrain.SeaLevel <= 0 || def < 0 || def >= floatKinds.Length) return 0f;
+            var kind = floatKinds[def];
+            return kind == FloatKind.None ? 0f : Afloat.Height(kind, ground, terrain.SeaLevel) - ground;
         }
 
         public int ReadFeatures(FeatureState[] into)
@@ -442,7 +461,14 @@ namespace OpenKingdomsUnity.Engine
         public int ReadUnitPose(int handle, PiecePose[] into)
         {
             int nodes = OkEngine.okx_unit_pose(handle, pose, hidden, 128);
-            return nodes > 0 ? WritePose(nodes, into, true) : 0;
+            if (nodes <= 0) return 0;
+            WritePose(nodes, into, true);
+            if (into != null && lifts.TryGetValue(handle, out float lift))
+            {
+                var up = Matrix4x4.Translate(new Vector3(0, lift, 0));
+                for (int i = 0; i < Mathf.Min(nodes, into.Length); i++) into[i].Matrix = up * into[i].Matrix;
+            }
+            return nodes;
         }
 
         readonly byte[] runningBuf = new byte[1024];

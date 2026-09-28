@@ -1,6 +1,6 @@
 // The ground: its picture, lit, taking shadows, with detail and bumps up
-// close, rock laid on three planes over cliffs, and a wet darkening near
-// the water line.
+// close, rock laid on three planes over cliffs, a wet darkening near the
+// water line, and under the sea a sandy bed with caustics.
 Shader "OpenKingdoms/Presentation/Terrain"
 {
     Properties
@@ -38,6 +38,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             #pragma multi_compile_fog
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
+            #include "../../Shaders/OkuWaterCommon.hlsl"
             TEXTURE2D(_OkuDetail); SAMPLER(sampler_OkuDetail);
             float4 _OkuDetailParams;    // tile size, fade start and end, on
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
@@ -89,7 +90,14 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 }
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
                 c.rgb *= lerp(1, 0.72, wet);
-                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, lerp(_Glossiness, 0.6, wet), 0);
+                c.rgb = OkuBed(c.rgb, i.positionWS);
+                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(_Glossiness, 0.6, wet), i.positionWS), 0);
+                float2 gx = ddx(i.positionWS.xz), gy = ddy(i.positionWS.xz);
+                if (i.positionWS.y < _OkuSeaLevel - 0.02 && _OkuWaterSigma.a > 0)
+                {
+                    Light sun = GetMainLight(TransformWorldToShadowCoord(i.positionWS));
+                    rgb += c.rgb * sun.color * (OkuCaustics(i.positionWS, sun.direction, gx, gy) * sun.shadowAttenuation);
+                }
                 rgb *= OkuFogLight(i.positionWS) * OkuEdgeBand(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
@@ -165,6 +173,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
         #pragma surface surf Standard fullforwardshadows addshadow
         #pragma target 3.5
         #include "../../Shaders/OkuFog.hlsl"
+        #include "../../Shaders/OkuWaterCommon.hlsl"
         sampler2D _MainTex;
         float _SeaLevel;
         half _Glossiness;
@@ -178,8 +187,9 @@ Shader "OpenKingdoms/Presentation/Terrain"
             fixed4 c = tex2D(_MainTex, IN.uv_MainTex);
             float wet = saturate(1 - (IN.worldPos.y - _SeaLevel) / 0.6);
             c.rgb *= lerp(1, 0.72, wet);
+            c.rgb = OkuBed(c.rgb, IN.worldPos);
             o.Albedo = c.rgb * OkuFogLight(IN.worldPos) * OkuEdgeBand(IN.worldPos);
-            o.Smoothness = lerp(_Glossiness, 0.6, wet);
+            o.Smoothness = OkuBedGloss(lerp(_Glossiness, 0.6, wet), IN.worldPos);
             o.Metallic = 0;
             o.Alpha = 1;
         }

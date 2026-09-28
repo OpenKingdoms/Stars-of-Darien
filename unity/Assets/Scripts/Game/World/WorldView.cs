@@ -25,6 +25,7 @@ namespace OpenKingdomsUnity.Game.World
             Terrain.Build(backend, Root.transform);
             var size = backend.Terrain.Size;
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
+            Terrain.Sea?.SetClimate(map != null ? map.Climate : "");
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
             Warm();
@@ -45,6 +46,7 @@ namespace OpenKingdomsUnity.Game.World
             cam.farClipPlane = 1500f;
             cam.fieldOfView = 40f;
             cam.depthTextureMode |= DepthTextureMode.Depth;
+            WaterView.Prepare(cam);
             Camera = cam.GetComponent<GameCamera>();
             if (Camera == null) Camera = cam.gameObject.AddComponent<GameCamera>();
             Camera.enabled = true;
@@ -99,6 +101,7 @@ namespace OpenKingdomsUnity.Game.World
             using (new Unity.Profiling.ProfilerMarker("Oku.Fog").Auto()) Fog.Update();
             using (new Unity.Profiling.ProfilerMarker("Oku.Entities").Auto()) Entities.Render(cam);
             using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
+            using (new Unity.Profiling.ProfilerMarker("Oku.Water").Auto()) Terrain.Sea?.Update(Atmosphere, Entities, backend);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 

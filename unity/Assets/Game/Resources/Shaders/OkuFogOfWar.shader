@@ -24,6 +24,8 @@ Shader "Hidden/OpenKingdoms/FogOfWar"
             float4x4 _OkuInvViewProj;
             float _OkuSeenBefore;   // screen brightness where seen before
             float _OkuFogReach;     // past the map, where the fog lets go
+            float4 _OkuFogEye;      // the camera's position
+            float _OkuSeaLevel;     // -1000 with no sea
 
             half4 Frag(Varyings i) : SV_Target
             {
@@ -39,6 +41,13 @@ Shader "Hidden/OpenKingdoms/FogOfWar"
             #endif
                 float4 p = mul(_OkuInvViewProj, float4(i.texcoord * 2 - 1, z, 1));
                 float3 w = p.xyz / p.w;
+                // The sea draws no depth, so under it the depth holds the
+                // floor. The fog belongs where the eye meets the surface.
+                if (w.y < _OkuSeaLevel && _OkuFogEye.y > _OkuSeaLevel)
+                {
+                    float3 ray = w - _OkuFogEye.xyz;
+                    w = _OkuFogEye.xyz + ray * ((_OkuSeaLevel - _OkuFogEye.y) / ray.y);
+                }
                 float2 uv = float2((w.x - _OkuFogRect.x) / _OkuFogRect.z, 1 + (w.z - _OkuFogRect.y) / _OkuFogRect.w);
                 float f = tex2Dlod(_OkuFogTex, float4(saturate(uv), 0, 0)).r;
                 float light = f < 0.5 ? f * 2 * _OkuSeenBefore : lerp(_OkuSeenBefore, 1, f * 2 - 1);

@@ -1,6 +1,6 @@
 // TerrainView.cs - builds the ground and the sea for a loaded game: a
 // GameObject per region with a LODGroup over its detailed and coarse
-// meshes, and a wave mesh at sea level covering the map and a margin.
+// meshes, the edge ring past the map, and the sea (WaterView).
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -11,7 +11,8 @@ namespace OpenKingdomsUnity.Game.World
         public const int CoarseStep = 4;
 
         public GameObject Root { get; private set; }
-        public GameObject Water { get; private set; }
+        public WaterView Sea { get; private set; }
+        public GameObject Water => Sea?.Root;
         public GameObject Apron { get; private set; }
         public int Regions { get; private set; }
         readonly List<Object> owned = new List<Object>();
@@ -38,12 +39,44 @@ namespace OpenKingdomsUnity.Game.World
             for (int ry = 0; ry < rh; ry++)
                 for (int rx = 0; rx < rw; rx++)
                     regions[rx, ry] = BuildRegion(t, rx, ry);
-            Apron = BuildRing(t, Chunk, Root.transform);
+            var whole = WholeMap(t, Chunk, 1024);
+            Apron = BuildRing(t, whole, Root.transform);
             Shader.SetGlobalVector("_OkuMapSize", new Vector4(t.Size.x, t.Size.y, 0, 0));
             GroundDetail.Apply(true);
             chunkImages.Clear();
 
-            if (t.SeaLevel > 0) Water = BuildWater(t, parent);
+            if (t.SeaLevel > 0)
+            {
+                Sea = new WaterView();
+                float shelf = EdgeRing.Shelf(t);
+                var size = t.Size;
+                // Past the map the sea lies over the ring's own ground.
+                float Ground(float x, float z) =>
+                    x >= 0 && x <= size.x && z <= 0 && z >= -size.y ? t.Sample(x, z) : EdgeRing.Height(t, new Vector2(x, z), shelf);
+                Sea.Build(parent, size, t.CellSize, t.SeaLevel, Ground, EdgeRing.Width * t.CellSize + 40f);
+                Sea.SetBedLuma(BedLuma(t, whole));
+            }
+            else WaterView.ClearGlobals();
+        }
+
+        // The usual lightness of the painted ground under the sea, linear,
+        // so the sea bed keeps the painting's light and dark around it.
+        static float BedLuma(MapTerrain t, RgbaImage whole)
+        {
+            double sum = 0;
+            int n = 0;
+            var size = t.Size;
+            for (int y = 0; y < whole.Height; y += 2)
+                for (int x = 0; x < whole.Width; x += 2)
+                {
+                    float wx = (x + 0.5f) / whole.Width * size.x, wz = -(y + 0.5f) / whole.Height * size.y;
+                    if (t.SeaLevel - t.Sample(wx, wz) < 0.3f) continue;
+                    int o = (y * whole.Width + x) * 4;
+                    float r = Mathf.GammaToLinearSpace(whole.Pixels[o] / 255f), g = Mathf.GammaToLinearSpace(whole.Pixels[o + 1] / 255f), b = Mathf.GammaToLinearSpace(whole.Pixels[o + 2] / 255f);
+                    sum += 0.3f * r + 0.59f * g + 0.11f * b;
+                    n++;
+                }
+            return n > 0 ? (float)(sum / n) : 0.08f;
         }
 
         GameObject BuildRegion(MapTerrain t, int rx, int ry)
@@ -95,26 +128,16 @@ namespace OpenKingdomsUnity.Game.World
                     regions[rx, ry] = BuildRegion(t, rx, ry);
                 }
             chunkImages.Clear();
-            if (Water != null) RefreshWater(t);
-        }
-
-        Texture2D waterDepth;
-
-        void RefreshWater(MapTerrain t)
-        {
-            var mat = Water.GetComponent<MeshRenderer>().sharedMaterial;
-            if (waterDepth != null) Looks.Release(waterDepth);
-            waterDepth = SeaDepth(t);
-            mat.SetTexture("_DepthTex", waterDepth);
+            Sea?.Bake(blocks.xMin * t.BlockSize, blocks.xMax * t.BlockSize, -blocks.yMin * t.BlockSize, -blocks.yMax * t.BlockSize);
         }
 
         // The land past the playable edge: the edge ring, textured with a
         // picture of the whole map mirrored at the edge.
-        GameObject BuildRing(MapTerrain t, System.Func<int, RgbaImage> chunk, Transform parent)
+        GameObject BuildRing(MapTerrain t, RgbaImage whole, Transform parent)
         {
             var mesh = EdgeRing.Build(t);
             owned.Add(mesh);
-            var picture = UI.UiKit.ToTexture(WholeMap(t, chunk, 1024), true);
+            var picture = UI.UiKit.ToTexture(whole, true);
             picture.wrapMode = TextureWrapMode.Clamp;
             owned.Add(picture);
             var mat = new Material(Looks.Find("OkuRing", "Unlit/Texture")) { hideFlags = HideFlags.DontSave, mainTexture = picture };
@@ -128,18 +151,9 @@ namespace OpenKingdomsUnity.Game.World
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             r.receiveShadows = false;
 
-            // Past the ring, a plain of haze at the ring's far height out to
-            // the far clip, so no gap can ever show between land and sky.
-            float shelf = EdgeRing.Shelf(t) - 0.05f;
-            var c = new Vector3(t.Size.x / 2, shelf, -t.Size.y / 2);
-            const float far = 4000f;
-            var plain = new Mesh { name = "haze plain", hideFlags = HideFlags.DontSave };
-            plain.vertices = new[] { c + new Vector3(-far, 0, far), c + new Vector3(far, 0, far), c + new Vector3(far, 0, -far), c + new Vector3(-far, 0, -far) };
-            plain.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
-            plain.uv = new Vector2[4];
-            plain.uv2 = new[] { Vector2.one * 999, Vector2.one * 999, Vector2.one * 999, Vector2.one * 999 };
-            plain.triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            plain.bounds = new Bounds(c, new Vector3(2 * far, 1, 2 * far));
+            // Past the ring, haze at the ring's far height out to the far
+            // clip. It stays outside the ring, so it never hides the map.
+            var plain = EdgeRing.HazeFrame(t);
             owned.Add(plain);
             var pg = new GameObject("Haze plain");
             pg.transform.SetParent(go.transform, false);
@@ -217,75 +231,16 @@ namespace OpenKingdomsUnity.Game.World
             return tex;
         }
 
-        GameObject BuildWater(MapTerrain t, Transform parent)
-        {
-            float margin = EdgeRing.Width * t.CellSize + 40f, cell = 2f;
-            var size = t.Size;
-            int nx = Mathf.CeilToInt((size.x + 2 * margin) / cell), nz = Mathf.CeilToInt((size.y + 2 * margin) / cell);
-            var verts = new Vector3[(nx + 1) * (nz + 1)];
-            for (int z = 0; z <= nz; z++)
-                for (int x = 0; x <= nx; x++)
-                    verts[z * (nx + 1) + x] = new Vector3(-margin + x * cell, 0, margin - z * cell);
-            var tris = new int[nx * nz * 6];
-            int k = 0;
-            for (int z = 0; z < nz; z++)
-                for (int x = 0; x < nx; x++)
-                {
-                    int nw = z * (nx + 1) + x, ne = nw + 1, sw = nw + nx + 1, se = sw + 1;
-                    tris[k++] = nw; tris[k++] = ne; tris[k++] = se;
-                    tris[k++] = nw; tris[k++] = se; tris[k++] = sw;
-                }
-            var mesh = new Mesh { name = "sea", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32, vertices = verts, triangles = tris };
-            mesh.RecalculateNormals();
-            mesh.bounds = new Bounds(mesh.bounds.center, mesh.bounds.size + Vector3.up * 4);
-            owned.Add(mesh);
-            var go = new GameObject("Sea");
-            go.transform.SetParent(parent, false);
-            go.transform.position = new Vector3(0, t.SeaLevel, 0);
-            go.AddComponent<MeshFilter>().sharedMesh = mesh;
-            var r = go.AddComponent<MeshRenderer>();
-            var mat = Looks.Water();
-            owned.Add(mat);
-            var depth = SeaDepth(t);
-            owned.Add(depth);
-            mat.SetTexture("_DepthTex", depth);
-            mat.SetVector("_MapRect", new Vector4(0, -size.y, size.x, size.y));
-            r.sharedMaterial = mat;
-            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            r.receiveShadows = false;
-            return go;
-        }
-
-        // Water depth over the ground at every height sample, over 4 units,
-        // row 0 of the grid (north) at the top of the picture.
-        public static Texture2D SeaDepth(MapTerrain t)
-        {
-            var tex = new Texture2D(t.HeightsW, t.HeightsH, TextureFormat.R8, false, true)
-            {
-                hideFlags = HideFlags.DontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear,
-            };
-            var px = new byte[t.HeightsW * t.HeightsH];
-            for (int z = 0; z < t.HeightsH; z++)
-                for (int x = 0; x < t.HeightsW; x++)
-                {
-                    float d = Mathf.Clamp01((t.SeaLevel - t.HeightAt(x, z)) / 4f);
-                    px[(t.HeightsH - 1 - z) * t.HeightsW + x] = (byte)(d * 255);
-                }
-            tex.SetPixelData(px, 0);
-            tex.Apply(false);
-            return tex;
-        }
-
         public void Dispose()
         {
             if (Root != null) Looks.Release(Root);
-            if (Water != null) Looks.Release(Water);
+            Sea?.Dispose();
+            Sea = null;
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
             foreach (var list in regionOwned.Values) foreach (var o in list) Looks.Release(o);
             regionOwned.Clear();
             regions = null;
-            if (waterDepth != null) Looks.Release(waterDepth);
             Regions = 0;
         }
     }

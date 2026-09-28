@@ -1,26 +1,16 @@
-// The sea: gentle Gerstner waves, deep and shallow colour from the
-// water's depth over the ground, foam where the ground comes close to
-// the surface, sky reflection by Fresnel and a sun glint. The depth comes
-// from a picture of the sea floor baked from the height grid, so it needs
-// no camera depth texture.
+// The sea. Under URP it draws the scene under it itself, from the opaque
+// and depth textures: the sea floor bent by the waves and dimmed by the
+// water it is seen through (red first, so shallows run turquoise and the
+// deep turns blue-green), the sky and sun off the surface by Fresnel, and
+// foam along the shore, round anything standing in the water and on the
+// crests in a storm. The built-in pipeline gets the same surface over
+// alpha blending. Everything it reads is set by WaterView.
 Shader "OpenKingdoms/Presentation/Water"
 {
     Properties
     {
-        _Shallow ("Shallow", Color) = (0.15, 0.5, 0.52, 0.6)
-        _Deep ("Deep", Color) = (0.04, 0.22, 0.32, 0.93)
-        _Sky ("Sky", Color) = (0.36, 0.46, 0.56, 1)
-        _Foam ("Foam", Color) = (0.95, 0.97, 1, 1)
-        _DepthScale ("Depth to deep", Float) = 3
-        _FoamWidth ("Foam width", Float) = 0.45
-        _WaveHeight ("Wave height", Float) = 0.07
-        _WaveLength ("Wave length", Float) = 7
-        _WaveSpeed ("Wave speed", Float) = 1.2
-        _Wind ("Wind direction", Vector) = (1, 0, 0.4, 0)
-        _DepthTex ("Depth under the surface / 4", 2D) = "white" {}
-        _MapRect ("Map x, z, width, depth", Vector) = (0, -64, 64, 64)
+        _Pad ("Unused", Float) = 0
     }
-    // URP: the same sea, lit by the main light.
     SubShader
     {
         Tags { "RenderType" = "Transparent" "Queue" = "Transparent-10" "IgnoreProjector" = "True" "RenderPipeline" = "UniversalPipeline" }
@@ -28,87 +18,141 @@ Shader "OpenKingdoms/Presentation/Water"
         {
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
-            Blend SrcAlpha OneMinusSrcAlpha
+            Blend Off
             ZWrite Off
+            Cull Off
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma target 3.5
             #pragma multi_compile_fog
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
-            TEXTURE2D(_DepthTex); SAMPLER(sampler_DepthTex);
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareOpaqueTexture.hlsl"
+            #include "../../Shaders/OkuWaterCommon.hlsl"
+            #include "../../Shaders/OkuFog.hlsl"
             CBUFFER_START(UnityPerMaterial)
-                half4 _Shallow, _Deep, _Sky, _Foam;
-                float _DepthScale, _FoamWidth, _WaveHeight, _WaveLength, _WaveSpeed;
-                float4 _Wind, _MapRect, _DepthTex_ST;
+                float _Pad;
             CBUFFER_END
             struct Attributes { float4 positionOS : POSITION; };
-            struct Varyings { float4 positionCS : SV_POSITION; float3 world : TEXCOORD0; float3 normal : TEXCOORD1; half fog : TEXCOORD2; };
-
-            float3 Wave(float2 dir, float len, float amp, float speed, float3 p, inout float3 tangent, inout float3 binormal)
+            struct Varyings
             {
-                float k = 6.28318 / len;
-                float f = k * (dot(dir, p.xz) - speed * _Time.y);
-                float steep = 0.25;
-                tangent += float3(-dir.x * dir.x * steep * sin(f), dir.x * amp * k * cos(f), -dir.x * dir.y * steep * sin(f));
-                binormal += float3(-dir.x * dir.y * steep * sin(f), dir.y * amp * k * cos(f), -dir.y * dir.y * steep * sin(f));
-                return float3(dir.x * amp * cos(f), amp * sin(f), dir.y * amp * cos(f));
-            }
+                float4 positionCS : SV_POSITION;
+                float3 positionWS : TEXCOORD0;
+                float4 screen : TEXCOORD1;
+                half fog : TEXCOORD2;
+            };
 
             Varyings vert(Attributes v)
             {
                 Varyings o;
                 float3 p = TransformObjectToWorld(v.positionOS.xyz);
-                float2 w = normalize(_Wind.xz + 1e-4);
-                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
-                float3 t = float3(1, 0, 0), b = float3(0, 0, 1);
-                float3 d = Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, p, t, b)
-                         + Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, p, t, b)
-                         + Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, p, t, b);
-                p += d;
-                o.world = p;
-                o.normal = normalize(cross(b, t));
+                float2 sea = OkuSeaAt(p.xz);
+                float2 slope;
+                float crest;
+                p += OkuSwell(p.xz, OkuDamp(sea.x), 2, slope, crest);
+                o.positionWS = p;
                 o.positionCS = TransformWorldToHClip(p);
+                o.screen = ComputeScreenPos(o.positionCS);
                 o.fog = ComputeFogFactor(o.positionCS.z);
                 return o;
             }
 
             half4 frag(Varyings i) : SV_Target
             {
-                float2 duv = (i.world.xz - _MapRect.xy) / _MapRect.zw;
-                float inside = step(0, duv.x) * step(duv.x, 1) * step(0, duv.y) * step(duv.y, 1);
-                float vdepth = lerp(4, SAMPLE_TEXTURE2D(_DepthTex, sampler_DepthTex, saturate(duv)).r * 4, inside);
-                float3 view = SafeNormalize(GetWorldSpaceViewDir(i.world));
-                // The waves' normal per pixel, so the sea looks the same
-                // however coarse its mesh is.
-                float3 wt = float3(1, 0, 0), wb = float3(0, 0, 1);
-                float2 w = normalize(_Wind.xz + 1e-4);
-                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
-                Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, i.world, wt, wb);
-                Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, i.world, wt, wb);
-                Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, i.world, wt, wb);
-                float3 n = normalize(cross(wb, wt));
-                half4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
-                float fresnel = pow(1 - saturate(dot(n, view)), 4);
-                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);
-                Light sun = GetMainLight(TransformWorldToShadowCoord(i.world));
-                float3 h = normalize(sun.direction + view);
-                float spec = pow(saturate(dot(n, h)), 200) * 0.8 * sun.shadowAttenuation;
-                water.rgb *= 0.55 + 0.45 * saturate(dot(n, sun.direction)) * sun.color * lerp(0.6, 1, sun.shadowAttenuation);
-                water.rgb += spec * sun.color;
-                float band = 1 - saturate(vdepth / _FoamWidth);
-                float ripple = sin(i.world.x * 1.7 + _Time.y * 1.3) * sin(i.world.z * 2.1 - _Time.y * 0.9) * 0.5 + 0.5;
-                float foam = saturate(band * (0.6 + 0.8 * ripple) - 0.25) * 1.4;
-                water = lerp(water, _Foam, saturate(foam));
-                water.a = saturate(max(water.a, foam) + spec);
-                water.a *= saturate(vdepth / 0.06);
-                water.rgb = MixFog(water.rgb, i.fog);
-                return water;
+                float3 p = i.positionWS;
+                float3 cam = GetCameraPositionWS();
+                float3 toCam = cam - p;
+                float dist = length(toCam);
+                float3 v = toCam / dist;
+                float2 suv = i.screen.xy / i.screen.w;
+                float surfEye = i.screen.w;
+
+                float2 sea = OkuSeaAt(p.xz);
+                float depthBelow = sea.x, shore = sea.y;
+                float damp = OkuDamp(depthBelow);
+
+                // The surface: the finer waves over a little of the swell,
+                // rougher where the slow noise and the weather say, calmer
+                // in the shallows and far off, and rain rings in the rain.
+                OkuWave w = OkuWaveAt(p.xz, damp, dist);
+                if (_OkuWaterWaves.w > 0.01) w.slope += OkuRain(p.xz, dist) * _OkuWaterWaves.w;
+                float3 n = normalize(float3(-w.slope.x, 1, -w.slope.y));
+
+                // What lies under the surface, bent by the waves where the
+                // water is deep enough, never pulling in what stands above it.
+                float rawScene = SampleSceneDepth(suv);
+                float sceneEye = LinearEyeDepth(rawScene, _ZBufferParams);
+                float rayScale = dist / max(surfEye, 1e-3);
+                float thick = max(sceneEye - surfEye, 0) * rayScale;
+                float2 bend = n.xz * 0.06 * saturate(thick * 1.5) * saturate(12 / max(surfEye, 1));
+                float2 ruv = suv + bend;
+                float refrEye = LinearEyeDepth(SampleSceneDepth(ruv), _ZBufferParams);
+                if (refrEye < surfEye) { ruv = suv; refrEye = sceneEye; }
+                float path = max(refrEye - surfEye, 0) * rayScale;
+                float under = path * v.y;
+                float3 scene = SampleSceneColor(ruv);
+
+                // Light through the water: absorbed on the way down to the
+                // floor and back up the view ray, scattered back toward the
+                // eye, a little lighter where the waves ride high and in
+                // broad slow patches, as wind and current leave a real sea.
+                Light sun = GetMainLight(TransformWorldToShadowCoord(p));
+                float shadow = lerp(1, sun.shadowAttenuation, 0.75);
+                float3 ambient = SampleSH(float3(0, 1, 0));
+                float3 lightIn = sun.color * shadow * saturate(sun.direction.y + 0.2) + ambient;
+                float3 t = exp(-_OkuWaterSigma.rgb * (path + under));
+                float3 inscatter = _OkuWaterScatter.rgb * lightIn * (1 + w.crest * 0.3 * damp) * lerp(0.85, 1.15, w.macro);
+                inscatter += _OkuWaterScatter.rgb * sun.color * shadow * saturate(w.crest) * 0.6 * damp;
+                float3 water = scene * t + inscatter * (1 - t);
+
+                // The sky and sun off the surface. The sky is read off a
+                // steeper copy of the waves, so it moves on them as it does
+                // on a real sea seen from high up.
+                float3 nr = normalize(float3(-w.slope.x * 1.8, 1, -w.slope.y * 1.8));
+                float3 r = reflect(-v, nr);
+                r.y = abs(r.y);
+                float fres = saturate(OkuFresnel(nr, v) * _OkuWaterSky.a);
+                float3 sky = OkuSky(r, sun.direction, sun.color);
+                water = lerp(water, sky, fres);
+                float rough = max(0.05 + _OkuWaterWaves.y * 0.8, 0.03 + dist * 0.0012);
+                float glint = OkuGlint(n, v, sun.direction, rough) * sun.shadowAttenuation * _OkuWaterScatter.a;
+                float sheen = OkuGlint(n, v, sun.direction, 0.35) * sun.shadowAttenuation * _OkuWaterScatter.a;
+                water += sun.color * (min(glint, 4) + min(sheen, 1) * 0.3);
+
+                // Foam: a broken line where the water meets the shore, or a
+                // hull or post standing in deeper water, but not across a flat
+                // of wet sand just under the surface. Bands rolling in to the
+                // shore, from the baked distance to it. Whitecaps in a storm.
+                float lace = OkuFoamLace(p.xz, 1);
+                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(depthBelow / 0.4), saturate(1.5 - shore / 0.8));
+                float nearShore = saturate(1 - shore / 0.9) * step(0, shore + 0.5);
+                float wash = pow(saturate(sin(6.2831853 * shore / 1.4 - _OkuWaterTime * 1.2 + w.macro * 5)), 4) * exp(-max(shore, 0) / 0.9);
+                float caps = saturate((w.crest - 0.25) * 4) * _OkuWaterWaves.z * lerp(0.6, 1.2, w.macro);
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3 + wash * 0.55 + caps)) * 0.92;
+                foam *= saturate(thick / 0.01);
+                float3 foamLight = sun.color * (saturate(dot(n, sun.direction)) * shadow) + ambient;
+                water = lerp(water, foamLight * 0.85, foam);
+
+                // Past the map's edge the sea melts into the haze as the land does.
+                if (_OkuMapSize.x > 0)
+                {
+                    float2 over = max(max(-float2(p.x, -p.z), float2(p.x, -p.z) - _OkuMapSize.xy), 0);
+                    float away = length(over) / max(_OkuSeaCell.x, 1e-3) / 32;
+                    water = lerp(water, _OkuHaze.rgb, smoothstep(0, 1, saturate(away)));
+                }
+
+                water = MixFog(water, i.fog);
+                water *= OkuFogLight(p);
+                return half4(water, 1);
             }
             ENDHLSL
         }
     }
+    // The built-in pipeline: the same surface, blended over the ground.
     SubShader
     {
         Tags { "RenderType" = "Transparent" "Queue" = "Transparent-10" "IgnoreProjector" = "True" }
@@ -117,95 +161,86 @@ Shader "OpenKingdoms/Presentation/Water"
             Tags { "LightMode" = "ForwardBase" }
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
+            Cull Off
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma target 3.5
             #pragma multi_compile_fog
             #include "UnityCG.cginc"
             #include "Lighting.cginc"
-
-            fixed4 _Shallow, _Deep, _Sky, _Foam;
-            float _DepthScale, _FoamWidth, _WaveHeight, _WaveLength, _WaveSpeed;
-            float4 _Wind;
-            sampler2D _DepthTex;
-            float4 _MapRect;
+            #include "../../Shaders/OkuWaterCommon.hlsl"
+            #include "../../Shaders/OkuFog.hlsl"
+            UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
 
             struct appdata { float4 vertex : POSITION; };
             struct v2f
             {
                 float4 pos : SV_POSITION;
                 float3 world : TEXCOORD0;
-                float3 normal : TEXCOORD1;
-                float4 screen : TEXCOORD2;
-                float eyeDepth : TEXCOORD3;
-                UNITY_FOG_COORDS(4)
+                float4 screen : TEXCOORD1;
+                UNITY_FOG_COORDS(2)
             };
-
-            // One Gerstner wave: displacement, and its share of the normal.
-            float3 Wave(float2 dir, float len, float amp, float speed, float3 p, inout float3 tangent, inout float3 binormal)
-            {
-                float k = 6.28318 / len;
-                float f = k * (dot(dir, p.xz) - speed * _Time.y);
-                float steep = 0.25;
-                float a = amp;
-                tangent += float3(-dir.x * dir.x * steep * sin(f), dir.x * a * k * cos(f), -dir.x * dir.y * steep * sin(f));
-                binormal += float3(-dir.x * dir.y * steep * sin(f), dir.y * a * k * cos(f), -dir.y * dir.y * steep * sin(f));
-                return float3(dir.x * a * cos(f), a * sin(f), dir.y * a * cos(f));
-            }
 
             v2f vert(appdata v)
             {
                 v2f o;
                 float3 p = mul(unity_ObjectToWorld, v.vertex).xyz;
-                float2 w = normalize(_Wind.xz + 1e-4);
-                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
-                float3 t = float3(1, 0, 0), b = float3(0, 0, 1);
-                float3 d = Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, p, t, b)
-                         + Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, p, t, b)
-                         + Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, p, t, b);
-                p += d;
+                float2 sea = OkuSeaAt(p.xz);
+                float2 slope;
+                float crest;
+                p += OkuSwell(p.xz, OkuDamp(sea.x), 2, slope, crest);
                 o.world = p;
-                o.normal = normalize(cross(b, t));
                 o.pos = mul(UNITY_MATRIX_VP, float4(p, 1));
                 o.screen = ComputeScreenPos(o.pos);
-                o.eyeDepth = -mul(UNITY_MATRIX_V, float4(p, 1)).z;
                 UNITY_TRANSFER_FOG(o, o.pos);
                 return o;
             }
 
             fixed4 frag(v2f i) : SV_Target
             {
-                float2 duv = (i.world.xz - _MapRect.xy) / _MapRect.zw;
-                float inside = step(0, duv.x) * step(duv.x, 1) * step(0, duv.y) * step(duv.y, 1);
-                float vdepth = lerp(4, tex2D(_DepthTex, saturate(duv)).r * 4, inside);
-                float3 view = normalize(_WorldSpaceCameraPos - i.world);
-                // The waves' normal per pixel, so the sea looks the same
-                // however coarse its mesh is.
-                float3 wt = float3(1, 0, 0), wb = float3(0, 0, 1);
-                float2 w = normalize(_Wind.xz + 1e-4);
-                float2 w2 = float2(w.y, -w.x) * 0.6 + w * 0.8;
-                Wave(w, _WaveLength, _WaveHeight, _WaveSpeed, i.world, wt, wb);
-                Wave(normalize(w2), _WaveLength * 0.53, _WaveHeight * 0.5, _WaveSpeed * 1.3, i.world, wt, wb);
-                Wave(normalize(float2(-w.y, w.x)), _WaveLength * 0.31, _WaveHeight * 0.25, _WaveSpeed * 1.7, i.world, wt, wb);
-                float3 n = normalize(cross(wb, wt));
-                fixed4 water = lerp(_Shallow, _Deep, saturate(vdepth / _DepthScale));
-                float fresnel = pow(1 - saturate(dot(n, view)), 4);
-                water.rgb = lerp(water.rgb, _Sky.rgb, fresnel * 0.35);
+                float3 p = i.world;
+                float3 toCam = _WorldSpaceCameraPos - p;
+                float dist = length(toCam);
+                float3 v = toCam / dist;
+                float2 sea = OkuSeaAt(p.xz);
+                float damp = OkuDamp(sea.x);
+                OkuWave w = OkuWaveAt(p.xz, damp, dist);
+                if (_OkuWaterWaves.w > 0.01) w.slope += OkuRain(p.xz, dist) * _OkuWaterWaves.w;
+                float3 n = normalize(float3(-w.slope.x, 1, -w.slope.y));
+                float sceneEye = LinearEyeDepth(SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screen)));
+                float thick = max(sceneEye - i.screen.w, 0) * dist / max(i.screen.w, 1e-3);
+                float under = thick * v.y;
                 float3 l = normalize(_WorldSpaceLightPos0.xyz);
-                float3 h = normalize(l + view);
-                float spec = pow(saturate(dot(n, h)), 160) * 1.2;
-                water.rgb *= 0.55 + 0.45 * saturate(dot(n, l)) * _LightColor0.rgb;
-                water.rgb += spec * _LightColor0.rgb;
-                // Foam at the shore, broken up by moving noise.
-                float band = 1 - saturate(vdepth / _FoamWidth);
-                float ripple = sin(i.world.x * 1.7 + _Time.y * 1.3) * sin(i.world.z * 2.1 - _Time.y * 0.9) * 0.5 + 0.5;
-                float foam = saturate(band * (0.6 + 0.8 * ripple) - 0.25) * 1.4;
-                water = lerp(water, _Foam, saturate(foam));
-                water.a = saturate(max(water.a, foam) + spec);
-                // Fade in over the first touch of the ground, no hard edge.
-                water.a *= saturate(vdepth / 0.06);
-                UNITY_APPLY_FOG(i.fogCoord, water);
-                return water;
+                float3 lightIn = _LightColor0.rgb * saturate(l.y + 0.2) + ShadeSH9(float4(0, 1, 0, 1));
+                // What shows of the ground is what the water lets through.
+                float3 t = exp(-_OkuWaterSigma.rgb * (thick + under));
+                float alpha = 1 - dot(t, float3(0.3, 0.59, 0.11));
+                float3 water = _OkuWaterScatter.rgb * lightIn * (1 + w.crest * 0.3 * damp) * lerp(0.85, 1.15, w.macro);
+                float3 nr = normalize(float3(-w.slope.x * 1.8, 1, -w.slope.y * 1.8));
+                float3 r = reflect(-v, nr);
+                r.y = abs(r.y);
+                float fres = saturate(OkuFresnel(nr, v) * _OkuWaterSky.a);
+                water = lerp(water, OkuSky(r, l, _LightColor0.rgb), fres);
+                alpha = saturate(alpha + fres);
+                float rough = max(0.05 + _OkuWaterWaves.y * 0.8, 0.03 + dist * 0.0012);
+                float glint = min(OkuGlint(n, v, l, rough) * _OkuWaterScatter.a, 4) + min(OkuGlint(n, v, l, 0.35) * _OkuWaterScatter.a, 1) * 0.3;
+                water += _LightColor0.rgb * glint;
+                float lace = OkuFoamLace(p.xz, 1);
+                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(sea.x / 0.4), saturate(1.5 - sea.y / 0.8));
+                float nearShore = saturate(1 - sea.y / 0.9) * step(0, sea.y + 0.5);
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3)) * 0.92;
+                water = lerp(water, lightIn * 0.85, foam);
+                alpha = saturate(max(alpha, foam) + glint * 0.2) * saturate(thick / 0.05);
+                if (_OkuMapSize.x > 0)
+                {
+                    float2 over = max(max(-float2(p.x, -p.z), float2(p.x, -p.z) - _OkuMapSize.xy), 0);
+                    float away = length(over) / max(_OkuSeaCell.x, 1e-3) / 32;
+                    water = lerp(water, _OkuHaze.rgb, smoothstep(0, 1, saturate(away)));
+                }
+                fixed4 c = fixed4(water * OkuFogLight(p), alpha);
+                UNITY_APPLY_FOG(i.fogCoord, c);
+                return c;
             }
             ENDCG
         }

@@ -62,7 +62,8 @@ namespace OpenKingdomsUnity.Game
                 foreach (char c in map.Id) s = s * 31 + c;
                 seed = s & 0xffff;
             }
-            SeaLevel = map.Id == "mock_isles" ? 2.2f : map.Id == "mock_highlands" ? 1.2f : map.Id == "mock_dunes" ? 0.8f : -1f;
+            SeaLevel = map.Id == "mock_isles" ? 2.2f : map.Id == "mock_highlands" ? 1.2f : map.Id == "mock_dunes" ? 0.8f
+                : map.Id == "mock_moat" || map.Id == "mock_bay" ? 2.5f : -1f;
         }
 
         public float Height(float wx, float wz)
@@ -78,6 +79,24 @@ namespace OpenKingdomsUnity.Game
                 }
                 case "mock_highlands":
                     return n * 11f + 2.5f - Blob(u, v, 0.5f, 0.5f, 0.16f) * 5f;
+                case "mock_moat":
+                {
+                    // A rim at 5 all round, a plateau at 4 and a lake below
+                    // the 2.5 sea in the middle, like Castle's border and moat.
+                    float edge = Mathf.Min(Mathf.Min(u, 1 - u), Mathf.Min(v, 1 - v));
+                    float rim = Mathf.Lerp(5f, 4f, Mathf.Clamp01(edge / 0.08f));
+                    return rim - Blob(u, v, 0.5f, 0.5f, 0.26f) * 4.2f + n * 0.3f;
+                }
+                case "mock_bay":
+                {
+                    // Land to the west, a long sandy beach sloping under the
+                    // 2.5 sea, a flat deep floor, then a cliff and land east.
+                    float h = u < 0.28f ? 4f
+                        : u < 0.45f ? Mathf.Lerp(4f, 0.2f, Mathf.SmoothStep(0f, 1f, (u - 0.28f) / 0.17f))
+                        : u < 0.62f ? 0.2f
+                        : u < 0.68f ? Mathf.Lerp(0.2f, 4.5f, (u - 0.62f) / 0.06f) : 4.5f;
+                    return h + (n - 0.5f) * 0.3f;
+                }
                 case "mock_frost":
                 {
                     float ridge = Mathf.Pow(Mathf.Abs(u - 0.5f) * 2f, 2.5f);
@@ -243,6 +262,17 @@ namespace OpenKingdomsUnity.Game
                 int top = b.AddPiece("canopy", root, new Vector3(0, 2.2f, 0));
                 b.Box(top, Vector3.zero, new Vector3(1.6f, 1.2f, 1.6f), Leaf);
                 b.Box(top, new Vector3(0, 0.8f, 0), new Vector3(1f, 0.8f, 1f), Leaf);
+                return b.Finish(obj);
+            }
+            if (obj == "mockboat")
+            {
+                // Keel at y = 0, as the original ship models have it.
+                int root = b.AddPiece("base", -1, Vector3.zero);
+                b.Box(root, new Vector3(0, 0.35f, 0), new Vector3(1.1f, 0.7f, 3.2f), Wood);
+                b.Box(root, new Vector3(0, 0.8f, -0.9f), new Vector3(0.9f, 0.3f, 0.8f), Wood);
+                int mast = b.AddPiece("mast", root, new Vector3(0, 0.7f, 0.2f));
+                b.Box(mast, new Vector3(0, 1.1f, 0), new Vector3(0.1f, 2.2f, 0.1f), Wood);
+                b.Box(mast, new Vector3(0, 1.3f, 0.06f), new Vector3(1.4f, 1.2f, 0.04f), team);
                 return b.Finish(obj);
             }
             if (obj.EndsWith("lodge"))
