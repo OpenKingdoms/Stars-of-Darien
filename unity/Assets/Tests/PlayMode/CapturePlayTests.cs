@@ -160,7 +160,9 @@ namespace OpenKingdomsUnity.Tests
             string second = CaptureFiles.ReadLatest(dir);
             Assert.AreNotEqual(first, second);
             Assert.IsTrue(File.Exists(first) && File.Exists(second));
-            Assert.AreEqual(cap.LastPath, second);
+            // The game hears of it on its next frame.
+            yield return Until(() => cap.LastPath == second, 5f);
+            Assert.AreEqual(second, cap.LastPath);
         }
 
         // The screen read back top first or bottom first, told apart against
