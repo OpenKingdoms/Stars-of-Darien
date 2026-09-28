@@ -148,15 +148,16 @@ namespace OpenKingdomsUnity.Tests
             Scene();
             var cap = OwnerCapture.Ensure();
             yield return null;
-            string latest = Path.Combine(dir, CaptureFiles.LatestFile);
             cap.Shot();
-            yield return Until(() => File.Exists(latest), 20f);
-            string first = File.ReadAllText(latest).Trim();
-            // A second later, so the names differ by their time.
+            yield return Until(() => CaptureFiles.ReadLatest(dir) != null, 20f);
+            string first = CaptureFiles.ReadLatest(dir);
+            Assert.IsNotNull(first, cap.LastError);
+            // A second later, so the names differ by their time. Read all the
+            // while, as someone waiting for the next picture would.
             yield return new WaitForSecondsRealtime(1.1f);
             cap.Shot();
-            yield return Until(() => File.Exists(latest) && File.ReadAllText(latest).Trim() != first, 20f);
-            string second = File.ReadAllText(latest).Trim();
+            yield return Until(() => CaptureFiles.ReadLatest(dir) is string now && now != first, 20f);
+            string second = CaptureFiles.ReadLatest(dir);
             Assert.AreNotEqual(first, second);
             Assert.IsTrue(File.Exists(first) && File.Exists(second));
             Assert.AreEqual(cap.LastPath, second);
