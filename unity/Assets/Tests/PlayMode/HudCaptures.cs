@@ -60,11 +60,12 @@ namespace OpenKingdomsUnity.Tests
                 log.Add($"{tag}: monarch {md.Name}, {md.BuildOptions.Length} options");
                 yield return Shots(monarch, dir, tag + "-monarch");
 
-                // The option that builds the most, raised beside the monarch.
-                // One with no site near it, or not done in time, gives way to
-                // the next.
-                var candidates = md.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count && b.UnitDefs[o].BuildOptions.Length > 0)
-                    .Distinct().OrderByDescending(o => b.UnitDefs[o].BuildOptions.Length).ToList();
+                // The option that builds the most, of those the pool pays for
+                // at once first, raised beside the monarch. One with no site
+                // near it, or not done in time, gives way to the next.
+                float purse = b.ReadEconomy(b.LocalPlayer).Mana;
+                var candidates = md.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count && b.UnitDefs[o].BuildOptions.Length > 0).Distinct()
+                    .OrderBy(o => b.UnitDefs[o].ManaCost <= purse ? 0 : 1).ThenByDescending(o => b.UnitDefs[o].BuildOptions.Length).ToList();
                 UnitState built = default;
                 foreach (int best in candidates)
                 {
