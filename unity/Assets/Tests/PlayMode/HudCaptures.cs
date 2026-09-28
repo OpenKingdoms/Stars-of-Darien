@@ -1,7 +1,9 @@
 // HudCaptures.cs - the battle HUD on the real engine for every kingdom:
 // its monarch selected, then the building it raises that builds the most,
-// at 1280x720, 1920x1080 and 3840x2160. Runs only when OKU_CAPTURE_DIR
-// names a folder and OKU_CAPTURE_HUD=1, and writes hud-<side>-<unit>-WxH.png.
+// at 1280x720, 1920x1080 and 3840x2160. The first kingdom's monarch is also
+// drawn at 130 percent, where the minimap hangs, and once more with line of
+// sight and the fog on at 1280x720. Runs only when OKU_CAPTURE_DIR names a
+// folder and OKU_CAPTURE_HUD=1, and writes hud-<side>-<unit>-WxH.png.
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -17,6 +19,8 @@ namespace OpenKingdomsUnity.Tests
     public class HudCaptures
     {
         static readonly Vector2Int[] Sizes = { new Vector2Int(1280, 720), new Vector2Int(1920, 1080), new Vector2Int(3840, 2160) };
+        static readonly Vector2Int[] Small = { new Vector2Int(1280, 720) };
+        static readonly Vector2Int[] Owners = { new Vector2Int(1920, 1080) };
 
         GameRoot root;
 
@@ -46,6 +50,7 @@ namespace OpenKingdomsUnity.Tests
             if (string.IsNullOrEmpty(map)) map = "two castles";
             var log = new List<string>();
             var only = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_SIDES");
+            string first = null;
             foreach (var side in root.Backend.Sides.ToList())
             {
                 if (!string.IsNullOrEmpty(only) && !only.ToUpperInvariant().Contains(side.Id)) continue;
@@ -57,8 +62,13 @@ namespace OpenKingdomsUnity.Tests
                 var monarch = Own().FirstOrDefault(u => !b.UnitDefs[u.Def].IsBuilding && b.UnitDefs[u.Def].BuildOptions.Length > 0);
                 if (monarch.MaxHealth == 0) { log.Add($"{tag}: no monarch"); continue; }
                 var md = b.UnitDefs[monarch.Def];
-                log.Add($"{tag}: monarch {md.Name}, {md.BuildOptions.Length} options");
-                yield return Shots(monarch, dir, tag + "-monarch");
+                log.Add($"{tag}: monarch {md.Name}, {md.BuildOptions.Length} options, buttons {string.Join(" ", b.SelectionActions().Select(a => a.Id))}");
+                yield return Shots(monarch, dir, tag + "-monarch", Sizes);
+                if (first == null)
+                {
+                    first = side.Id;
+                    yield return Shots(monarch, dir, tag + "-monarch-130", Owners, 130);
+                }
 
                 // The option that builds the most, of those the pool pays for
                 // at once first, raised beside the monarch. One with no site
@@ -93,13 +103,30 @@ namespace OpenKingdomsUnity.Tests
                     b.Command(GameCommand.To(CommandKind.Stop, monarch.Handle, Vector3.zero));
                 }
                 if (built.MaxHealth == 0) continue;
-                yield return Shots(built, dir, tag + "-builder");
+                yield return Shots(built, dir, tag + "-builder", Sizes);
+            }
+
+            // The fog over the play area only, beside the panels.
+            if (first != null)
+            {
+                yield return Start(first, map, true);
+                if (root.Flow.State == FlowState.Playing)
+                {
+                    root.Orders.Frozen = true;
+                    var b = root.Backend;
+                    var monarch = Own().FirstOrDefault(u => !b.UnitDefs[u.Def].IsBuilding && b.UnitDefs[u.Def].BuildOptions.Length > 0);
+                    if (monarch.MaxHealth > 0)
+                    {
+                        yield return Shots(monarch, dir, "fog", Small);
+                        log.Add($"fog: {first} with line of sight on");
+                    }
+                }
             }
             File.WriteAllLines(Path.Combine(dir, "hud-captures.txt"), log);
             foreach (var line in log) Debug.Log(line);
         }
 
-        IEnumerator Start(string side, string map)
+        IEnumerator Start(string side, string map, bool fog = false)
         {
             if (root.Flow.State == FlowState.Playing) root.Flow.Fire(FlowEvent.Pause);
             if (root.Flow.State != FlowState.MainMenu) root.Flow.Fire(FlowEvent.ToMenu);
@@ -107,8 +134,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State, "back at the menu for the next kingdom");
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             root.Setup.MapId = map;
-            root.Setup.MapRevealed = true;
-            root.Setup.LineOfSight = false;
+            root.Setup.MapRevealed = !fog;
+            root.Setup.LineOfSight = fog;
             root.Setup.StartMana = 5000;
             root.Setup.Seats[0].Side = side;
             root.Setup.Seats[1].Side = side == "TAROS" ? "ARAMON" : "TAROS";
@@ -145,7 +172,7 @@ namespace OpenKingdomsUnity.Tests
                 if (units[i].Player == root.Backend.LocalPlayer && (units[i].Flags & UnitFlags.Dying) == 0) yield return units[i];
         }
 
-        IEnumerator Shots(UnitState unit, string dir, string name)
+        IEnumerator Shots(UnitState unit, string dir, string name, Vector2Int[] sizes, int percent = HudLayout.DefaultScale)
         {
             // The input is held still, so the HUD's selection is set here too.
             root.Backend.Select(new[] { unit.Handle }, false);
@@ -156,7 +183,8 @@ namespace OpenKingdomsUnity.Tests
             cam.pitch = OpenKingdomsUnity.Game.World.GameCamera.ClassicPitch;
             cam.yaw = 0;
             cam.Zoom(30f);
-            foreach (var size in Sizes)
+            root.Options.UiScale = percent;
+            foreach (var size in sizes)
             {
                 BattleHud.SizeOverride = size;
                 for (int i = 0; i < 3; i++) yield return null;
@@ -164,6 +192,7 @@ namespace OpenKingdomsUnity.Tests
                 yield return HudShots.Shoot(Camera.main, size.x, size.y, Path.Combine(dir, $"hud-{name}-{size.x}x{size.y}.png"));
             }
             BattleHud.SizeOverride = null;
+            root.Options.UiScale = HudLayout.DefaultScale;
         }
     }
 }

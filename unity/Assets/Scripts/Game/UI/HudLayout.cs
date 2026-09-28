@@ -15,7 +15,8 @@ namespace OpenKingdomsUnity.Game.UI
         public const float SidebarW = 128f, BlockH = 352f, StripH = 49f;
         public const float CellW = 64f, CellH = 48f, OrderSize = 29f, WeaponSize = 32f, HitMin = 32f;
         public const float BandW = 6f, StripBand = 4f, MinMapH = 96f, MapMaxW = 112f;
-        public const float BodyFloor = 12f, BadgeFloor = 10f;
+        // Text floors in screen pixels: words, key letters and costs, and numbers.
+        public const float BodyFloor = 12f, BadgeFloor = 12f, NumberFloor = 14f;
         public static readonly int[] ScaleStops = { 60, 70, 80, 90, 100, 115, 130 };
         public const int DefaultScale = 80;
         // What the original's sidebar and strip cover of its 640x480 screen.
@@ -94,8 +95,8 @@ namespace OpenKingdomsUnity.Game.UI
             return new Rect(left + (room - w) / 2, MapPanel.y + 5, w, h);
         }
 
-        // The carpet panel in whatever of the slot the map leaves, or empty.
-        public Rect Carpet(Rect map)
+        // A quiet ruled panel in whatever of the slot the map leaves, or empty.
+        public Rect Filler(Rect map)
         {
             float top = MapHangs ? MapSlot.y + 5 : map.yMax + 7;
             float bottom = MapSlot.yMax - 7;
@@ -108,6 +109,8 @@ namespace OpenKingdomsUnity.Game.UI
         public static readonly Rect Header = new Rect(0, 0, 128, 25);
         public static readonly Rect TopBand = new Rect(BandW, 0, 128 - BandW, 4);
         public static readonly Rect MenuButton = new Rect(12, 6, 42, 16);
+        // The Menu button's clickable rect, grown up into the vellum over the block.
+        public static readonly Rect MenuHit = new Rect(12, -9, 44, 32);
         public static readonly Rect Clock = new Rect(58, 6, 56, 16);
         public static readonly Rect CentreBand = new Rect(52, 25, 29, 99);
         public static readonly Rect WeaponFrame = new Rect(BandW + 4, 177, 128 - BandW - 8, 36);
@@ -216,8 +219,11 @@ namespace OpenKingdomsUnity.Game.UI
         public static readonly Rect ManaTrough = new Rect(110, 36, 106, 6);
         public static readonly Rect Kills = new Rect(218, 27, 31, 16);
         public static readonly Rect Status = new Rect(252, 7, 130, 18);
-        public static readonly Rect Numbers = new Rect(252, 27, 130, 16);
         public const float TargetW = 130f;
+
+        // Health and mana numbers, out to the target panel where the strip
+        // is wider than the original's.
+        public Rect Numbers => new Rect(252, 27, Mathf.Max(130f, (HasTarget ? Target.x - 4f : StripW - 4f) - 252f), 16);
 
         // A trough's fill: 97 cp of its 106, 3 cp tall, centred.
         public static Rect Fill(Rect trough) => new Rect(trough.x + 5, trough.y + 1.5f, 97, 3);

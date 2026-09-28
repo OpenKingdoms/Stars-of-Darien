@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Game
         public FormationFacing FacingRule = FormationFacing.ByDrag;
         public FormationShape Formation = FormationShape.Line;
         // The battle HUD's size in percent, 100 being the original at 640x480.
-        public int UiScale = 80;
+        public int UiScale = UI.HudLayout.DefaultScale;
         // Hotkey letters on the HUD's buttons.
         public bool HotkeyLetters = true;
 
@@ -52,7 +52,7 @@ namespace OpenKingdomsUnity.Game
             o.ClassicRightDrag = PlayerPrefs.GetInt(Prefix + "rightdrag", 1) != 0;
             o.FacingRule = (FormationFacing)Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "facing", 0), 0, 1);
             o.Formation = (FormationShape)Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "formation", 0), 0, 3);
-            o.UiScale = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "uiscale", 80), 50, 150);
+            o.UiScale = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "uiscale", UI.HudLayout.DefaultScale), 50, 150);
             o.HotkeyLetters = PlayerPrefs.GetInt(Prefix + "hotkeys", 1) != 0;
             return o;
         }

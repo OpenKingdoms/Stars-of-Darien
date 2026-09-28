@@ -735,15 +735,19 @@ namespace OpenKingdomsUnity.Engine
         public UnitAction[] SelectionActions()
         {
             int n = Math.Min(OkEngine.okx_hud_commands(hudBuf, hudBuf.Length), hudBuf.Length);
-            var list = new UnitAction[Math.Max(0, n)];
-            for (int i = 0; i < list.Length; i++)
+            var list = new List<UnitAction>(Math.Max(0, n));
+            for (int i = 0; i < n; i++)
             {
                 var c = hudBuf[i];
+                // What the engine cannot carry out yet (the cloak pair) is left out.
+                if (c.enabled == 0 && c.why == OkEngine.WhyUnsupported) continue;
                 CommandOf(c, out var kind, out int arg);
-                int state = c.enabled == 0 ? 0 : c.active != 0 ? 1 : 2;
+                // Frame 0 of the common buttons is a blank tile, so a disabled
+                // order shows its rest picture. A spell has its own disabled one.
+                int state = c.enabled == 0 && c.weaponSlot >= 0 ? 0 : c.active != 0 ? 1 : 2;
                 int picture = c.id * 4 + state;
                 artKey[picture] = picture + ":" + (c.weapon ?? "");
-                list[i] = new UnitAction
+                list.Add(new UnitAction
                 {
                     Id = c.name,
                     Label = c.weaponSlot >= 0 && !string.IsNullOrEmpty(c.weapon) ? c.weapon : c.label,
@@ -759,9 +763,9 @@ namespace OpenKingdomsUnity.Engine
                     StanceGroup = c.group > 0 ? c.group : -1,
                     Hotkey = c.hotkey > 0 ? ((char)c.hotkey).ToString() : "",
                     Picture = picture,
-                };
+                });
             }
-            return list;
+            return list.ToArray();
         }
 
         public bool DoAction(string id, Vector3 at, int unit, Rect area, bool queue)

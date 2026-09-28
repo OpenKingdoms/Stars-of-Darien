@@ -4,8 +4,9 @@
 // the unit under the pointer or its target. Every build option shows at
 // once over the play area. Its canvas draws at one scale, s screen pixels
 // per classic pixel, in HudArt's Carolingian skin, and the world camera
-// draws only the play area. Click the minimap to look there, right click
-// it to send the selection there.
+// draws only the play area. The minimap's buttons follow the controls:
+// classic sends an own selection there with the left button and looks with
+// the right, modern looks with the left and sends with the right.
 using System.Collections.Generic;
 using System.Linq;
 using OpenKingdomsUnity.Game.World;
@@ -25,25 +26,28 @@ namespace OpenKingdomsUnity.Game.UI
         readonly Canvas canvas;
         readonly CanvasScaler scaler;
         readonly Texture2D vellum;
-        readonly List<Object> painted = new List<Object>();
+        readonly List<Object> painted = new List<Object>(), mapPainted = new List<Object>();
         readonly Dictionary<int, Texture2D> rawBuild = new Dictionary<int, Texture2D>(), sharpBuild = new Dictionary<int, Texture2D>();
         readonly Dictionary<string, Texture2D> rawAction = new Dictionary<string, Texture2D>(), sharpAction = new Dictionary<string, Texture2D>();
         readonly UnitState[] units = new UnitState[EntityRenderer.MaxUnits];
-        readonly List<(Text badge, int def, int factory)> queueBadges = new List<(Text, int, int)>();
+        readonly List<(Text badge, int def, List<int> factories)> queueBadges = new List<(Text, int, List<int>)>();
+        readonly Dictionary<string, ActionParts> parts = new Dictionary<string, ActionParts>();
 
         HudLayout layout;
         int builtW, builtH, builtPercent = -1;
         bool builtBadges;
         RectTransform content, orders, builds, mapParts, unitPanel, targetPanel, manaTrough, targetManaTrough, view;
-        RawImage minimap, dots, ball, portrait, shield, targetShield, plait;
+        RawImage minimap, dots, ball, ballLiquid, portrait, shield, targetShield, plait;
         Text nameText, status, numbers, kills, group, targetName, help1, help2, income, spend, clock;
         Image healthFill, manaFill, targetHealthFill, targetManaFill, targetPip;
-        Texture2D mapTex, dotTex, ballTex, bossTex;
+        Texture2D mapTex, dotTex, bossTex;
         Texture2D[] shields;
         Color32[] dotPx;
+        int dotUnit = 2, dotBuilding = 3;
         string minimapFor, mapTexFor, gridKey = "", nameShown, targetNameShown;
-        float nextDots, nextPanel, ballFill = -1f;
-        (string a, string b)? hoverHelp;
+        float nextDots, nextPanel, ballLevel = -1f;
+        int clockSecs = -1;
+        System.Func<(string, string)> hoverLines;
         UnitAction[] actions = System.Array.Empty<UnitAction>();
         bool basicOrders;
         int buildPage, lastDefsKey, firstSelected = -1;
@@ -84,8 +88,11 @@ namespace OpenKingdomsUnity.Game.UI
             UpdateTarget(world);
             var b = root.Backend;
             int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
-            string c = secs >= 3600 ? $"{secs / 3600}:{secs / 60 % 60:00}:{secs % 60:00}" : $"{secs / 60:00}:{secs % 60:00}";
-            if (clock.text != c) clock.text = c;
+            if (secs != clockSecs)
+            {
+                clockSecs = secs;
+                clock.text = secs >= 3600 ? $"{secs / 3600}:{secs / 60 % 60:00}:{secs % 60:00}" : $"{secs / 60:00}:{secs % 60:00}";
+            }
         }
 
         // The whole screen for the world again, when the HUD goes away.
@@ -111,6 +118,8 @@ namespace OpenKingdomsUnity.Game.UI
             builtBadges = badges;
             layout = new HudLayout(size.x, size.y, percent);
             scaler.scaleFactor = layout.S;
+            // At once, so text measured while building sees the new scale.
+            canvas.scaleFactor = layout.S;
             Rebuild();
         }
 
@@ -121,12 +130,14 @@ namespace OpenKingdomsUnity.Game.UI
             if (content != null) { content.gameObject.SetActive(false); Looks.Release(content.gameObject); }
             foreach (var o in painted) Looks.Release(o);
             painted.Clear();
+            foreach (var o in mapPainted) Looks.Release(o);
+            mapPainted.Clear();
             foreach (var kv in sharpBuild) if (kv.Value != null && (!rawBuild.TryGetValue(kv.Key, out var r) || r != kv.Value)) Looks.Release(kv.Value);
             foreach (var kv in sharpAction) if (kv.Value != null && (!rawAction.TryGetValue(kv.Key, out var r) || r != kv.Value)) Looks.Release(kv.Value);
             sharpBuild.Clear();
             sharpAction.Clear();
-            ballTex = null;
             queueBadges.Clear();
+            parts.Clear();
             content = UiKit.Rect(canvas.transform, "Content").Fill();
             float d = HudArt.Density(layout.S);
             bossTex = Own(HudArt.Boss(7f, d, HudArt.Sapphire));
@@ -135,9 +146,11 @@ namespace OpenKingdomsUnity.Game.UI
             BuildStrip(d);
             orders = Put(content, "Orders", layout.Block);
             builds = Put(content, "Builds", layout.Play);
+            mapParts = null;
             minimapFor = null;
             gridKey = null;
-            ballFill = -1f;
+            ballLevel = -1f;
+            clockSecs = -1;
             nameShown = targetNameShown = null;
             nextPanel = 0;
         }
@@ -154,9 +167,14 @@ namespace OpenKingdomsUnity.Game.UI
             var rt = UiKit.Rect(parent, name);
             rt.anchorMin = rt.anchorMax = new Vector2(0, 1);
             rt.pivot = new Vector2(0, 1);
+            Move(rt, r);
+            return rt;
+        }
+
+        static void Move(RectTransform rt, Rect r)
+        {
             rt.anchoredPosition = new Vector2(r.x, -r.y);
             rt.sizeDelta = new Vector2(r.width, r.height);
-            return rt;
         }
 
         static Image Solid(Transform parent, string name, Rect r, Color c, bool ray = false)
@@ -211,6 +229,21 @@ namespace OpenKingdomsUnity.Game.UI
             return t;
         }
 
+        // A key letter or a cost on a vellum tab sized to it, placed by
+        // place from the tab's size. Bold, as thin strokes fade this small.
+        Text Tab(Transform parent, string name, string text, float cp, float floor, Color colour, System.Func<Vector2, Rect> place)
+        {
+            var t = Words(parent, name, Rect.zero, UiKit.BodyFont, cp, floor, colour, TextAnchor.MiddleCenter);
+            t.fontStyle = FontStyle.Bold;
+            t.text = text;
+            var r = place(new Vector2(Mathf.Max(t.fontSize * 0.9f, t.preferredWidth + 3f), t.fontSize + 2f));
+            Solid(parent, name + "Ink", Grow(r, Px), HudArt.Ink);
+            Solid(parent, name + "Tab", r, HudArt.Vellum);
+            Move(t.rectTransform, r);
+            t.transform.SetAsLastSibling();
+            return t;
+        }
+
         // A hollow rect of four bars.
         static Image[] Ring(Transform parent, string name, Rect r, float t, Color c)
         {
@@ -223,6 +256,11 @@ namespace OpenKingdomsUnity.Game.UI
             };
         }
 
+        static void Show(Image[] ring, bool on)
+        {
+            foreach (var i in ring) if (i.gameObject.activeSelf != on) i.gameObject.SetActive(on);
+        }
+
         static Rect Grow(Rect r, float by) => new Rect(r.x - by, r.y - by, r.width + 2 * by, r.height + 2 * by);
 
         static Rect Local(Rect r, Rect origin) => new Rect(r.x - origin.x, r.y - origin.y, r.width, r.height);
@@ -230,15 +268,17 @@ namespace OpenKingdomsUnity.Game.UI
         RawImage BossAt(Transform parent, Vector2 centre, float diam, Texture2D tex) =>
             Tex(parent, "Boss", new Rect(centre.x - diam / 2f, centre.y - diam / 2f, diam + 1f, diam + 1f), tex);
 
-        void SetHover((string, string)? lines)
-        {
-            hoverHelp = lines;
-            UpdateHelp();
-        }
-
+        // The help box reads the hovered control's lines while it is hovered.
         void Hover(GameObject go, System.Func<(string, string)> lines, System.Action<bool> also = null)
         {
-            go.AddComponent<HoverHint>().Show = on => { also?.Invoke(on); SetHover(on ? lines() : ((string, string)?)null); };
+            go.AddComponent<HoverHint>().Show = on =>
+            {
+                also?.Invoke(on);
+                // Another control's going away leaves the hovered one's lines.
+                if (on) hoverLines = lines;
+                else if (hoverLines == lines) hoverLines = null;
+                UpdateHelp();
+            };
         }
 
         void BuildSidebar(float d)
@@ -271,17 +311,18 @@ namespace OpenKingdomsUnity.Game.UI
                 BossAt(blk, k.center, 4f, knotBoss);
             }
 
-            // The header: the game menu and the clock.
+            // The header: the game menu, clickable over more than its lozenge, and the clock.
             var loz = Own(HudArt.Lozenge(HudLayout.MenuButton.width, HudLayout.MenuButton.height, d, false));
             var lozLit = Own(HudArt.Lozenge(HudLayout.MenuButton.width, HudLayout.MenuButton.height, d, true));
-            var menu = Tex(blk, "Menu", HudLayout.MenuButton, loz, true);
-            var mb = menu.gameObject.AddComponent<Button>();
+            var hit = Solid(blk, "Menu", HudLayout.MenuHit, Color.clear, true);
+            var menu = Tex(hit.transform, "Lozenge", Local(HudLayout.MenuButton, HudLayout.MenuHit), loz);
+            var mb = hit.gameObject.AddComponent<Button>();
             mb.transition = Selectable.Transition.None;
-            mb.targetGraphic = menu;
+            mb.targetGraphic = hit;
             mb.onClick.AddListener(() => root.Flow.Fire(FlowEvent.Pause));
             Words(menu.transform, "Label", new Rect(0, 0, HudLayout.MenuButton.width, HudLayout.MenuButton.height), UiKit.UncialFont, 11, HudLayout.BodyFloor, HudArt.Minium, TextAnchor.MiddleCenter).text = "Menu";
-            Hover(menu.gameObject, () => ("Menu", "F1 or Pause"), on => { if (menu) menu.texture = on ? lozLit : loz; });
-            clock = Words(blk, "Clock", HudLayout.Clock, UiKit.TitleFont, 11, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleRight);
+            Hover(hit.gameObject, () => ("Menu", "F1 or Pause"), on => { if (menu) menu.texture = on ? lozLit : loz; });
+            clock = Words(blk, "Clock", HudLayout.Clock, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.Ink, TextAnchor.MiddleRight);
 
             // The ornament column between the order pairs, as the original's panel has.
             plait = Tex(blk, "Plait", HudLayout.CentreBand, Own(HudArt.PlaitPanel(HudLayout.CentreBand.width, HudLayout.CentreBand.height, d, HudArt.Azurite)));
@@ -291,13 +332,24 @@ namespace OpenKingdomsUnity.Game.UI
             Solid(blk, "HelpInk", Grow(hr, Px), HudArt.Ink);
             Solid(blk, "HelpGold", hr, HudArt.Gold);
             Solid(blk, "HelpGround", Grow(hr, -0.75f), HudArt.Purple);
-            help1 = FitWords(blk, "Help1", new Rect(hr.x + 3, hr.y + 2, hr.width - 6, 15), UiKit.UncialFont, 12, 8, HudLayout.BodyFloor, HudArt.GoldHi, TextAnchor.MiddleCenter);
+            help1 = FitWords(blk, "Help1", new Rect(hr.x + 3, hr.y + 2, hr.width - 6, 15), UiKit.BodyFont, 12, 8, HudLayout.BodyFloor, HudArt.GoldHi, TextAnchor.MiddleCenter);
             help2 = FitWords(blk, "Help2", new Rect(hr.x + 3, hr.y + 17, hr.width - 6, 15), UiKit.BodyFont, 12, 8, HudLayout.BodyFloor, HudArt.Silver, TextAnchor.MiddleCenter);
 
-            // The player's pool: income, the crystal ball, spending.
-            income = Words(blk, "Income", HudLayout.Income, UiKit.TitleFont, 11, HudLayout.BodyFloor, HudArt.Verdigris, TextAnchor.MiddleCenter);
-            spend = Words(blk, "Spend", HudLayout.Spend, UiKit.TitleFont, 11, HudLayout.BodyFloor, HudArt.Minium, TextAnchor.MiddleCenter);
-            ball = Tex(blk, "Ball", HudLayout.Ball, null, true);
+            // The player's pool: income, the crystal ball, spending. The ball
+            // is painted empty and full once, and the full one is cropped to
+            // the level.
+            income = Words(blk, "Income", HudLayout.Income, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.Verdigris, TextAnchor.MiddleCenter);
+            spend = Words(blk, "Spend", HudLayout.Spend, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.MiniumDeep, TextAnchor.MiddleCenter);
+            ball = Tex(blk, "Ball", HudLayout.Ball, Own(HudArt.Ball(0f, d)), true);
+            var liquid = UiKit.Rect(ball.transform, "Liquid");
+            liquid.anchorMin = Vector2.zero;
+            liquid.anchorMax = new Vector2(1, 0);
+            liquid.pivot = new Vector2(0.5f, 0);
+            liquid.anchoredPosition = Vector2.zero;
+            liquid.sizeDelta = Vector2.zero;
+            ballLiquid = liquid.gameObject.AddComponent<RawImage>();
+            ballLiquid.texture = Own(HudArt.Ball(1f, d));
+            ballLiquid.raycastTarget = false;
             Hover(ball.gameObject, PoolLines);
             var bc = HudLayout.Ball.center;
             foreach (var o in new[] { new Vector2(0, -16), new Vector2(16, 0), new Vector2(0, 16), new Vector2(-16, 0) })
@@ -325,27 +377,30 @@ namespace OpenKingdomsUnity.Game.UI
             Solid(unitPanel, "PortraitGold", Grow(pr, 1f), HudArt.Gold);
             portrait = Tex(unitPanel, "Portrait", pr, null);
             shield = Tex(unitPanel, "Shield", HudLayout.Shield, null);
-            nameText = Words(unitPanel, "Name", HudLayout.Name, UiKit.UncialFont, 14, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
-            Trough(unitPanel, "Health", HudLayout.HealthTrough, HudArt.Minium, out healthFill);
-            manaTrough = Trough(unitPanel, "Mana", HudLayout.ManaTrough, HudArt.Azurite, out manaFill);
-            kills = Words(unitPanel, "Kills", HudLayout.Kills, UiKit.TitleFont, 11, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleCenter);
+            nameText = Words(unitPanel, "Name", HudLayout.Name, UiKit.BodyFont, NameCp, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
+            Trough(unitPanel, "Health", HudLayout.HealthTrough, HudArt.Minium, out healthFill, HealthLines);
+            manaTrough = Trough(unitPanel, "Mana", HudLayout.ManaTrough, HudArt.Azurite, out manaFill, ManaLines);
+            kills = Words(unitPanel, "Kills", HudLayout.Kills, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.Ink, TextAnchor.MiddleCenter);
             status = FitWords(unitPanel, "Status", HudLayout.Status, UiKit.BodyFont, 12, 10, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
-            numbers = Words(unitPanel, "Numbers", HudLayout.Numbers, UiKit.TitleFont, 11, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
+            numbers = Words(unitPanel, "Numbers", layout.Numbers, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.Ink, TextAnchor.MiddleLeft);
             group = layout.Group.width > 0 ? FitWords(unitPanel, "Group", layout.Group, UiKit.BodyFont, 12, 10, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft) : null;
             unitPanel.gameObject.SetActive(false);
 
             if (!layout.HasTarget) { targetPanel = null; return; }
             targetPanel = Put(strip, "Target", new Rect(0, 0, st.width, st.height));
             targetPip = Solid(targetPanel, "Owner", layout.TargetPip, Color.white);
-            targetName = Words(targetPanel, "Name", layout.TargetName, UiKit.UncialFont, 14, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
-            Trough(targetPanel, "Health", layout.TargetHealth, HudArt.Minium, out targetHealthFill);
-            targetManaTrough = Trough(targetPanel, "Mana", layout.TargetMana, HudArt.Azurite, out targetManaFill);
+            targetName = Words(targetPanel, "Name", layout.TargetName, UiKit.BodyFont, NameCp, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft);
+            Trough(targetPanel, "Health", layout.TargetHealth, HudArt.Minium, out targetHealthFill, TargetHealthLines);
+            targetManaTrough = Trough(targetPanel, "Mana", layout.TargetMana, HudArt.Azurite, out targetManaFill, TargetManaLines);
             targetShield = Tex(targetPanel, "Shield", layout.TargetShield, null);
             targetPanel.gameObject.SetActive(false);
         }
 
-        // A vellum-shade trough in an ink keyline, its fill 3 cp tall.
-        RectTransform Trough(Transform parent, string name, Rect r, Color fill, out Image fillImg)
+        const float NameCp = 15f;
+
+        // A vellum-shade trough in an ink keyline, its fill 3 cp tall, and
+        // its numbers in the help box while hovered.
+        RectTransform Trough(Transform parent, string name, Rect r, Color fill, out Image fillImg, System.Func<(string, string)> lines)
         {
             var ink = Solid(parent, name, r, HudArt.Ink, true);
             Solid(ink.transform, "Ground", new Rect(Px, Px, r.width - 2 * Px, r.height - 2 * Px), HudArt.VellumShade);
@@ -354,8 +409,7 @@ namespace OpenKingdomsUnity.Game.UI
             // A lit top third, stretched along with the fill.
             var lit = Solid(fillImg.transform, "Lit", new Rect(0, 0, 0, f.height / 3f), new Color(1, 1, 1, 0.18f));
             lit.rectTransform.anchorMax = new Vector2(1, 1);
-            bool health = name == "Health";
-            Hover(ink.gameObject, () => health ? HealthLines() : ManaLines());
+            Hover(ink.gameObject, lines);
             return ink.rectTransform;
         }
 
@@ -370,30 +424,45 @@ namespace OpenKingdomsUnity.Game.UI
         void LoadMinimap()
         {
             minimapFor = root.Setup.MapId;
-            if (mapTexFor != minimapFor)
+            // A bigger picture where the map is drawn big.
+            int want = layout.S > 2.2f ? 512 : 256;
+            string texFor = minimapFor + ":" + want;
+            if (mapTexFor != texFor)
             {
-                mapTexFor = minimapFor;
+                mapTexFor = texFor;
                 if (mapTex != null) Looks.Release(mapTex);
-                mapTex = UiKit.ToTexture(root.Backend.MapPreview(minimapFor, 256), true);
+                mapTex = UiKit.ToTexture(root.Backend.MapPreview(minimapFor, want), true);
                 if (mapTex == null)
                 {
                     // No overview: a picture of the ground from its chunks.
                     var t = root.Backend.Terrain;
                     var chunks = new Dictionary<int, RgbaImage>();
                     RgbaImage Chunk(int c) => chunks.TryGetValue(c, out var i) ? i : chunks[c] = root.Backend.TerrainChunk(c);
-                    mapTex = UiKit.ToTexture(TerrainView.WholeMap(t, Chunk, 256), true);
+                    mapTex = UiKit.ToTexture(TerrainView.WholeMap(t, Chunk, want), true);
                 }
             }
+            foreach (var o in mapPainted) Looks.Release(o);
+            mapPainted.Clear();
             var size = root.Backend.Terrain.Size;
+            var mr = layout.MapRect(size.x / Mathf.Max(1, size.y));
+
+            // One dot texel per screen pixel, dots grown with the scale.
             if (dotTex != null) Looks.Release(dotTex);
-            int w = 128, h = Mathf.Max(8, Mathf.RoundToInt(128 * size.y / Mathf.Max(1, size.x)));
+            int w = Mathf.Clamp(Mathf.RoundToInt(mr.width * layout.S), 32, 1024), h = Mathf.Clamp(Mathf.RoundToInt(mr.height * layout.S), 32, 1024);
             dotTex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, hideFlags = HideFlags.DontSave };
             dotPx = new Color32[w * h];
+            dotUnit = Mathf.Max(2, Mathf.RoundToInt(layout.S * 1.1f));
+            dotBuilding = Mathf.Max(dotUnit + 1, Mathf.RoundToInt(layout.S * 1.7f));
 
+            // Its own canvas, so the view box moving as the camera pans
+            // redraws only this.
             if (mapParts != null) Looks.Release(mapParts.gameObject);
             mapParts = Put(content, "MapParts", new Rect(0, 0, layout.W, layout.H));
             mapParts.SetSiblingIndex(content.Find("Orders").GetSiblingIndex());
-            var mr = layout.MapRect(size.x / Mathf.Max(1, size.y));
+            var sub = mapParts.gameObject.AddComponent<Canvas>();
+            sub.overridePixelPerfect = true;
+            sub.pixelPerfect = false;
+            mapParts.gameObject.AddComponent<GraphicRaycaster>();
             Solid(mapParts, "MapInk", Grow(mr, 1.5f + Px), HudArt.Ink);
             Solid(mapParts, "MapGold", Grow(mr, 1.5f), HudArt.Gold);
             Solid(mapParts, "MapGround", mr, HudArt.Purple);
@@ -408,13 +477,12 @@ namespace OpenKingdomsUnity.Game.UI
             view = box.rectTransform;
             foreach (var corner in new[] { new Vector2(mr.xMin - 1f, mr.yMax + 1f), new Vector2(mr.xMax + 1f, mr.yMax + 1f) })
                 BossAt(mapParts, corner, 7f, bossTex);
-            var carpet = layout.Carpet(mr);
-            if (carpet.width > 0)
+            var filler = layout.Filler(mr);
+            if (filler.width > 0)
             {
-                Tex(mapParts, "Carpet", carpet, Own(HudArt.CarpetPanel(carpet.width, carpet.height, HudArt.Density(layout.S))));
-                var c = carpet.center;
-                Solid(mapParts, "Roundel", new Rect(c.x - 5.5f, c.y - 5.5f, 11f, 11f), HudArt.Purple);
-                BossAt(mapParts, c, 7f, Own(HudArt.Boss(7f, HudArt.Density(layout.S), HudArt.Emerald)));
+                var t = HudArt.ToTexture(HudArt.FillerPanel(filler.width, filler.height, HudArt.Density(layout.S)));
+                mapPainted.Add(t);
+                Tex(mapParts, "Filler", filler, t);
             }
         }
 
@@ -437,11 +505,11 @@ namespace OpenKingdomsUnity.Game.UI
                 Color32 c = owner != null ? owner.Tint : new Color32(200, 200, 200, 255);
                 if (selected.Contains(u.Handle)) c = new Color32(255, 255, 255, 255);
                 c.a = 255;
-                bool big = b.UnitDefs[u.Def].IsBuilding;
-                for (int dy = 0; dy < (big ? 3 : 2); dy++)
-                    for (int dx = 0; dx < (big ? 3 : 2); dx++)
+                int dd = b.UnitDefs[u.Def].IsBuilding ? dotBuilding : dotUnit;
+                for (int dy = 0; dy < dd; dy++)
+                    for (int dx = 0; dx < dd; dx++)
                     {
-                        int px = x + dx, py = y + dy;
+                        int px = x - dd / 2 + dx, py = y - dd / 2 + dy;
                         if (px >= 0 && py >= 0 && px < dotTex.width && py < dotTex.height) dotPx[py * dotTex.width + px] = c;
                     }
             }
@@ -463,15 +531,34 @@ namespace OpenKingdomsUnity.Game.UI
             view.localRotation = Quaternion.Euler(0, 0, -cam.yaw);
         }
 
-        void OnMinimap(Vector2 uv, PointerEventData.InputButton button)
+        // Classic, as the original: a left click sends an own selection
+        // there and otherwise looks, and the right button looks. Modern:
+        // the left looks and the right sends.
+        void OnMinimap(Vector2 uv, PointerEventData.InputButton button, bool drag)
         {
             var world = root.World;
             if (world == null) return;
             var size = root.Backend.Terrain.Size;
             var at = new Vector3(uv.x * size.x, 0, (uv.y - 1f) * size.y);
             at.y = root.Backend.GroundHeight(at.x, at.z);
-            if (button == PointerEventData.InputButton.Left) world.Camera.focus = at;
-            else if (button == PointerEventData.InputButton.Right && root.Orders != null) root.Orders.MoveBlock(CommandKind.Move, at);
+            var o = root.Orders;
+            bool left = button == PointerEventData.InputButton.Left, right = button == PointerEventData.InputButton.Right;
+            bool send = o == null || o.Classic ? left && OwnSelection() : right;
+            if (send)
+            {
+                if (!drag && o != null) o.MoveBlock(CommandKind.Move, at);
+                return;
+            }
+            if (left || right) world.Camera.focus = at;
+        }
+
+        bool OwnSelection()
+        {
+            var ents = root.World.Entities;
+            int me = root.Backend.LocalPlayer;
+            for (int i = 0; i < ents.UnitCount; i++)
+                if (ents.Units[i].Player == me && ents.Selected.Contains(ents.Units[i].Handle)) return true;
+            return false;
         }
 
         // ---- The pool and the help box ----
@@ -483,16 +570,16 @@ namespace OpenKingdomsUnity.Game.UI
             var b = root.Backend;
             pool = b.ReadEconomy(b.LocalPlayer);
             float fill = pool.Storage > 0 ? Mathf.Clamp01(pool.Mana / pool.Storage) : 0f;
-            float q = Mathf.Round(fill * 48f) / 48f;
-            if (q != ballFill || ballTex == null)
+            float level = HudArt.BallLiquidCp(fill);
+            if (Mathf.Abs(level - ballLevel) > 0.05f)
             {
-                ballFill = q;
-                if (ballTex != null) { painted.Remove(ballTex); Looks.Release(ballTex); }
-                ballTex = Own(HudArt.Ball(q, HudArt.Density(layout.S)));
-                ball.texture = ballTex;
+                ballLevel = level;
+                ballLiquid.rectTransform.sizeDelta = new Vector2(0, level);
+                ballLiquid.uvRect = new Rect(0, 0, 1, level / HudArt.BallCp);
             }
-            income.text = "+" + Mathf.RoundToInt(pool.Income);
-            spend.text = "-" + Mathf.RoundToInt(pool.Expense);
+            string inc = "+" + Mathf.RoundToInt(pool.Income), exp = "-" + Mathf.RoundToInt(pool.Expense);
+            if (income.text != inc) income.text = inc;
+            if (spend.text != exp) spend.text = exp;
             UpdateHelp();
         }
 
@@ -502,23 +589,38 @@ namespace OpenKingdomsUnity.Game.UI
             return ("Mana", $"{Mathf.Min(Mathf.FloorToInt(pool.Mana), max)}/{max}");
         }
 
-        UnitState shownUnit;
-        bool shownOne;
+        UnitState shownUnit, targetUnit;
+        int shownCount;
+        long groupHp, groupMax;
 
-        (string, string) HealthLines() => shownOne ? ("Health", $"{shownUnit.Health}/{shownUnit.MaxHealth}") : ("Health", "");
-        (string, string) ManaLines() => shownOne ? ("Mana", $"{shownUnit.Mana}/{shownUnit.MaxMana}") : PoolLines();
+        (string, string) HealthLines() =>
+            shownCount == 1 ? ("Health", $"{shownUnit.Health}/{shownUnit.MaxHealth}")
+            : shownCount > 1 ? ("Health", $"{groupHp}/{groupMax}") : ("Health", "");
+        (string, string) ManaLines() => shownCount == 1 ? ("Mana", $"{shownUnit.Mana}/{shownUnit.MaxMana}") : PoolLines();
+        (string, string) TargetHealthLines() => ("Health", $"{targetUnit.Health}/{targetUnit.MaxHealth}");
+        (string, string) TargetManaLines() => ("Mana", $"{targetUnit.Mana}/{targetUnit.MaxMana}");
 
-        // The hovered control's label and detail, a placement's keys, or
-        // the pool (legacy:152100-152110).
+        // Short display words keep the uncial, anything read at a glance the book hand.
+        static bool Rubric(string line) => line == "Mana" || line == "Menu";
+
+        static string ArmedName(CommandKind k) =>
+            k == CommandKind.Repair ? "Heal" : k == CommandKind.Reclaim ? "Clear" : k.ToString();
+
+        // The hovered control's label and detail, a placement's keys, the
+        // armed order, or the pool (legacy:152100-152110).
         void UpdateHelp()
         {
             if (help1 == null) return;
             (string, string) lines;
-            var orders = root.Orders;
-            if (hoverHelp != null) lines = hoverHelp.Value;
-            else if (orders != null && orders.Armed == CommandKind.Build && orders.ArmedDef >= 0)
-                lines = root.Backend.CanRotate(orders.ArmedDef) ? ("R or ] turns it", "Shift R or [ turns it back") : ("Placing", "It cannot be turned");
+            var o = root.Orders;
+            if (hoverLines != null) lines = hoverLines();
+            else if (o != null && o.Armed == CommandKind.Build && o.ArmedDef >= 0)
+                lines = root.Backend.CanRotate(o.ArmedDef) ? ("R or ] turns it", "Shift R or [ turns it back") : ("Placing", "It cannot be turned");
+            else if (o != null && o.ArmedAction != null) lines = (o.ArmedAction.Label, "Right click cancels");
+            else if (o != null && o.Armed != null) lines = (ArmedName(o.Armed.Value), "Right click cancels");
             else lines = PoolLines();
+            var font = Rubric(lines.Item1) ? UiKit.UncialFont : UiKit.BodyFont;
+            if (help1.font != font) help1.font = font;
             if (help1.text != lines.Item1) help1.text = lines.Item1;
             if (help2.text != lines.Item2) help2.text = lines.Item2;
         }
@@ -536,7 +638,7 @@ namespace OpenKingdomsUnity.Game.UI
             if (shown == name) return;
             shown = name;
             float width = t.rectTransform.rect.width;
-            int max = layout.Font(14, HudLayout.BodyFloor), min = Mathf.Min(max, layout.Font(10, HudLayout.BodyFloor));
+            int max = layout.Font(NameCp, HudLayout.BodyFloor), min = Mathf.Min(max, layout.Font(10, HudLayout.BodyFloor));
             for (int size = max; size >= min; size--)
             {
                 t.fontSize = size;
@@ -546,7 +648,7 @@ namespace OpenKingdomsUnity.Game.UI
         }
 
         static string Versal(string name, int size) =>
-            string.IsNullOrEmpty(name) ? "" : $"<size={Mathf.RoundToInt(size * 1.25f)}><color={Colour(HudArt.Azurite)}>{name.Substring(0, 1)}</color></size>{name.Substring(1)}";
+            string.IsNullOrEmpty(name) ? "" : $"<size={Mathf.RoundToInt(size * 1.3f)}><color={Colour(HudArt.Azurite)}>{name.Substring(0, 1)}</color></size>{name.Substring(1)}";
 
         void UpdatePanel(WorldView world)
         {
@@ -557,8 +659,8 @@ namespace OpenKingdomsUnity.Game.UI
             for (int i = 0; i < n; i++)
                 if (sel.Contains(world.Entities.Units[i].Handle)) chosen.Add(world.Entities.Units[i]);
             firstSelected = chosen.Count > 0 ? chosen[0].Handle : -1;
-            shownOne = chosen.Count == 1;
-            if (shownOne) shownUnit = chosen[0];
+            shownCount = chosen.Count;
+            if (shownCount == 1) shownUnit = chosen[0];
             unitPanel.gameObject.SetActive(chosen.Count > 0);
             if (chosen.Count == 1)
             {
@@ -572,7 +674,7 @@ namespace OpenKingdomsUnity.Game.UI
                 manaTrough.gameObject.SetActive(caster);
                 if (caster) SetFill(manaFill, (float)u.Mana / u.MaxMana);
                 numbers.text = own
-                    ? $"<color={Colour(HudArt.Minium)}>{u.Health}/{u.MaxHealth}</color>" + (caster ? $"  <color={Colour(HudArt.Azurite)}>{u.Mana}/{u.MaxMana}</color>" : "")
+                    ? $"<color={Colour(HudArt.MiniumDeep)}>{u.Health}/{u.MaxHealth}</color>" + (caster ? $"  <color={Colour(HudArt.AzuriteDeep)}>{u.Mana}/{u.MaxMana}</color>" : "")
                     : "";
                 status.text = !own ? "" : u.BuildProgress < 1f ? $"Being built, {u.BuildProgress * 100:0}%" : OrderText(b.ReadOrder(u.Handle));
                 bool known = b.UnitRecord(u.Handle, out int k, out int rank);
@@ -588,10 +690,12 @@ namespace OpenKingdomsUnity.Game.UI
                 SetPortrait(common);
                 long hp = 0, max = 0;
                 foreach (var u in chosen) { hp += u.Health; max += u.MaxHealth; }
+                groupHp = hp;
+                groupMax = max;
                 SetFill(healthFill, max > 0 ? (float)hp / max : 1f);
                 manaTrough.gameObject.SetActive(false);
                 bool own = chosen.All(u => u.Player == b.LocalPlayer);
-                numbers.text = own ? $"<color={Colour(HudArt.Minium)}>{hp}/{max}</color>" : "";
+                numbers.text = own ? $"<color={Colour(HudArt.MiniumDeep)}>{hp}/{max}</color>" : "";
                 string makeUp = string.Join(", ", chosen.GroupBy(u => u.Def).Select(g => $"{g.Count()} {Nice(b.UnitDefs[g.Key])}"));
                 if (group != null) { group.text = makeUp; status.text = ""; }
                 else status.text = makeUp;
@@ -649,6 +753,7 @@ namespace OpenKingdomsUnity.Game.UI
             if (any && (found.Flags & UnitFlags.Dying) != 0) any = false;
             targetPanel.gameObject.SetActive(any);
             if (!any) return;
+            targetUnit = found;
             var def = b.UnitDefs[found.Def];
             var owner = b.PlayerById(found.Player);
             targetPip.color = owner != null ? (Color)owner.Tint : Color.grey;
@@ -691,41 +796,66 @@ namespace OpenKingdomsUnity.Game.UI
             new UnitAction { Id = "GUARD", Label = "Guard", Command = CommandKind.Guard, Target = ActionTarget.Unit, Hotkey = "G" },
         };
 
-        // Rebuilds the buttons when what is selected or armed changes, and
-        // refreshes the queue counts every time.
+        // One order button's parts, changed in place as its state moves, so
+        // a press is never lost to a rebuild.
+        sealed class ActionParts
+        {
+            public UnitAction A;
+            public Button Button;
+            public RawImage Picture;
+            public Image Bezel, Wash;
+            public Image[] Armed, Chosen;
+            public bool Hovered;
+        }
+
+        static int SelectionHash(List<UnitState> chosen)
+        {
+            unchecked
+            {
+                int h = 17;
+                foreach (var u in chosen) h = h * 31 + u.Handle;
+                return h;
+            }
+        }
+
+        // Rebuilds the buttons when the selection, its list of actions or
+        // the armed building changes, and refreshes their state and the
+        // queue counts every time.
         void RefreshButtons(List<UnitState> chosen)
         {
             var b = root.Backend;
-            var defs = chosen.Select(u => u.Def).Distinct().OrderBy(d => d).ToList();
             bool mine = chosen.Count > 0 && chosen.All(u => u.Player == b.LocalPlayer);
             actions = mine ? b.SelectionActions() : System.Array.Empty<UnitAction>();
             if (root.Orders != null) root.Orders.Actions = actions;
             basicOrders = mine && actions.Length == 0 && chosen.Any(u => !b.UnitDefs[u.Def].IsBuilding);
             if (basicOrders) actions = BasicOrders();
             var o = root.Orders;
-            string armed = o == null ? "" : o.ArmedAction?.Id ?? (o.Armed != null ? o.Armed + ":" + o.ArmedDef : "");
-            string key = mine ? string.Join(",", chosen.Select(u => u.Handle)) + "|" + string.Join(",", defs) + "|" +
-                string.Join(",", actions.Select(a => a.Id + (a.Enabled ? "1" : "0") + (a.Toggled ? "1" : "0") + a.Picture)) + "|" + buildPage + "|" + armed : "";
+            int armedBuild = o != null && o.Armed == CommandKind.Build ? o.ArmedDef : -1;
+            string key = mine ? SelectionHash(chosen) + ":" + chosen.Count + "|" + string.Join(",", actions.Select(a => a.Id)) + "|" + buildPage + "|" + armedBuild : "";
             if (key != gridKey)
             {
                 gridKey = key;
                 Clear(orders);
                 Clear(builds);
                 queueBadges.Clear();
+                parts.Clear();
                 bool centreUsed = false;
                 if (mine)
                 {
                     var placed = HudLayout.PlaceActions(actions.Select(a => a.Id).ToList());
                     foreach (var a in actions)
                         if (placed.TryGetValue(a.Id, out var slot)) { ActionButton(a, slot); centreUsed |= slot.StartsWith("C"); }
-                    PlaceBuilds(chosen, defs);
+                    PlaceBuilds(chosen);
                 }
                 plait.gameObject.SetActive(!centreUsed);
             }
+            foreach (var a in actions)
+                if (parts.TryGetValue(a.Id, out var p)) Refresh(p, a);
             foreach (var qb in queueBadges)
             {
-                if (qb.factory < 0 || qb.badge == null) continue;
-                int q = b.QueuedCount(qb.factory, qb.def);
+                if (qb.factories == null || qb.badge == null) continue;
+                int q = 0;
+                foreach (int f in qb.factories) q += b.QueuedCount(f, qb.def);
                 string t = q > 0 ? q.ToString() : "";
                 if (qb.badge.text != t) qb.badge.text = t;
             }
@@ -755,9 +885,16 @@ namespace OpenKingdomsUnity.Game.UI
         static string KeyName(string hotkey) =>
             hotkey.Length == 1 && "WASD".IndexOf(char.ToUpperInvariant(hotkey[0])) >= 0 ? "Ctrl " + hotkey.ToUpperInvariant() : hotkey.ToUpperInvariant();
 
-        // The badge on a button: the live key, ^ for Ctrl.
-        public static string Badge(string hotkey) =>
-            hotkey.Length == 1 && "WASD".IndexOf(char.ToUpperInvariant(hotkey[0])) >= 0 ? "^" + hotkey.ToUpperInvariant() : hotkey.ToUpperInvariant();
+        // The badge on a button: the live key, Ctrl spelled out where the
+        // letter alone pans the camera.
+        public static string Badge(string hotkey) => KeyName(hotkey);
+
+        static string Detail(UnitAction a) =>
+            !a.Enabled && !string.IsNullOrEmpty(a.Why) ? a.Why
+            : a.ManaCost > 0 ? a.ManaCost + " mana"
+            : !string.IsNullOrEmpty(a.Hotkey) ? KeyName(a.Hotkey) : "";
+
+        static Color Rest(UnitAction a) => a.Enabled ? HudArt.Gold : HudArt.VellumEdge;
 
         void ActionButton(UnitAction a, string slot)
         {
@@ -767,44 +904,59 @@ namespace OpenKingdomsUnity.Game.UI
             var face = rt.gameObject.AddComponent<Image>();
             face.sprite = UiKit.White;
             face.color = Color.clear;
-            var btn = rt.gameObject.AddComponent<Button>();
-            btn.transition = Selectable.Transition.None;
-            btn.targetGraphic = face;
-            btn.interactable = a.Enabled;
-            btn.onClick.AddListener(() => Pressed(a));
+            var p = new ActionParts { A = a };
+            p.Button = rt.gameObject.AddComponent<Button>();
+            p.Button.transition = Selectable.Transition.None;
+            p.Button.targetGraphic = face;
+            p.Button.onClick.AddListener(() => Pressed(p.A));
             var local = Local(pic, hit);
-            bool armed = IsArmed(a);
             Solid(rt, "Keyline", Grow(local, 1f + Px), HudArt.Ink);
-            Color rest = a.Enabled ? HudArt.Gold : HudArt.VellumEdge;
-            var bezel = Solid(rt, "Bezel", Grow(local, 1f), rest);
-            int picture = a.Picture;
-            if (armed && picture >= 0) picture = picture / 4 * 4 + 1;
-            var tex = ActionPictureFor(picture, a.Label);
-            if (tex != null) Tex(rt, "Picture", local, tex);
+            p.Bezel = Solid(rt, "Bezel", Grow(local, 1f), Rest(a));
+            var tex = ActionPictureFor(a.Picture, a.Label);
+            if (tex != null) p.Picture = Tex(rt, "Picture", local, tex);
             else
             {
                 Solid(rt, "Face", local, HudArt.VellumShade);
-                FitWords(rt, "Label", Grow(local, -1.5f), UiKit.UncialFont, 9, 4, 6, HudArt.Ink, TextAnchor.MiddleCenter).text = a.Label;
+                FitWords(rt, "Label", Grow(local, -1.5f), UiKit.BodyFont, 9, 6, HudLayout.BadgeFloor, HudArt.Ink, TextAnchor.MiddleCenter).text = a.Label;
             }
-            // The game's disabled picture is faded already, so a light wash.
-            if (!a.Enabled) Solid(rt, "Wash", local, new Color(HudArt.Vellum.r, HudArt.Vellum.g, HudArt.Vellum.b, tex != null ? 0.15f : 0.35f));
-            if (a.Toggled || armed) Ring(rt, "Armed", Grow(local, 1.5f), 1.5f, HudArt.Minium);
+            p.Wash = Solid(rt, "Wash", local, new Color(HudArt.Vellum.r, HudArt.Vellum.g, HudArt.Vellum.b, tex != null ? 0.5f : 0.35f));
+            // A chosen stance or weapon in azurite, an order waiting for its target in minium.
+            p.Chosen = Ring(rt, "Chosen", Grow(local, 1.5f), 1.5f, HudArt.Azurite);
+            p.Armed = Ring(rt, "Armed", Grow(local, 1.5f), 1.5f, HudArt.Minium);
+            // The key hangs a little below the picture, over its bevel.
             if (builtBadges && !string.IsNullOrEmpty(a.Hotkey))
-            {
-                string text = Badge(a.Hotkey);
-                float w = text.Length > 1 ? 13f : 9f, h = 10f;
-                var tab = new Rect(local.xMax - w + 1f, local.yMax - h + 1f, w, h);
-                Solid(rt, "BadgeInk", Grow(tab, Px), HudArt.Ink);
-                Solid(rt, "BadgeTab", tab, HudArt.Vellum);
-                // Square capitals: an uncial A reads as a lambda at this size.
-                Words(rt, "Key", tab, UiKit.TitleFont, 8, HudLayout.BadgeFloor, HudArt.Minium, TextAnchor.MiddleCenter).text = text;
-            }
+                Tab(rt, "Key", Badge(a.Hotkey), 8, HudLayout.BadgeFloor, HudArt.Ink, size => new Rect(local.xMax + 1f - size.x, local.yMax + 3.5f - size.y, size.x, size.y));
             if (a.ManaCost > 0 && slot.StartsWith("W"))
-                Words(rt, "Cost", new Rect(local.x, HudLayout.GutterY - hit.y, local.width, HudLayout.GutterH), UiKit.TitleFont, 8, HudLayout.BadgeFloor, HudArt.Azurite, TextAnchor.MiddleCenter).text = a.ManaCost.ToString();
-            string detail = !a.Enabled && !string.IsNullOrEmpty(a.Why) ? a.Why
-                : a.ManaCost > 0 ? a.ManaCost + " mana"
-                : !string.IsNullOrEmpty(a.Hotkey) ? KeyName(a.Hotkey) : "";
-            Hover(rt.gameObject, () => (a.Label, detail), on => { if (bezel) bezel.color = on ? HudArt.GoldHi : rest; });
+            {
+                var cost = Words(rt, "Cost", new Rect(local.x - 2f, HudLayout.GutterY - hit.y, local.width + 4f, HudLayout.GutterH), UiKit.BodyFont, 9, HudLayout.NumberFloor, HudArt.AzuriteDeep, TextAnchor.MiddleCenter);
+                cost.fontStyle = FontStyle.Bold;
+                cost.text = a.ManaCost.ToString();
+            }
+            Hover(rt.gameObject, () => (p.A.Label, Detail(p.A)), on =>
+            {
+                p.Hovered = on;
+                if (p.Bezel) p.Bezel.color = on ? HudArt.GoldHi : Rest(p.A);
+            });
+            parts[a.Id] = p;
+        }
+
+        void Refresh(ActionParts p, UnitAction a)
+        {
+            p.A = a;
+            if (p.Button.interactable != a.Enabled) p.Button.interactable = a.Enabled;
+            bool armed = IsArmed(a);
+            if (p.Picture != null)
+            {
+                int picture = armed && a.Picture >= 0 ? a.Picture / 4 * 4 + 1 : a.Picture;
+                var tex = ActionPictureFor(picture, a.Label);
+                if (tex != null && p.Picture.texture != tex) p.Picture.texture = tex;
+            }
+            // The game's own disabled picture is faded already.
+            bool wash = !a.Enabled && !(p.Picture != null && a.Picture % 4 == 0);
+            if (p.Wash.enabled != wash) p.Wash.enabled = wash;
+            Show(p.Armed, armed);
+            Show(p.Chosen, a.Toggled && !armed);
+            if (!p.Hovered) p.Bezel.color = Rest(a);
         }
 
         // A button with nothing to aim at acts at once. The rest wait for a
@@ -812,41 +964,45 @@ namespace OpenKingdomsUnity.Game.UI
         void Pressed(UnitAction a)
         {
             var orders = root.Orders;
+            nextPanel = 0f;
             if (basicOrders)
             {
                 if (a.Command == CommandKind.Stop) orders?.Stop();
                 else orders?.Arm(a.Command);
-                gridKey = null;
                 return;
             }
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            if (a.Target == ActionTarget.None) { root.Backend.DoAction(a.Id, Vector3.zero, -1, default, shift); gridKey = null; return; }
+            if (a.Target == ActionTarget.None) { root.Backend.DoAction(a.Id, Vector3.zero, -1, default, shift); return; }
             if (a.Kind == ActionKind.Spell) root.Backend.DoAction(a.Id, Vector3.zero, -1, default, false);
             orders?.ArmAction(a);
-            gridKey = null;
         }
 
         // ---- The build row ----
 
-        void PlaceBuilds(List<UnitState> chosen, List<int> defs)
+        // The list of the first selected unit that builds, as the original
+        // shows the lead unit's, for a mixed selection too.
+        void PlaceBuilds(List<UnitState> chosen)
         {
             var b = root.Backend;
-            if (defs.Count != 1) return;
-            var def = b.UnitDefs[defs[0]];
+            int lead = chosen.FindIndex(u => b.UnitDefs[u.Def].BuildOptions.Length > 0);
+            if (lead < 0) return;
+            var leadUnit = chosen[lead];
+            var def = b.UnitDefs[leadUnit.Def];
             var options = def.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count).ToList();
             if (options.Count == 0) return;
-            int defsKey = defs[0] + 1;
+            int defsKey = leadUnit.Def + 1;
             if (defsKey != lastDefsKey) { lastDefsKey = defsKey; buildPage = 0; }
             var g = layout.Builds(options.Count);
             int pages = g.Paged ? (options.Count + g.PerPage - 1) / g.PerPage : 1;
             buildPage = Mathf.Clamp(buildPage, 0, pages - 1);
-            int factory = def.IsBuilding ? chosen[0].Handle : -1;
+            // Every selected factory of the lead's kind takes the queue.
+            var factories = def.IsBuilding ? chosen.Where(u => u.Def == leadUnit.Def).Select(u => u.Handle).ToList() : null;
             var shown = options.Skip(buildPage * g.PerPage).Take(g.PerPage).ToList();
-            for (int i = 0; i < shown.Count; i++) BuildCard(layout.BuildCell(g, i), b.UnitDefs[shown[i]], factory, chosen);
+            for (int i = 0; i < shown.Count; i++) BuildCard(layout.BuildCell(g, i), b.UnitDefs[shown[i]], factories);
             if (g.Paged) PageTurner(layout.BuildCell(g, shown.Count), pages);
         }
 
-        void BuildCard(Rect cell, UnitDef od, int factory, List<UnitState> chosen)
+        void BuildCard(Rect cell, UnitDef od, List<int> factories)
         {
             int id = od.Id;
             var rt = Put(builds, "Build " + od.Name, cell);
@@ -865,27 +1021,22 @@ namespace OpenKingdomsUnity.Game.UI
             var o = root.Orders;
             if (o != null && o.Armed == CommandKind.Build && o.ArmedDef == id) Ring(rt, "Armed", local, 2f, HudArt.Minium);
             Text badge = null;
-            if (factory >= 0)
+            if (factories != null)
             {
-                badge = Words(rt, "Queued", new Rect(3f + 1.5f, 2f + 1.5f, cell.width - 8f, 16f), UiKit.TitleFont, 12, HudLayout.BodyFloor, HudArt.GoldHi, TextAnchor.UpperLeft);
+                badge = Words(rt, "Queued", new Rect(3f + 1.5f, 2f + 1.5f, cell.width - 8f, 16f), UiKit.BodyFont, 13, HudLayout.NumberFloor, HudArt.GoldHi, TextAnchor.UpperLeft);
                 var outline = badge.gameObject.AddComponent<Outline>();
                 outline.effectColor = HudArt.Ink;
                 outline.effectDistance = new Vector2(Mathf.Max(0.5f, Px), -Mathf.Max(0.5f, Px));
             }
-            string cost = od.ManaCost.ToString();
-            float tw = 4f + cost.Length * 5.5f, th = 11f;
-            var tab = new Rect(cell.width - tw - 2.5f, cell.height - th - 2.5f, tw, th);
-            Solid(rt, "CostInk", Grow(tab, Px), HudArt.Ink);
-            Solid(rt, "CostTab", tab, HudArt.Vellum);
-            Words(rt, "Cost", tab, UiKit.TitleFont, 9, HudLayout.BadgeFloor, HudArt.Azurite, TextAnchor.MiddleCenter).text = cost;
+            Tab(rt, "Cost", od.ManaCost.ToString(), 9, HudLayout.NumberFloor, HudArt.AzuriteDeep, size => new Rect(cell.width - size.x - 2.5f, cell.height - size.y - 2.5f, size.x, size.y));
             Hover(rt.gameObject, () => (Nice(od), od.ManaCost + " mana"), on => { foreach (var bz in bezel) if (bz) bz.color = on ? HudArt.GoldHi : HudArt.Gold; });
-            if (factory >= 0)
+            if (factories != null)
             {
-                btn.onClick.AddListener(() => Enqueue(chosen, id, CommandKind.FactoryEnqueue, Shift ? 5 : 1));
-                rt.gameObject.AddComponent<RightClick>().Clicked = () => Enqueue(chosen, id, CommandKind.FactoryDequeue, 1);
+                btn.onClick.AddListener(() => Enqueue(factories, id, CommandKind.FactoryEnqueue, Shift ? 5 : 1));
+                rt.gameObject.AddComponent<RightClick>().Clicked = () => Enqueue(factories, id, CommandKind.FactoryDequeue, 1);
             }
-            else btn.onClick.AddListener(() => { root.Orders?.Arm(CommandKind.Build, id); gridKey = null; });
-            queueBadges.Add((badge, id, factory));
+            else btn.onClick.AddListener(() => { root.Orders?.Arm(CommandKind.Build, id); nextPanel = 0f; });
+            queueBadges.Add((badge, id, factories));
         }
 
         static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
@@ -899,16 +1050,16 @@ namespace OpenKingdomsUnity.Game.UI
             face.color = HudArt.Vellum;
             var btn = rt.gameObject.AddComponent<Button>();
             btn.targetGraphic = face;
-            btn.onClick.AddListener(() => { buildPage = (buildPage + 1) % pages; gridKey = null; });
+            btn.onClick.AddListener(() => { buildPage = (buildPage + 1) % pages; nextPanel = 0f; });
             Ring(rt, "Keyline", new Rect(0, 0, cell.width, cell.height), 1.5f, HudArt.Gold);
             Words(rt, "Label", new Rect(0, 0, cell.width, cell.height), UiKit.UncialFont, 12, HudLayout.BodyFloor, HudArt.Minium, TextAnchor.MiddleCenter).text = $"{buildPage + 1} of {pages}";
         }
 
-        void Enqueue(List<UnitState> factories, int def, CommandKind kind, int times)
+        void Enqueue(List<int> factories, int def, CommandKind kind, int times)
         {
             for (int n = 0; n < times; n++)
-                foreach (var f in factories)
-                    root.Backend.Command(new GameCommand { Kind = kind, Unit = f.Handle, TargetUnit = -1, BuildDef = def });
+                foreach (int f in factories)
+                    root.Backend.Command(new GameCommand { Kind = kind, Unit = f, TargetUnit = -1, BuildDef = def });
         }
 
         public void Dispose()
@@ -917,6 +1068,8 @@ namespace OpenKingdomsUnity.Game.UI
             if (canvas) Looks.Release(canvas.gameObject);
             foreach (var o in painted) Looks.Release(o);
             painted.Clear();
+            foreach (var o in mapPainted) Looks.Release(o);
+            mapPainted.Clear();
             foreach (var t in sharpBuild.Values) Looks.Release(t);
             foreach (var t in rawBuild.Values) Looks.Release(t);
             foreach (var t in sharpAction.Values) Looks.Release(t);
@@ -935,20 +1088,21 @@ namespace OpenKingdomsUnity.Game.UI
         void OnDisable() => Off?.Invoke();
     }
 
+    // A press or a drag on the minimap, as a point from its bottom left.
     public sealed class MinimapInput : MonoBehaviour, IPointerDownHandler, IDragHandler
     {
-        public System.Action<Vector2, PointerEventData.InputButton> Clicked;
+        public System.Action<Vector2, PointerEventData.InputButton, bool> Clicked;
 
-        public void OnPointerDown(PointerEventData e) => Send(e);
-        public void OnDrag(PointerEventData e) { if (e.button == PointerEventData.InputButton.Left) Send(e); }
+        public void OnPointerDown(PointerEventData e) => Send(e, false);
+        public void OnDrag(PointerEventData e) => Send(e, true);
 
-        void Send(PointerEventData e)
+        void Send(PointerEventData e, bool drag)
         {
             var rt = (RectTransform)transform;
             if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(rt, e.position, e.pressEventCamera, out var local)) return;
             var r = rt.rect;
             var uv = new Vector2((local.x - r.xMin) / r.width, (local.y - r.yMin) / r.height);
-            Clicked?.Invoke(new Vector2(Mathf.Clamp01(uv.x), Mathf.Clamp01(uv.y)), e.button);
+            Clicked?.Invoke(new Vector2(Mathf.Clamp01(uv.x), Mathf.Clamp01(uv.y)), e.button, drag);
         }
     }
 

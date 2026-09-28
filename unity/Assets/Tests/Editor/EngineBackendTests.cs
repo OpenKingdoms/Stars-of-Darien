@@ -25,12 +25,12 @@ namespace OpenKingdomsUnity.Tests
         [OneTimeTearDown]
         public void End() => backend?.Dispose();
 
-        static SkirmishSetup TwoCastles()
+        static SkirmishSetup TwoCastles(string mine = "ARAMON", string theirs = "TAROS")
         {
             var s = new SkirmishSetup { MapId = "two castles", Seed = 7, LineOfSight = false, MapRevealed = true };
             // As GameRoot's default lineup has it: teams from 0, closed seats after.
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = "ARAMON", Colour = 0, Team = 0 });
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "TAROS", Colour = 1, Team = 1 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = mine, Colour = 0, Team = 0 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = theirs, Colour = 1, Team = 1 });
             s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 4, Team = 2 });
             s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 5, Team = 3 });
             return s;
@@ -200,9 +200,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsNotNull(spell, "a caster lists its spell");
             Assert.Greater(units[caster].MaxMana, 0, "a caster has a mana bar");
             var actions = backend.SelectionActions();
-            foreach (var a in actions)
-                if (a.Why != "Not in the engine yet")
-                    Assert.IsNotNull(backend.ActionPicture(a.Picture), a.Id + " has the original's picture");
+            foreach (var a in actions) AssertAPicture(a);
             var passive = Array.Find(actions, a => a.Id == "Passive");
             Assert.IsNotNull(passive);
             Assert.AreEqual(ActionKind.Stance, passive.Kind);
@@ -385,6 +383,65 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(220f / 16f, backend.GroundHeight(hx + 0.5f, -(hz + 0.5f)), 0.5f);
             var features = new FeatureState[1024];
             Assert.Greater(backend.ReadFeatures(features), 0);
+        }
+
+        // The inner part of a button picture: the original's blank tile is
+        // flat stone (about 9), every real picture has a figure on it (13 up).
+        static float Contrast(RgbaImage img)
+        {
+            int mx = img.Width / 5, my = img.Height / 5, n = 0;
+            double sum = 0, sq = 0;
+            for (int y = my; y < img.Height - my; y++)
+                for (int x = mx; x < img.Width - mx; x++)
+                {
+                    int i = (y * img.Width + x) * 4;
+                    if (img.Pixels[i + 3] == 0) continue;
+                    double l = 0.3 * img.Pixels[i] + 0.59 * img.Pixels[i + 1] + 0.11 * img.Pixels[i + 2];
+                    sum += l;
+                    sq += l * l;
+                    n++;
+                }
+            if (n == 0) return 0f;
+            double mean = sum / n;
+            return (float)Math.Sqrt(Math.Max(0, sq / n - mean * mean));
+        }
+
+        void AssertAPicture(UnitAction a, string who = "")
+        {
+            Assert.AreNotEqual("Not in the engine yet", a.Why, $"{who} {a.Id} is listed though the engine cannot do it");
+            var pic = backend.ActionPicture(a.Picture);
+            Assert.IsNotNull(pic, $"{who} {a.Id} has the original's picture");
+            Assert.Greater(Contrast(pic), 11.5f, $"{who} {a.Id} (picture {a.Picture}) is a real picture, not the blank tile");
+        }
+
+        // Every kingdom's monarch: each button it lists shows the original's
+        // picture, and nothing the engine cannot carry out is listed. Last,
+        // as it starts a game for each kingdom.
+        [Test, Order(20)]
+        public void EveryMonarchsButtonsShowTheirPictures()
+        {
+            foreach (var side in backend.Sides)
+            {
+                backend.StartSkirmish(TwoCastles(side.Id, side.Id == "TAROS" ? "ARAMON" : "TAROS"));
+                LoadProgress p = default;
+                for (int i = 0; i < 20000 && !p.Done && !p.Failed; i++) p = backend.PumpLoading();
+                Assert.IsTrue(p.Done, side.Id + ": " + p.Error);
+                backend.Advance(3);
+                var units = new UnitState[512];
+                int n = backend.ReadUnits(units), me = backend.LocalPlayer, king = -1;
+                for (int i = 0; i < n && king < 0; i++)
+                {
+                    var d = backend.UnitDefs[units[i].Def];
+                    if (units[i].Player == me && !d.IsBuilding && d.BuildOptions.Length > 0) king = i;
+                }
+                Assert.GreaterOrEqual(king, 0, side.Id + " has a monarch");
+                backend.Select(new[] { units[king].Handle }, false);
+                var actions = backend.SelectionActions();
+                Assert.Greater(actions.Length, 3, side.Id + "'s monarch has orders");
+                string who = side.Id + " " + backend.UnitDefs[units[king].Def].Name;
+                foreach (var a in actions) AssertAPicture(a, who);
+                backend.Cancel();
+            }
         }
     }
 }

@@ -40,9 +40,13 @@ namespace OpenKingdomsUnity.Tests
         {
             foreach (var l in Every())
             {
-                Assert.AreEqual(128f * l.S, l.Sidebar.width * l.S, 0.01f, At(l));
+                float byHeight = l.Percent / 100f * l.ScreenH / 480f;
+                Assert.AreEqual(Mathf.Max(1f, Mathf.Min(byHeight, l.ScreenW / 4f / 128f)), l.S, 1e-4f, "the scale follows the height, " + At(l));
+                Assert.AreEqual(128f, l.Sidebar.width, 0.01f, At(l));
+                Assert.AreEqual(l.ScreenW - 128f * l.S, l.Play.width * l.S, 0.5f, "the sidebar is the original's 128, scaled, " + At(l));
                 Assert.LessOrEqual(l.Sidebar.width * l.S, l.ScreenW * 0.25f + 0.01f, "the sidebar takes at most a quarter, " + At(l));
-                Assert.AreEqual(49f * l.S, l.Strip.height * l.S, 0.01f, At(l));
+                Assert.AreEqual(49f, l.Strip.height, 0.01f, At(l));
+                Assert.AreEqual(l.ScreenH - 49f * l.S, l.Play.height * l.S, 0.5f, "the strip is the original's 49, scaled, " + At(l));
                 Assert.AreEqual(l.ScreenW, (l.Play.width + l.Sidebar.width) * l.S, 0.5f, At(l));
                 Assert.AreEqual(l.ScreenH, (l.Play.height + l.Strip.height) * l.S, 0.5f, At(l));
                 if (l.Percent <= 100)
@@ -66,6 +70,8 @@ namespace OpenKingdomsUnity.Tests
         public void ButtonsAreBigEnoughToHit()
         {
             foreach (var l in Every())
+            {
+                Assert.GreaterOrEqual(l.S, 1f, "never under the original's own pixels, " + At(l));
                 foreach (var name in HudLayout.SlotNames)
                 {
                     var r = HudLayout.Slot(name);
@@ -74,6 +80,15 @@ namespace OpenKingdomsUnity.Tests
                     Assert.GreaterOrEqual(hit.width * l.S, 32f, $"{name} hit width at {At(l)}");
                     Assert.GreaterOrEqual(hit.height * l.S, 32f, $"{name} hit height at {At(l)}");
                 }
+                Assert.GreaterOrEqual(HudLayout.MenuHit.width * l.S, 32f, "the Menu button's width at " + At(l));
+                Assert.GreaterOrEqual(HudLayout.MenuHit.height * l.S, 32f, "the Menu button's height at " + At(l));
+            }
+            var menu = HudLayout.MenuHit;
+            Assert.IsTrue(menu.Contains(HudLayout.MenuButton.min) && menu.Contains(HudLayout.MenuButton.max), "the Menu hit covers its lozenge");
+            Assert.IsFalse(menu.Overlaps(HudLayout.Clock), "nor the clock");
+            foreach (var name in HudLayout.SlotNames)
+                Assert.IsFalse(menu.Overlaps(HudLayout.Hit(HudLayout.Slot(name))), "the Menu hit clear of " + name);
+            foreach (var k in HudLayout.Knots) Assert.IsFalse(menu.Overlaps(k), "the Menu hit clear of a corner knot");
         }
 
         [Test]
@@ -198,10 +213,11 @@ namespace OpenKingdomsUnity.Tests
         public void TextIsReadableOnTheSmallestScreenAndScale()
         {
             var l = new HudLayout(1280, 720, HudLayout.ScaleStops[0]);
-            foreach (float cp in new[] { 9f, 10f, 11f, 12f, 14f })
+            foreach (float cp in new[] { 6f, 8f, 9f, 10f, 11f, 12f, 14f })
             {
                 Assert.GreaterOrEqual(l.Font(cp, HudLayout.BodyFloor) * l.S, 12f - 0.01f, $"{cp} cp body text");
-                Assert.GreaterOrEqual(l.Font(cp, HudLayout.BadgeFloor) * l.S, 10f - 0.01f, $"{cp} cp badge");
+                Assert.GreaterOrEqual(l.Font(cp, HudLayout.BadgeFloor) * l.S, 12f - 0.01f, $"{cp} cp key letter or cost");
+                Assert.GreaterOrEqual(l.Font(cp, HudLayout.NumberFloor) * l.S, 14f - 0.01f, $"{cp} cp number");
             }
             var big = new HudLayout(3840, 2160, 100);
             Assert.AreEqual(14, big.Font(14f, HudLayout.BodyFloor), "sizes stay as drawn where the screen is big");
@@ -229,9 +245,9 @@ namespace OpenKingdomsUnity.Tests
                     var m = l.MapRect(aspect);
                     Assert.AreEqual(aspect, m.width / m.height, 0.01f);
                     Assert.IsTrue(m.xMin >= l.MapPanel.x + HudLayout.BandW && m.xMax <= l.MapPanel.xMax && m.yMax <= l.MapPanel.yMax, $"{m} in {l.MapPanel} at {At(l)}");
-                    var carpet = l.Carpet(m);
-                    if (carpet.width > 0) Assert.IsFalse(carpet.Overlaps(m), "the carpet below the map");
-                    Assert.LessOrEqual(carpet.yMax, l.Block.y, "the carpet above the orders");
+                    var filler = l.Filler(m);
+                    if (filler.width > 0) Assert.IsFalse(filler.Overlaps(m), "the filler below the map");
+                    Assert.LessOrEqual(filler.yMax, l.Block.y, "the filler above the orders");
                 }
         }
     }

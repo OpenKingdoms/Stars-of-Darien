@@ -1,5 +1,5 @@
 // HudArt.cs - the battle HUD's Carolingian skin, painted in code: vellum,
-// two- and three-strand interlace, Solomon's knots, a woven carpet panel,
+// two- and three-strand interlace, Solomon's knots, a quiet ruled panel,
 // jewelled bosses, the crystal ball and the experience shield. Each piece
 // is painted at the HUD's scale, so strands and keylines stay crisp from
 // 720p to 4K. Button, spell and build pictures are the player's own game
@@ -13,6 +13,8 @@ namespace OpenKingdomsUnity.Game.UI
     {
         public static readonly Color Vellum = Hex(0xEDE0C4), VellumShade = Hex(0xD9C7A0), VellumEdge = Hex(0xB89A68);
         public static readonly Color Ink = Hex(0x2E2118), Minium = Hex(0xA8291B), Azurite = Hex(0x2F4F9A), Verdigris = Hex(0x2E6346);
+        // The inks darkened for small numbers, which thin strokes would fade.
+        public static readonly Color MiniumDeep = Hex(0x861E13), AzuriteDeep = Hex(0x213B78);
         public static readonly Color Gold = Hex(0xC8A24A), GoldHi = Hex(0xF3DC8A), GoldShadow = Hex(0x7A5A1E);
         public static readonly Color Purple = Hex(0x3B1F3A), Silver = Hex(0xD5D9DF);
         public static readonly Color Garnet = Hex(0x8E1B2A), Sapphire = Hex(0x1F3E8A), Emerald = Hex(0x1E6B4A), Pearl = Hex(0xEDE6D6);
@@ -204,37 +206,49 @@ namespace OpenKingdomsUnity.Game.UI
             return Color.Lerp(GoldHi, GoldShadow, mid);
         }
 
-        // A woven lattice on the diagonals, as a carpet page, in a frame.
-        public static Sheet CarpetPanel(float wCp, float hCp, float s)
+        // Coverage of a band from a to b along d.
+        static float Band(float d, float a, float b, float aa) =>
+            Mathf.Clamp01(Mathf.Min((d - a) / aa + 0.5f, (b - d) / aa + 0.5f));
+
+        // The empty slot under the minimap: vellum in a thin ink, minium and
+        // gold ruled frame, with one small closed knot in a ruled roundel,
+        // all in muted inks so it never pulls the eye from the map.
+        public static Sheet FillerPanel(float wCp, float hCp, float s)
         {
-            float frame = 2f, p = 7f, core = 1.3f, outline = Mathf.Max(0.4f, 1f / s), aa = 0.6f / s;
-            const float r2 = 0.70710678f;
+            float aa = 0.6f / s, hair = Mathf.Max(0.5f, 1f / s);
+            var keyline = new Color(Ink.r, Ink.g, Ink.b, 0.45f);
+            var red = new Color(Minium.r, Minium.g, Minium.b, 0.6f);
+            var gold = new Color(Gold.r, Gold.g, Gold.b, 0.8f);
+            float size = Mathf.Min(26f, Mathf.Min(wCp, hCp) * 0.28f), k = size / 12f;
+            float len = 2.6f * k, rad = 1.85f * k, core = 0.72f * k, outline = Mathf.Max(0.36f * k, hair);
+            float ring = size * 0.72f;
+            var strand = Color.Lerp(Vellum, GoldShadow, 0.38f);
+            var edge = Color.Lerp(Vellum, Ink, 0.4f);
+            float Loop(float a, float b) { float q = Mathf.Max(0f, Mathf.Abs(a) - len); return Mathf.Abs(Mathf.Sqrt(q * q + b * b) - rad); }
             return Paint(wCp, hCp, s, (x, y) =>
             {
-                var f = Frame(x, y, wCp, hCp, frame, s);
-                if (f.a > 0.99f) return f;
-                float u = (x + y) * r2, v = (x - y) * r2;
-                int k = Mathf.RoundToInt(u / p), m = Mathf.RoundToInt(v / p);
-                bool aOver = ((k + m) & 1) == 0;
-                float da = u - k * p, db = v - m * p;
-                var c = Purple;
-                // The lower family first, then the one on top at this crossing.
+                float d = Mathf.Min(Mathf.Min(x, wCp - x), Mathf.Min(y, hCp - y));
+                var c = Color.clear;
+                c = Over(c, keyline, Band(d, 0f, hair, aa));
+                c = Over(c, red, Band(d, 1.5f, 1.5f + hair * 1.4f, aa));
+                c = Over(c, gold, Band(d, 3f, 3.9f, aa));
+                float px = x - wCp / 2f, py = y - hCp / 2f, r = Mathf.Sqrt(px * px + py * py);
+                c = Over(c, red, Band(r, ring - hair * 0.7f, ring + hair * 0.7f, aa));
+                c = Over(c, keyline, Band(r, ring + 1.6f, ring + 1.6f + hair, aa));
+                float dh = Loop(px, py), dv = Loop(py, px);
+                bool hOver = px * py > 0;
                 for (int pass = 0; pass < 2; pass++)
                 {
-                    bool upper = pass == 1;
-                    bool isA = upper == aOver;
-                    float d = Mathf.Abs(isA ? da : db);
-                    float other = Mathf.Abs(isA ? db : da);
-                    float outer = Cover(d, core + outline, aa);
+                    bool isH = (pass == 1) == hOver;
+                    float dd = isH ? dh : dv;
+                    float outer = Cover(dd, core + outline, aa);
                     if (outer <= 0f) continue;
-                    float shade = (isA ? da : db) / core;
-                    var gold = shade < 0 ? Color.Lerp(Gold, GoldHi, Mathf.Clamp01(-shade) * 0.8f) : Color.Lerp(Gold, GoldShadow, Mathf.Clamp01(shade) * 0.7f);
-                    var sc = Color.Lerp(Ink, gold, Cover(d, core, aa));
-                    if (!upper) sc = Color.Lerp(sc, sc * 0.62f, Cover(other, core + outline + 0.9f, 0.6f));
+                    var sc = Color.Lerp(edge, strand, Cover(dd, core, aa));
+                    if (pass == 0) sc = Color.Lerp(sc, Color.Lerp(sc, edge, 0.5f), Cover(isH ? dv : dh, core + outline + 0.7f * k, 0.5f * k));
                     sc.a = 1f;
                     c = Over(c, sc, outer);
                 }
-                return Over(c, f, f.a);
+                return c;
             });
         }
 
@@ -337,6 +351,14 @@ namespace OpenKingdomsUnity.Game.UI
 
         public const float BallCp = 36f;
 
+        // How much of the ball, from its foot, the liquid of a pool this
+        // full covers: the painted full ball cropped to it shows the level.
+        public static float BallLiquidCp(float fill)
+        {
+            float r = BallCp / 2f, glass = r - 2.4f;
+            return r - glass + 2f * glass * Mathf.Clamp01(fill);
+        }
+
         // The crystal ball: azurite rising in dark glass, a meniscus and a
         // highlight, in a 2 cp gold bezel.
         public static Sheet Ball(float fill, float s)
@@ -415,12 +437,12 @@ namespace OpenKingdomsUnity.Game.UI
 
         // ---- Sharp upscaling of the game's small pictures ----
 
-        // Whole-number nearest-neighbour growth, left to the GPU's bilinear
-        // for the last fraction.
+        // Nearest-neighbour growth to the next whole number, so the GPU's
+        // bilinear only ever shrinks what it draws, a little.
         public static Texture2D Sharp(Texture2D src, float factor)
         {
             if (src == null) return null;
-            int k = Mathf.Max(1, Mathf.FloorToInt(factor + 0.001f));
+            int k = Mathf.Max(1, Mathf.CeilToInt(factor - 0.05f));
             if (k == 1) { src.filterMode = FilterMode.Bilinear; return src; }
             int w = src.width, h = src.height;
             var from = src.GetPixels32();
