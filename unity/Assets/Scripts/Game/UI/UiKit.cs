@@ -18,11 +18,13 @@ namespace OpenKingdomsUnity.Game.UI
         public static readonly Color Pale = new Color(0.93f, 0.9f, 0.82f);
         public static readonly Color Dim = new Color(0.65f, 0.6f, 0.52f);
 
-        static Font title, body;
+        static Font title, body, uncial;
         static Sprite stone, parchment, frame, button, bar, glow, white;
 
         public static Font TitleFont => title != null ? title : title = LoadFont("Fonts/Cinzel");
         public static Font BodyFont => body != null ? body : body = LoadFont("Fonts/EBGaramond");
+        // Uncial Antiqua (SIL Open Font License), for the HUD's rubrics and names.
+        public static Font UncialFont => uncial != null ? uncial : uncial = LoadFont("Fonts/UncialAntiqua");
 
         static Font LoadFont(string path)
         {

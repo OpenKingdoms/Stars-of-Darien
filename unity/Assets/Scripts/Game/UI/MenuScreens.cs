@@ -1,7 +1,8 @@
 // MenuScreens.cs - every screen of the game flow on one canvas: the main
-// menu, skirmish setup, options, loading, the in-game bar, the pause menu
-// and the victory and defeat screens. Show() picks the screens for a flow
-// state, and Tick() refreshes what changes while one is up.
+// menu, skirmish setup, options, loading, the pause menu and the victory
+// and defeat screens. The battle HUD has a canvas of its own beneath them.
+// Show() picks the screens for a flow state, and Tick() refreshes what
+// changes while one is up.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -21,11 +22,11 @@ namespace OpenKingdomsUnity.Game.UI
         // Skirmish setup parts that change.
         RawImage preview, loadingBackdrop;
         Text saveNote, loadEmpty;
-        BottomHud bottom;
+        BattleHud hud;
         EditorScreens editor;
         RectTransform saveItems;
-        Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, hudMana, hudClock, hudSelection, resultTitle, resultInfo, setupError;
-        Image loadingFill, manaFill;
+        Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, resultTitle, resultInfo, setupError;
+        Image loadingFill;
         readonly List<Button> mapButtons = new List<Button>();
         readonly Dictionary<string, Texture2D> previews = new Dictionary<string, Texture2D>();
         float resultShownAt;
@@ -63,6 +64,7 @@ namespace OpenKingdomsUnity.Game.UI
         }
 
         public Canvas Canvas => canvas;
+        public BattleHud Hud => hud;
 
         public GameObject Screen(string name) => screens.TryGetValue(name, out var s) ? s : null;
 
@@ -105,14 +107,7 @@ namespace OpenKingdomsUnity.Game.UI
                 case FlowState.Defeat:
                 case FlowState.Options:
                     if (b.Status == GameStatus.Idle) break;
-                    var e = b.ReadEconomy(b.LocalPlayer);
-                    hudMana.text = $"Mana  {Mathf.FloorToInt(e.Mana)} / {Mathf.FloorToInt(e.Storage)}   +{e.Income:0.#}/s";
-                    UiKit.SetBar(manaFill, e.Storage > 0 ? e.Mana / e.Storage : 0);
-                    int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
-                    hudClock.text = $"{secs / 60:00}:{secs % 60:00}";
-                    bottom.Tick();
-                    int sel = root.World != null ? root.World.Entities.Selected.Count : 0;
-                    hudSelection.text = sel > 0 ? (sel == 1 ? "1 unit selected" : sel + " units selected") : "";
+                    hud.Tick();
                     break;
             }
         }
@@ -373,6 +368,10 @@ namespace OpenKingdomsUnity.Game.UI
                 o.CursorScale = i;
                 if (root.Pointer != null) root.Pointer.ScaleSetting = i;
             });
+            // The battle HUD: 100 percent is the original at 640x480, 80 at 800x600.
+            var stops = HudLayout.ScaleStops;
+            OptionRow(rows, "Interface size", Array.ConvertAll(stops, p => p + "%"), Math.Max(0, Array.IndexOf(stops, HudLayout.NearestStop(o.UiScale))), i => o.UiScale = stops[i]);
+            OptionRow(rows, "Key letters", new[] { "Shown", "Hidden" }, o.HotkeyLetters ? 0 : 1, i => o.HotkeyLetters = i == 0);
             var help = UiKit.Label(rows, "Camera: WASD, the arrows or the screen edge pan. The wheel zooms. Middle drag up and down tilts and raises, left and right turns, and with Shift pans. Q and E turn, Page Up and Page Down tilt, Home returns to the classic view.", 21, UiKit.Dim, TextAnchor.UpperLeft);
             help.rectTransform.Size(0, 84);
             var volumes = new[] { 0f, 0.25f, 0.5f, 0.8f, 1f };
@@ -429,25 +428,13 @@ namespace OpenKingdomsUnity.Game.UI
             loadingStage.text = "";
         }
 
+        // The battle HUD, on its own canvas under this one, so the pause,
+        // options and result screens draw over it.
         void BuildHud()
         {
-            var s = NewScreen("Hud", false);
-            var bar = UiKit.Picture(s, "Top", UiKit.Stone, new Color(0.85f, 0.82f, 0.78f, 0.96f));
-            bar.rectTransform.Place(0, 1, 1, 1, 0, -58, 0, 0);
-            var trim = UiKit.Picture(bar.transform, "Trim", UiKit.BarFill, Color.white, true);
-            trim.rectTransform.Place(0, 0, 1, 0, 0, -3, 0, -3);
-            var manaBar = UiKit.Bar(bar.transform, "Mana", out manaFill);
-            manaBar.rectTransform.Place(0, 0.5f, 0, 0.5f, 24, -9, -284, -9);
-            hudMana = UiKit.Label(bar.transform, "", 26, UiKit.Pale, TextAnchor.MiddleLeft);
-            hudMana.rectTransform.Place(0, 0, 0, 1, 300, 0, -760, 0);
-            hudClock = UiKit.Label(bar.transform, "", 28, UiKit.Gold, TextAnchor.MiddleCenter, true);
-            hudClock.rectTransform.Place(0.5f, 0, 0.5f, 1, -100, 0, -100, 0);
-            var menu = UiKit.MakeButton(bar.transform, "Menu", () => root.Flow.Fire(FlowEvent.Pause), 24);
-            menu.GetComponent<RectTransform>().Place(1, 0, 1, 1, -170, 6, 14, 6);
-            hudSelection = UiKit.Label(s, "", 26, UiKit.Pale, TextAnchor.LowerLeft);
-            hudSelection.rectTransform.Place(0, 0, 0.5f, 0, 24, 18, 0, -60);
-            hudSelection.gameObject.SetActive(false);
-            bottom = new BottomHud(root, s);
+            hud = new BattleHud(root);
+            hud.Root.transform.SetParent(root.transform, false);
+            screens["Hud"] = hud.Root;
         }
 
         void BuildPause()
@@ -529,7 +516,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void Dispose()
         {
-            bottom?.Dispose();
+            hud?.Dispose();
             foreach (var o in owned) World.Looks.Release(o);
             owned.Clear();
             if (canvas) World.Looks.Release(canvas.gameObject);

@@ -746,6 +746,14 @@ namespace OpenKingdomsUnity.Engine
 
         public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
 
+        // The engine keeps kills and experience but does not hand them out yet.
+        public bool UnitRecord(int handle, out int kills, out int rank)
+        {
+            kills = 0;
+            rank = 0;
+            return false;
+        }
+
         // The game's own controls. The engine keeps the selection, and Click
         // is the original's left click, so the game decides what it means
         // and the units answer in their voices.

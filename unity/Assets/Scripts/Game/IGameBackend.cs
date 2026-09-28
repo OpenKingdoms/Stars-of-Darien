@@ -153,6 +153,9 @@ namespace OpenKingdomsUnity.Game
         int QueuedCount(int factory, int def);
         // What a unit is doing now.
         UnitOrder ReadOrder(int handle);
+        // A unit's kills and experience rank (0 to 2), for the HUD's kill
+        // count and shield. False when the backend cannot tell.
+        bool UnitRecord(int handle, out int kills, out int rank);
         // The local player's fog, one byte per height sample (HeightsW by
         // HeightsH, row 0 on the north edge), as the classic overlay draws
         // it: 0 black, 1 dimmed (seen before, only with line of sight on),

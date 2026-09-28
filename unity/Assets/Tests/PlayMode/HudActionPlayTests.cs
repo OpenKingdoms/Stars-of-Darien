@@ -54,7 +54,7 @@ namespace OpenKingdomsUnity.Tests
             while (b == null && Time.realtimeSinceStartup < deadline)
             {
                 yield return null;
-                var grid = GameObject.Find("Commands");
+                var grid = GameObject.Find("Orders");
                 if (grid != null)
                     foreach (var x in grid.GetComponentsInChildren<Button>()) if (x.name == "Action " + id) b = x;
             }

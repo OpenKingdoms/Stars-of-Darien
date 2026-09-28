@@ -99,6 +99,7 @@ namespace OpenKingdomsUnity.Game
             public int Target = -1;
             public bool Dying, Moving, Attacking;
             public int BuildDef = -1;
+            public int Kills;
             public float BuildLeft;
             public int Model;
             public int Facing, BuildFacing;
@@ -114,7 +115,7 @@ namespace OpenKingdomsUnity.Game
 
         sealed class Arrow
         {
-            public int Id, Player, Target, Damage;
+            public int Id, Player, Target, Damage, From;
             public Vector3 Pos, Vel;
         }
 
@@ -370,7 +371,7 @@ namespace OpenKingdomsUnity.Game
                 a.Pos += a.Vel * dt;
                 if (byHandle.TryGetValue(a.Target, out var t) && !t.Dying && (t.Pos + Vector3.up - a.Pos).sqrMagnitude < 1f)
                 {
-                    Hurt(t, a.Damage);
+                    Hurt(t, a.Damage, a.From);
                     arrows.RemoveAt(i);
                 }
                 else if (a.Pos.y < GroundHeight(a.Pos.x, a.Pos.z) - 0.2f) arrows.RemoveAt(i);
@@ -414,7 +415,7 @@ namespace OpenKingdomsUnity.Game
                     {
                         u.Cooldown = ranged ? 1.6f : 1.1f;
                         if (ranged) Shoot(u, t);
-                        else Hurt(t, (int)(18 * DamageScale));
+                        else Hurt(t, (int)(18 * DamageScale), u.Handle);
                     }
                 }
                 else moveTo = tp;
@@ -503,14 +504,31 @@ namespace OpenKingdomsUnity.Game
             var to = t.Pos + Vector3.up * 0.8f;
             float time = Mathf.Max(0.3f, (to - from).magnitude / 18f);
             var vel = (to - from) / time + Vector3.up * 0.5f * 9.8f * time;
-            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel });
+            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel, From = u.Handle });
         }
 
-        void Hurt(Unit t, int dmg)
+        void Hurt(Unit t, int dmg, int by = -1)
         {
             if (t.Dying || dmg <= 0) return;
             t.Health -= dmg;
-            if (t.Health <= 0) { t.Health = 0; t.Dying = true; }
+            if (t.Health > 0) return;
+            t.Health = 0;
+            t.Dying = true;
+            if (by >= 0 && byHandle.TryGetValue(by, out var killer) && killer.Player != t.Player) killer.Kills++;
+        }
+
+        // Kills as the mock counts them, and a rank at three and at ten.
+        public bool UnitRecord(int handle, out int kills, out int rank)
+        {
+            kills = byHandle.TryGetValue(handle, out var u) ? u.Kills : 0;
+            rank = kills >= 10 ? 2 : kills >= 3 ? 1 : 0;
+            return u != null;
+        }
+
+        // For tests: set a unit's kills.
+        public void SetKills(int handle, int kills)
+        {
+            if (byHandle.TryGetValue(handle, out var u)) u.Kills = kills;
         }
 
         void CheckOutcome()

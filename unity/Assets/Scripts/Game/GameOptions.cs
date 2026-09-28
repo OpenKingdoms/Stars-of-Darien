@@ -19,6 +19,10 @@ namespace OpenKingdomsUnity.Game
         public bool ClassicControls = true;
         // The pointer's scale, 0 to fit the screen, else 1 to 4 times.
         public int CursorScale = 0;
+        // The battle HUD's size in percent, 100 being the original at 640x480.
+        public int UiScale = 80;
+        // Hotkey letters on the HUD's buttons.
+        public bool HotkeyLetters = true;
 
         const string Prefix = "oku.";
 
@@ -35,6 +39,8 @@ namespace OpenKingdomsUnity.Game
             o.Music = PlayerPrefs.GetInt(Prefix + "music", 1) != 0;
             o.ClassicControls = PlayerPrefs.GetInt(Prefix + "classic", 1) != 0;
             o.CursorScale = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "cursor", 0), 0, 4);
+            o.UiScale = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "uiscale", 80), 50, 150);
+            o.HotkeyLetters = PlayerPrefs.GetInt(Prefix + "hotkeys", 1) != 0;
             return o;
         }
 
@@ -50,6 +56,8 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.SetInt(Prefix + "music", Music ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "classic", ClassicControls ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "cursor", CursorScale);
+            PlayerPrefs.SetInt(Prefix + "uiscale", UiScale);
+            PlayerPrefs.SetInt(Prefix + "hotkeys", HotkeyLetters ? 1 : 0);
             PlayerPrefs.Save();
         }
 
