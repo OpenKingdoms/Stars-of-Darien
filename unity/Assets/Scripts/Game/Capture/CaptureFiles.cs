@@ -81,14 +81,37 @@ namespace OpenKingdomsUnity.Game.Capture
                 }
         }
 
-        // LATEST.txt in dir holds the newest capture's full path.
+        // LATEST.txt in dir holds the newest capture's full path. It is
+        // swapped in whole, so a reader never finds it missing or half
+        // written, and a reader holding it open only delays the swap.
         public static void WriteLatest(string dir, string path)
         {
             Directory.CreateDirectory(dir);
             string file = Path.Combine(dir, LatestFile), temp = file + ".tmp";
             File.WriteAllText(temp, Path.GetFullPath(path) + Environment.NewLine);
-            if (File.Exists(file)) File.Delete(file);
-            File.Move(temp, file);
+            for (int tries = 0; ; tries++)
+            {
+                try
+                {
+                    if (File.Exists(file)) File.Replace(temp, file, null);
+                    else File.Move(temp, file);
+                    return;
+                }
+                catch (IOException) when (tries < 20) { System.Threading.Thread.Sleep(25); }
+                catch (UnauthorizedAccessException) when (tries < 20) { System.Threading.Thread.Sleep(25); }
+            }
+        }
+
+        // What LATEST.txt in dir names, or null.
+        public static string ReadLatest(string dir)
+        {
+            string file = Path.Combine(dir, LatestFile);
+            for (int tries = 0; tries < 20; tries++)
+            {
+                try { return File.Exists(file) ? File.ReadAllText(file).Trim() : null; }
+                catch (IOException) { System.Threading.Thread.Sleep(25); }
+            }
+            return null;
         }
     }
 }

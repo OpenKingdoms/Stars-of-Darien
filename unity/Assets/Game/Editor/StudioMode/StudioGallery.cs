@@ -139,6 +139,8 @@ namespace OpenKingdomsUnity.Studio
         Mesh cube, cardQuad;
         Material plinthMat, placeholderMat, failedMat, groundMat;
         Texture2D groundTex;
+        Mesh groundMesh;
+        Rect groundRect;
         string groundClimate;
         Font labelFont;
         IGameBackend backend;
@@ -546,24 +548,57 @@ namespace OpenKingdomsUnity.Studio
 
         // ---- The ground ----
 
+        // Plain ground in the climate's colour round the grid. The haze is
+        // worked out at each vertex, so they stand a few cells apart.
         void RebuildGround(Rect grid)
         {
-            groundClimate = Climate;
+            if (groundClimate != Climate || groundMat == null)
+            {
+                groundClimate = Climate;
+                if (groundMat != null) { owned.Remove(groundMat); Object.DestroyImmediate(groundMat); }
+                if (groundTex != null) { owned.Remove(groundTex); Object.DestroyImmediate(groundTex); }
+                groundTex = Own(StudioStage.GroundTexture(StudioStage.ClimateColour(groundClimate)));
+                groundMat = Own(Looks.Terrain(groundTex, -100f));
+                if (ground != null) ground.GetComponent<MeshRenderer>().sharedMaterial = groundMat;
+            }
+            if (ground != null && groundRect == grid) return;
+            groundRect = grid;
             if (ground != null) Object.DestroyImmediate(ground);
-            if (groundMat != null) { owned.Remove(groundMat); Object.DestroyImmediate(groundMat); }
-            if (groundTex != null) { owned.Remove(groundTex); Object.DestroyImmediate(groundTex); }
-            groundTex = Own(StudioStage.GroundTexture(StudioStage.ClimateColour(groundClimate)));
-            groundMat = Own(Looks.Terrain(groundTex, -100f));
+            if (groundMesh != null) { owned.Remove(groundMesh); Object.DestroyImmediate(groundMesh); }
             const float reach = 600f;
-            float x0 = Origin.x + grid.xMin - reach, x1 = Origin.x + grid.xMax + reach, z0 = Origin.z + grid.yMin - reach, z1 = Origin.z + grid.yMax + reach;
-            var mesh = Own(new Mesh { name = "gallery ground" });
-            mesh.vertices = new[] { new Vector3(x0, 0f, z0), new Vector3(x0, 0f, z1), new Vector3(x1, 0f, z1), new Vector3(x1, 0f, z0) };
-            mesh.uv = new[] { new Vector2(x0, z0) / 4f, new Vector2(x0, z1) / 4f, new Vector2(x1, z1) / 4f, new Vector2(x1, z0) / 4f };
-            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
-            mesh.RecalculateBounds();
+            float x0 = Origin.x + grid.xMin - reach, z0 = Origin.z + grid.yMin - reach;
+            float w = grid.width + 2 * reach, d = grid.height + 2 * reach;
+            float step = Mathf.Max(8f, Mathf.Max(w, d) / 250f);
+            int nx = Mathf.CeilToInt(w / step), nz = Mathf.CeilToInt(d / step);
+            var v = new Vector3[(nx + 1) * (nz + 1)];
+            var uv = new Vector2[v.Length];
+            var n = new Vector3[v.Length];
+            for (int j = 0; j <= nz; j++)
+                for (int i = 0; i <= nx; i++)
+                {
+                    var p = new Vector3(x0 + Mathf.Min(i * step, w), 0f, z0 + Mathf.Min(j * step, d));
+                    int k = j * (nx + 1) + i;
+                    v[k] = p;
+                    uv[k] = new Vector2(p.x - Origin.x, p.z - Origin.z) / 4f;
+                    n[k] = Vector3.up;
+                }
+            var tris = new int[nx * nz * 6];
+            int t = 0;
+            for (int j = 0; j < nz; j++)
+                for (int i = 0; i < nx; i++)
+                {
+                    int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, e = c + 1;
+                    tris[t++] = a; tris[t++] = c; tris[t++] = e;
+                    tris[t++] = a; tris[t++] = e; tris[t++] = b;
+                }
+            groundMesh = Own(new Mesh { name = "gallery ground", indexFormat = v.Length > 65000 ? IndexFormat.UInt32 : IndexFormat.UInt16 });
+            groundMesh.vertices = v;
+            groundMesh.uv = uv;
+            groundMesh.normals = n;
+            groundMesh.triangles = tris;
+            groundMesh.RecalculateBounds();
             ground = Child(Root.transform, "Ground");
-            ground.AddComponent<MeshFilter>().sharedMesh = mesh;
+            ground.AddComponent<MeshFilter>().sharedMesh = groundMesh;
             var r = ground.AddComponent<MeshRenderer>();
             r.sharedMaterial = groundMat;
             r.shadowCastingMode = ShadowCastingMode.Off;
@@ -1172,6 +1207,7 @@ namespace OpenKingdomsUnity.Studio
             owned.Clear();
             groundMat = null;
             groundTex = null;
+            groundMesh = null;
             features = cards = units = null;
             Progress = null;
         }
