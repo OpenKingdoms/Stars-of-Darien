@@ -123,11 +123,11 @@ namespace OpenKingdomsUnity.Game
             string[] anims = { "idle", "walk", "attack" };
             foreach (var s in sides)
             {
-                string p = s.Id.ToLowerInvariant();
-                AddDef(p + "_monarch", p + "monarch", s.Id, "builder", "Monarch", 900, 0, false, anims);
-                AddDef(p + "_knight", p + "knight", s.Id, "infantry", "Knight", 220, 120, false, anims);
-                AddDef(p + "_archer", p + "archer", s.Id, "ranged", "Archer", 140, 100, false, anims);
-                AddDef(p + "_lodge", p + "lodge", s.Id, "building", "Lodge", 1200, 400, true, new[] { "idle" });
+                string p = s.Id.ToLowerInvariant(), t = SideToken(s.Id);
+                AddDef(p + "_monarch", p + "monarch", s.Id, t + " MONARCH BUILDER", "Monarch", 900, 0, false, anims);
+                AddDef(p + "_knight", p + "knight", s.Id, t + " MELEE ATTACK", "Knight", 220, 120, false, anims);
+                AddDef(p + "_archer", p + "archer", s.Id, t + " BALLISTIC ATTACK", "Archer", 140, 100, false, anims);
+                AddDef(p + "_lodge", p + "lodge", s.Id, t + " BUILDING", "Lodge", 1200, 400, true, new[] { "idle" });
             }
             for (int i = 0; i < unitDefs.Count; i += 4)
             {
@@ -142,6 +142,9 @@ namespace OpenKingdomsUnity.Game
             sprites.Add(BlobSprite(new Color32(130, 125, 118, 255), 0.9f, 11));
             sprites.Add(BlobSprite(new Color32(50, 120, 45, 255), 0.7f, 23));
         }
+
+        // Categories read like the game's: the side's three letters, then tokens.
+        static string SideToken(string side) => side == "ZHON" ? "ZON" : side.Substring(0, 3);
 
         void AddDef(string name, string obj, string side, string cat, string title, int hp, int cost, bool building, string[] anims)
         {
@@ -425,7 +428,7 @@ namespace OpenKingdomsUnity.Game
                 int e = NearestEnemy(u, 1000f);
                 if (e >= 0) u.Goal = new Vector2(byHandle[e].Pos.x, byHandle[e].Pos.z);
             }
-            else if (u.Goal == null && rng.NextDouble() < 0.01)
+            else if (u.Goal == null && !HoldsFormation(u) && rng.NextDouble() < 0.01)
             {
                 u.Goal = u.Home + new Vector2((float)rng.NextDouble() * 8 - 4, (float)rng.NextDouble() * 8 - 4);
             }
@@ -433,8 +436,8 @@ namespace OpenKingdomsUnity.Game
             if (moveTo is Vector2 goal)
             {
                 var to = goal - pos;
-                float speed = RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? 3.2f : 2.4f;
-                if (to.magnitude < 0.3f) { if (u.Goal != null && (u.Goal.Value - pos).magnitude < 0.3f) u.Goal = null; }
+                float speed = PacedSpeed(u, MockSpeed(u));
+                if (to.magnitude < 0.3f) { if (u.Goal != null && (u.Goal.Value - pos).magnitude < 0.3f) { u.Goal = null; Arrived(u); } }
                 else
                 {
                     Face(u, to, dt);
@@ -443,7 +446,7 @@ namespace OpenKingdomsUnity.Game
                     var sz = Terrain.Size;
                     next.x = Mathf.Clamp(next.x, 1, sz.x - 1);
                     next.y = Mathf.Clamp(next.y, -sz.y + 1, -1);
-                    if (Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f) u.Goal = null;
+                    if (Terrain.Sample(next.x, next.y) < Terrain.SeaLevel - 0.3f) { u.Goal = null; Arrived(u); }
                     else
                     {
                         u.Pos = new Vector3(next.x, Terrain.Sample(next.x, next.y), next.y);
@@ -452,6 +455,7 @@ namespace OpenKingdomsUnity.Game
                     }
                 }
             }
+            HoldFacing(u, dt);
         }
 
         void TickBuild(Unit u, float dt)
@@ -794,6 +798,7 @@ namespace OpenKingdomsUnity.Game
         {
             if (Status != GameStatus.Running || !byHandle.TryGetValue(c.Unit, out var u) || u.Dying) return false;
             var def = unitDefs[u.Def];
+            LetGo(c.Unit);
             switch (c.Kind)
             {
                 case CommandKind.Move:

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Check the C# side without a Unity license: compile every script in
 # unity/Assets/Scripts against the editor's UnityEngine assemblies, then
-# run the EditMode test bodies in plain .NET against the built plugin.
+# run the EditMode test bodies in plain .NET against the built plugin, and
+# the formation drag's pure tests against the editor's UnityEngine types.
 # Uses the compiler and runtime that ship inside the Unity editor.
 # Build the core first. Windows, from Git Bash.
 set -euo pipefail
@@ -39,10 +40,16 @@ for f in "$fw"/*.dll; do
         System.*|netstandard.dll|mscorlib.dll) refs+=("-r:$(w "$f")") ;;
     esac
 done
-csc -target:exe -nowarn:CS1701,CS1702 -out:"$(w "$out/runner.dll")" "${refs[@]}" -r:"$(w "$nunit")" \
+core="$data/Managed/UnityEngine/UnityEngine.CoreModule.dll"
+formation=()
+for f in FormationRoles FormationPlanner FormationAssign FormationSnap FormationGesture; do
+    formation+=("$(w "$root/unity/Assets/Scripts/Game/World/Formation/$f.cs")")
+done
+csc -target:exe -nowarn:CS1701,CS1702 -out:"$(w "$out/runner.dll")" "${refs[@]}" -r:"$(w "$nunit")" -r:"$(w "$core")" \
     "$(w "$root/unity/Assets/Scripts/OkSim.cs")" \
     "$(w "$root/unity/Assets/Tests/Editor/OkSimTests.cs")" \
+    "${formation[@]}" "$(w "$root/unity/Assets/Tests/Editor/FormationTests.cs")" \
     "$(w "$root/scripts/csharp-check/Runner.cs")"
-cp "$nunit" "$root/scripts/csharp-check/runner.runtimeconfig.json" "$out/"
+cp "$nunit" "$core" "$root/scripts/csharp-check/runner.runtimeconfig.json" "$out/"
 cp "$build/Release/okcore.dll" "$out/"
 cd "$out" && "$dotnet" runner.dll
