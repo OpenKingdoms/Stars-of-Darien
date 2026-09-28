@@ -74,12 +74,13 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreSame(cap, OwnerCapture.Instance, "one, added at startup");
             yield return null;
             yield return null;
-            int w = Screen.width, h = Screen.height;
+            int w = OwnerCapture.CaptureSize.x, h = OwnerCapture.CaptureSize.y;
+            if (Screen.width > 0) Assert.AreEqual(new Vector2Int(Screen.width, Screen.height), OwnerCapture.CaptureSize, "the screen's own size");
             string before = cap.LastPath;
             cap.Shot();
             yield return Until(() => cap.LastPath != before, 20f);
             string path = cap.LastPath;
-            Debug.Log($"Capture test: screen {w}x{h} on {SystemInfo.graphicsDeviceType}, batch {Application.isBatchMode}, error {cap.LastError}");
+            Debug.Log($"Capture test: screen {Screen.width}x{Screen.height} on {SystemInfo.graphicsDeviceType}, batch {Application.isBatchMode}, error {cap.LastError}");
             Assert.IsNotNull(path, "a picture was saved: " + cap.LastError);
             StringAssert.StartsWith(Path.Combine(dir, "shot-"), path);
             StringAssert.EndsWith(".png", path);
@@ -104,7 +105,7 @@ namespace OpenKingdomsUnity.Tests
             Scene();
             var cap = OwnerCapture.Ensure();
             yield return null;
-            int w = Screen.width, h = Screen.height;
+            int w = OwnerCapture.CaptureSize.x, h = OwnerCapture.CaptureSize.y;
             string before = cap.LastPath;
             float start = Time.realtimeSinceStartup;
             cap.StartClip();
@@ -159,6 +160,35 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreNotEqual(first, second);
             Assert.IsTrue(File.Exists(first) && File.Exists(second));
             Assert.AreEqual(cap.LastPath, second);
+        }
+
+        // The screen read back top first or bottom first, told apart against
+        // a picture kept bottom first, and a picture the same both ways left
+        // undecided.
+        [Test]
+        public void WhichWayUpTheScreenComesBackIsFoundOnce()
+        {
+            const int w = 8, h = 8;
+            var check = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            var rows = new Color32[w * h];
+            for (int i = 0; i < rows.Length; i++) rows[i] = i / w < h / 2 ? new Color32(255, 0, 0, 255) : new Color32(0, 0, 255, 255);
+            check.SetPixels32(rows);
+            check.Apply();
+            var bottomFirst = new byte[w * h * 4];
+            for (int i = 0; i < rows.Length; i++) { bottomFirst[i * 4] = rows[i].r; bottomFirst[i * 4 + 2] = rows[i].b; bottomFirst[i * 4 + 3] = 255; }
+            var topFirst = (byte[])bottomFirst.Clone();
+            ContactSheet.FlipRows(topFirst, w, h);
+            Assert.AreEqual(0, OwnerCapture.Flipped(bottomFirst, w, h, check));
+            Assert.AreEqual(1, OwnerCapture.Flipped(topFirst, w, h, check));
+            var plain = new byte[w * h * 4];
+            var grey = new Texture2D(w, h, TextureFormat.RGBA32, false);
+            var greys = new Color32[w * h];
+            for (int i = 0; i < greys.Length; i++) greys[i] = new Color32(128, 128, 128, 255);
+            grey.SetPixels32(greys);
+            grey.Apply();
+            Assert.AreEqual(-1, OwnerCapture.Flipped(plain, w, h, grey), "a plain screen can't tell");
+            UnityEngine.Object.Destroy(check);
+            UnityEngine.Object.Destroy(grey);
         }
 
         // Keys.tdf gives F12 to ClearChat and leaves F9 for screenshots, and
