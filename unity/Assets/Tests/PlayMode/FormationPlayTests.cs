@@ -230,11 +230,14 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(0, root.Orders.Formation.Preview.QueuedCount, "the queued markers go once the units arrive");
 
             // A formation sent without Shift replaces what was queued, markers too.
+            Look(new Vector2(c.x, c.z + 14));
             yield return Press(1, a);
             yield return DragTo(a, b);
             yield return Release(1);
-            yield return Press(1, a2);
-            yield return DragTo(a2, b2);
+            var a4 = a2 + new Vector2(0, 6);
+            var b4 = b2 + new Vector2(0, 6);
+            yield return Press(1, a4);
+            yield return DragTo(a4, b4);
             yield return Release(1, shift: true);
             Assert.AreEqual(4, root.Orders.Formation.Preview.QueuedCount);
             var a3 = a - new Vector2(0, 6);
