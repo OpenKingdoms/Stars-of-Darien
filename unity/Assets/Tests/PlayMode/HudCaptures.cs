@@ -61,30 +61,37 @@ namespace OpenKingdomsUnity.Tests
                 yield return Shots(monarch, dir, tag + "-monarch");
 
                 // The option that builds the most, raised beside the monarch.
-                int best = md.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count).OrderByDescending(o => b.UnitDefs[o].BuildOptions.Length).First();
-                var bd = b.UnitDefs[best];
-                bool placed = false;
-                Vector3 site = default;
-                for (int ring = 6; ring < 40 && !placed; ring += 3)
-                    for (int k = 0; k < 16 && !placed; k++)
-                    {
-                        float a = k * Mathf.PI / 8f;
-                        var at = monarch.Position + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * ring;
-                        if (b.CanBuildAt(best, at, 0, out site))
-                            placed = b.Command(new GameCommand { Kind = CommandKind.Build, Unit = monarch.Handle, Target = site, TargetUnit = -1, BuildDef = best });
-                    }
-                if (!placed) { log.Add($"{tag}: nowhere to build {bd.Name}"); continue; }
+                // One with no site near it, or not done in time, gives way to
+                // the next.
+                var candidates = md.BuildOptions.Where(o => o >= 0 && o < b.UnitDefs.Count && b.UnitDefs[o].BuildOptions.Length > 0)
+                    .Distinct().OrderByDescending(o => b.UnitDefs[o].BuildOptions.Length).ToList();
                 UnitState built = default;
-                int ticks = 0;
-                for (; ticks < 40000; ticks += 120)
+                foreach (int best in candidates)
                 {
-                    b.Advance(120);
-                    built = Own().FirstOrDefault(u => u.Def == best && u.BuildProgress >= 1f);
-                    if (built.MaxHealth > 0) break;
-                    if (ticks % 1200 == 0) yield return null;
+                    var bd = b.UnitDefs[best];
+                    if (!Place(monarch, best)) { log.Add($"{tag}: nowhere to build {bd.Name}"); continue; }
+                    int ticks = 0;
+                    for (; ticks < 30000 && root.Flow.State == FlowState.Playing; ticks += 120)
+                    {
+                        b.Advance(120);
+                        built = Own().FirstOrDefault(u => u.Def == best && u.BuildProgress >= 1f);
+                        if (built.MaxHealth > 0) break;
+                        if (ticks % 1200 == 0) yield return null;
+                    }
+                    if (built.MaxHealth > 0)
+                    {
+                        log.Add($"{tag}: builder {bd.Name}, {bd.BuildOptions.Length} options, built in {ticks} ticks");
+                        break;
+                    }
+                    var part = Own().FirstOrDefault(u => u.Def == best);
+                    var pool = b.ReadEconomy(b.LocalPlayer);
+                    bool alive = Own().Any(u => u.Handle == monarch.Handle);
+                    log.Add($"{tag}: {bd.Name} not finished after {ticks} ticks, {(part.MaxHealth > 0 ? $"{part.BuildProgress:P0} built" : "not begun")}, " +
+                        $"mana {pool.Mana:0} of {pool.Storage:0} at +{pool.Income:0.#} -{pool.Expense:0.#}, monarch {(alive ? "alive" : "gone")}, {root.Flow.State}");
+                    if (!alive || root.Flow.State != FlowState.Playing) break;
+                    b.Command(GameCommand.To(CommandKind.Stop, monarch.Handle, Vector3.zero));
                 }
-                if (built.MaxHealth == 0) { log.Add($"{tag}: {bd.Name} not finished after {ticks} ticks"); continue; }
-                log.Add($"{tag}: builder {bd.Name}, {bd.BuildOptions.Length} options, built in {ticks} ticks");
+                if (built.MaxHealth == 0) continue;
                 yield return Shots(built, dir, tag + "-builder");
             }
             File.WriteAllLines(Path.Combine(dir, "hud-captures.txt"), log);
@@ -109,6 +116,24 @@ namespace OpenKingdomsUnity.Tests
             float deadline = Time.realtimeSinceStartup + 240f;
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
             for (int i = 0; i < 30; i++) yield return null;
+        }
+
+        // A site for def near the monarch, either way round, and the order to raise it.
+        bool Place(UnitState monarch, int def)
+        {
+            var b = root.Backend;
+            int turns = b.CanRotate(def) ? 2 : 1;
+            for (int ring = 6; ring < 64; ring += 3)
+                for (int k = 0; k < 24; k++)
+                    for (int facing = 0; facing < turns; facing++)
+                    {
+                        float a = k * Mathf.PI / 12f;
+                        var at = monarch.Position + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * ring;
+                        if (!b.CanBuildAt(def, at, facing, out var site)) continue;
+                        if (b.Command(new GameCommand { Kind = CommandKind.Build, Unit = monarch.Handle, Target = site, TargetUnit = -1, BuildDef = def, Facing = facing }))
+                            return true;
+                    }
+            return false;
         }
 
         IEnumerable<UnitState> Own()
