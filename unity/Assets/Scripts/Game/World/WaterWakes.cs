@@ -123,8 +123,10 @@ namespace OpenKingdomsUnity.Game.World
                         var dir = j + 1 < points.Count ? p - points[j + 1].p : points[j - 1].p - p;
                         dir = dir.sqrMagnitude > 1e-8f ? dir.normalized : Vector2.up;
                         var side = new Vector2(dir.y, -dir.x);
-                        // Measured from the stern, where the wake starts.
-                        float aft = along - tr.Length;
+                        // Measured from a little inside the stern, under the hull,
+                        // since a model's length runs out along its bowsprit
+                        // and the wake must leave the hull itself.
+                        float aft = along - tr.Length * 0.6f;
                         float half = tr.Beam + Mathf.Max(aft, 0f) * Spread;
                         float fade = Mathf.Clamp01(1f - age / Life);
                         float strength = Mathf.Clamp01(speed / 1.6f) * Mathf.Pow(fade, 1.2f);
