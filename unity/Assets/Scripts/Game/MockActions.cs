@@ -207,7 +207,7 @@ namespace OpenKingdomsUnity.Game
             float radius = id == "PrimaryWeapon" ? 2.5f : 0.8f;
             int damage = id == "PrimaryWeapon" ? 60 : 40;
             foreach (var o in units)
-                if (!o.Dying && o.Player != caster.Player && (o.Pos - point).sqrMagnitude < radius * radius) Hurt(o, (int)(damage * Mathf.Max(DamageScale, 0.01f)));
+                if (!o.Dying && o.Player != caster.Player && (o.Pos - point).sqrMagnitude < radius * radius) Hurt(o, (int)(damage * Mathf.Max(DamageScale, 0.01f)), caster.Handle);
             caster.Heading = Mathf.Atan2(point.x - caster.Pos.x, point.z - caster.Pos.z) * Mathf.Rad2Deg;
         }
 

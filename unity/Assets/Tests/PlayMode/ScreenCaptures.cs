@@ -1,6 +1,7 @@
 // ScreenCaptures.cs - pictures of each screen on the mock engine, for
 // looking at the look without a window. Runs only when OKU_CAPTURE_DIR
-// names a folder, and writes 1920 by 1080 PNGs there.
+// names a folder, and writes 1920 by 1080 PNGs there (OKU_CAPTURE_W and
+// OKU_CAPTURE_H for another size).
 using System.Collections;
 using System.IO;
 using NUnit.Framework;
@@ -12,12 +13,16 @@ namespace OpenKingdomsUnity.Tests
 {
     public class ScreenCaptures
     {
+        [TearDown]
+        public void CleanUp() => OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
+
         [UnityTest]
         public IEnumerator CaptureEveryScreen()
         {
             string dir = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_DIR");
             if (string.IsNullOrEmpty(dir)) Assert.Ignore("set OKU_CAPTURE_DIR to capture screens");
             Directory.CreateDirectory(dir);
+            OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = new Vector2Int(W, H);
             bool engine = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine";
             string map = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_MAP");
             if (string.IsNullOrEmpty(map)) map = null;
@@ -41,18 +46,17 @@ namespace OpenKingdomsUnity.Tests
             yield return null;
             var cam = Camera.main;
             if (cam == null) { cam = new GameObject("Main Camera").AddComponent<Camera>(); cam.tag = "MainCamera"; }
-            var canvas = root.GetComponentInChildren<Canvas>();
 
-            yield return Shoot(cam, canvas, Path.Combine(dir, "1-menu.png"));
+            yield return Shoot(cam, Path.Combine(dir, "1-menu.png"));
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             root.Setup.MapId = map;
             yield return null;
             root.Screens.Show(FlowState.Skirmish);
-            yield return Shoot(cam, canvas, Path.Combine(dir, "2-skirmish.png"));
+            yield return Shoot(cam, Path.Combine(dir, "2-skirmish.png"));
             root.Screens.StartGame();
             yield return null;
             yield return null;
-            yield return Shoot(cam, canvas, Path.Combine(dir, "3-loading.png"));
+            yield return Shoot(cam, Path.Combine(dir, "3-loading.png"));
             float deadline = Time.realtimeSinceStartup + 240f;
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.AreEqual(FlowState.Playing, root.Flow.State, "the game loaded: " + root.LastError);
@@ -100,12 +104,12 @@ namespace OpenKingdomsUnity.Tests
                 bool ok = root.Backend.CanBuildAt(lode, site, 0, out var snapped);
                 root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
                 yield return View(cam3, 22f, 50f, 0f);
-                yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-on-site.png"));
+                yield return Shoot(cam, Path.Combine(dir, "ghost-on-site.png"));
                 var off = site + new Vector3(5, 0, 3);
                 ok = root.Backend.CanBuildAt(lode, off, 0, out snapped);
                 root.World.Entities.Ghost = new OpenKingdomsUnity.Game.World.EntityRenderer.GhostState { Def = lode, At = snapped, Ok = ok };
                 yield return null;
-                yield return Shoot(cam, canvas, Path.Combine(dir, "ghost-off-site.png"));
+                yield return Shoot(cam, Path.Combine(dir, "ghost-off-site.png"));
                 root.World.Entities.Ghost = null;
                 root.Orders.Frozen = false;
                 OpenKingdomsUnity.Game.World.FogView.Disabled = false;
@@ -132,21 +136,21 @@ namespace OpenKingdomsUnity.Tests
                 }
                 cam3.focus = best;
                 yield return View(cam3, 22f, 34f, 20f);
-                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-close.png"));
+                yield return Shoot(cam, Path.Combine(dir, "trees-close.png"));
                 yield return View(cam3, 40f, 45f, -30f);
-                yield return Shoot(cam, canvas, Path.Combine(dir, "trees-mid.png"));
+                yield return Shoot(cam, Path.Combine(dir, "trees-mid.png"));
                 OpenKingdomsUnity.Game.World.FogView.Disabled = false;
             }
             // The classic view, then close and low, then far and wide.
-            yield return Shoot(cam, canvas, Path.Combine(dir, "4-classic.png"));
+            yield return Shoot(cam, Path.Combine(dir, "4-classic.png"));
             yield return View(cam3, 14f, 38f, 25f);
-            yield return Shoot(cam, canvas, Path.Combine(dir, "5-close.png"));
+            yield return Shoot(cam, Path.Combine(dir, "5-close.png"));
             yield return View(cam3, 95f, 50f, -20f);
-            yield return Shoot(cam, canvas, Path.Combine(dir, "6-wide.png"));
+            yield return Shoot(cam, Path.Combine(dir, "6-wide.png"));
             yield return View(cam3, 34f, OpenKingdomsUnity.Game.World.GameCamera.ClassicPitch, 0f);
             root.Flow.Fire(FlowEvent.Pause);
             yield return null;
-            yield return Shoot(cam, canvas, Path.Combine(dir, "7-pause.png"));
+            yield return Shoot(cam, Path.Combine(dir, "7-pause.png"));
 
             if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_EDITOR") == "1")
             {
@@ -179,9 +183,10 @@ namespace OpenKingdomsUnity.Tests
                 ed.Tool = OpenKingdomsUnity.Game.World.EditTool.Paint;
                 root.Screens.Show(FlowState.Editing);
                 yield return View(root.World.Camera, 40f, 45f, 0f);
-                yield return Shoot(cam, canvas, Path.Combine(dir, "8-editor.png"));
+                yield return Shoot(cam, Path.Combine(dir, "8-editor.png"));
             }
             Object.Destroy(root.gameObject);
+            OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
         }
 
         internal static IEnumerator View(OpenKingdomsUnity.Game.World.GameCamera c, float distance, float pitch, float yaw)
@@ -218,5 +223,7 @@ namespace OpenKingdomsUnity.Tests
             File.WriteAllBytes(path, tex.EncodeToPNG());
             Object.Destroy(tex);
         }
+
+        static IEnumerator Shoot(Camera cam, string path) => HudShots.Shoot(cam, W, H, path);
     }
 }

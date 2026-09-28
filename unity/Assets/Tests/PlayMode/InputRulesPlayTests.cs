@@ -134,7 +134,7 @@ namespace OpenKingdomsUnity.Tests
             yield return new WaitForSecondsRealtime(0.3f);
             mock.Select(new[] { second.Handle }, false);
             yield return new WaitForSecondsRealtime(0.3f);
-            var grid = GameObject.Find("Commands");
+            var grid = GameObject.Find("Builds");
             var button = grid.GetComponentsInChildren<Button>().First(b => b.GetComponentInChildren<Text>() != null && b.GetComponentInChildren<Text>().text.Contains("Knight"));
             button.onClick.Invoke();
             Assert.AreEqual(1, mock.QueuedCount(second.Handle, -1), "the second lodge takes the order");

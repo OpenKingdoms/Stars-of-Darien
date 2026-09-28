@@ -77,9 +77,10 @@ namespace OpenKingdomsUnity.Tests
                 if (ents.Units[i].Player == 1 && mock.UnitDefs[ents.Units[i].Def].Name.EndsWith("monarch")) mock.Select(new[] { ents.Units[i].Handle }, false);
             // The panel refreshes ten times a second of real time.
             yield return new WaitForSecondsRealtime(0.4f);
-            var commands = GameObject.Find("Commands");
-            Assert.IsNotNull(commands, "the bottom panel has a command grid");
-            Assert.AreEqual(mock.SelectionActions().Length + 3, commands.transform.childCount, "the monarch's orders, abilities and stances, and three things to build");
+            var orders = GameObject.Find("Orders");
+            Assert.IsNotNull(orders, "the sidebar has the orders");
+            Assert.AreEqual(mock.SelectionActions().Length, orders.transform.childCount, "the monarch's orders, abilities and stances");
+            Assert.AreEqual(3, GameObject.Find("Builds").transform.childCount, "and the three things it builds");
             root.Orders.Arm(CommandKind.Build, mock.UnitDefs[0].BuildOptions[2]);
             yield return null;
             Assert.AreEqual(CommandKind.Build, root.Orders.Armed);

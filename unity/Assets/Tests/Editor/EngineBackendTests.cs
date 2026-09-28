@@ -50,6 +50,30 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(5, backend.Sides.Count);
         }
 
+        // The HUD's build row shows every option of every builder in the
+        // player's game at once, in one row at the default size. The
+        // catalogue is whole once a game has loaded.
+        [Test, Order(3)]
+        public void EveryBuildersOptionsShowWithoutPaging()
+        {
+            int most = 0;
+            string widest = "";
+            foreach (var d in backend.UnitDefs)
+            {
+                int n = 0;
+                foreach (int o in d.BuildOptions) if (o >= 0 && o < backend.UnitDefs.Count) n++;
+                if (n > most) { most = n; widest = d.Name; }
+            }
+            Assert.Greater(most, 0);
+            foreach (var size in new[] { new Vector2Int(1280, 720), new Vector2Int(1920, 1080), new Vector2Int(2560, 1440), new Vector2Int(3840, 2160) })
+            {
+                foreach (int p in OpenKingdomsUnity.Game.UI.HudLayout.ScaleStops)
+                    Assert.IsFalse(new OpenKingdomsUnity.Game.UI.HudLayout(size.x, size.y, p).Builds(most).Paged, $"{widest}'s {most} at {size} and {p}%");
+                var g = new OpenKingdomsUnity.Game.UI.HudLayout(size.x, size.y, OpenKingdomsUnity.Game.UI.HudLayout.DefaultScale).Builds(most);
+                Assert.AreEqual(1, g.Rows, $"{widest}'s {most} options in one row at {size}");
+            }
+        }
+
         [Test, Order(2)]
         public void ASkirmishLoadsByPumping()
         {
