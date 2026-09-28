@@ -82,6 +82,8 @@ namespace OpenKingdomsUnity.Studio
         {
             Header("Model");
             var m = StudioSession.Model;
+            if (GUILayout.Button(new GUIContent("Gallery", "Every .glb in a folder at once, each on its own plinth with its name, to look them over together.")))
+                StudioGalleryWindow.Open();
             if (m == null)
             {
                 GUILayout.Label("None yet. Drop one on the Studio Drop window or the Studio View.", EditorStyles.wordWrappedLabel);
@@ -329,6 +331,7 @@ namespace OpenKingdomsUnity.Studio
                 Directory.CreateDirectory(StudioSession.CapturesDir);
                 EditorUtility.RevealInFinder(StudioSession.CapturesDir);
             }
+            GUILayout.Label("F9 in the Studio View or the Gallery saves what it shows into " + OpenKingdomsUnity.Game.Capture.CaptureFiles.Dir + ", and Shift+F9 records a five second clip there.", EditorStyles.wordWrappedMiniLabel);
             if (GUILayout.Button("Frame it in the Scene view") && SceneView.lastActiveSceneView != null)
             {
                 SceneView.lastActiveSceneView.LookAt(s.Spot + Vector3.up * s.ModelBounds.center.y, Quaternion.Euler(30f, 200f, 0), Mathf.Max(3f, s.ModelBounds.extents.magnitude * 2.5f));

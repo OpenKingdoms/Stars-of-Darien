@@ -1,10 +1,12 @@
 // SettingsWindow.cs - OpenKingdoms > Settings: the game folder (EditorPrefs,
 // OK_GAME_DIR still wins), the sprite catalog and Blender, and a line on
-// whether the real game or the stand-in world runs, and why.
+// whether the real game or the stand-in world runs, and why, and where
+// F9 captures go.
 using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using OpenKingdomsUnity.Game.Capture;
 using UnityEditor;
 using UnityEngine;
 
@@ -15,7 +17,7 @@ namespace OpenKingdomsUnity.Studio
         const string GameDirPref = "oku.gameDir", BlenderPref = "oku.sprites.blender";
 
         [MenuItem("OpenKingdoms/Settings", priority = 50)]
-        public static void Open() => GetWindow<SettingsWindow>(true, "OpenKingdoms Settings").minSize = new Vector2(520, 330);
+        public static void Open() => GetWindow<SettingsWindow>(true, "OpenKingdoms Settings").minSize = new Vector2(520, 420);
 
         static Type Settings => Type.GetType("OpenKingdomsUnity.Engine.EngineSettings, OpenKingdomsUnity.Engine");
 
@@ -121,6 +123,9 @@ namespace OpenKingdomsUnity.Studio
             if (GUILayout.Button("Use these settings now")) UseNow();
 
             GUILayout.Space(8);
+            CapturesSection();
+
+            GUILayout.Space(8);
             GUILayout.Label("Tools (optional)", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -146,6 +151,42 @@ namespace OpenKingdomsUnity.Studio
                     if (!string.IsNullOrEmpty(picked)) Blender = picked;
                 }
             }
+        }
+
+        // Where F9 pictures and Shift+F9 clips go, in the game and the studio.
+        // Kept in PlayerPrefs, so Play in the editor reads it too.
+        static void CapturesSection()
+        {
+            GUILayout.Label("Captures", EditorStyles.boldLabel);
+            string pref = PlayerPrefs.GetString(CaptureFiles.PrefKey, "");
+            string fallback = CaptureFiles.Resolve(null, null, CaptureFiles.OwnerDefault, CaptureFiles.RepoDir);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                string shown = pref.Length > 0 ? pref : fallback;
+                string typed = EditorGUILayout.DelayedTextField("Capture folder", shown);
+                if (typed != shown) SetCaptures(typed == fallback ? "" : typed);
+                if (GUILayout.Button("Browse", GUILayout.Width(64)))
+                {
+                    string picked = EditorUtility.OpenFolderPanel("Where captures go", Directory.Exists(shown) ? shown : "", "");
+                    if (!string.IsNullOrEmpty(picked)) SetCaptures(picked);
+                }
+                if (GUILayout.Button("Default", GUILayout.Width(64))) SetCaptures("");
+                if (GUILayout.Button("Open", GUILayout.Width(52)))
+                {
+                    Directory.CreateDirectory(CaptureFiles.Dir);
+                    EditorUtility.RevealInFinder(CaptureFiles.Dir);
+                }
+            }
+            GUILayout.Label($"F9 saves a picture of the game or the studio view there, and Shift+F9 records five seconds at {OwnerCapture.ClipFps} frames a second with a contact sheet. " +
+                $"{CaptureFiles.LatestFile} there names the newest. The default is {CaptureFiles.OwnerDefault} when D:\\OKBuild is there, and the Captures folder beside unity/ otherwise." +
+                (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(CaptureFiles.EnvKey)) ? $" The {CaptureFiles.EnvKey} environment variable is set and wins over this." : ""), EditorStyles.wordWrappedMiniLabel);
+        }
+
+        static void SetCaptures(string dir)
+        {
+            if (string.IsNullOrWhiteSpace(dir)) PlayerPrefs.DeleteKey(CaptureFiles.PrefKey);
+            else PlayerPrefs.SetString(CaptureFiles.PrefKey, dir.Trim());
+            PlayerPrefs.Save();
         }
 
         static void Set(string dir)

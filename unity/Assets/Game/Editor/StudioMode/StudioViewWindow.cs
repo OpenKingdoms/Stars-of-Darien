@@ -36,11 +36,13 @@ namespace OpenKingdomsUnity.Studio
             }
             Toolbar();
             var area = GUILayoutUtility.GetRect(100, 10000, 100, 10000);
+            float scale = EditorGUIUtility.pixelsPerPoint;
+            int w = Mathf.Max(16, (int)(area.width * scale)), h = Mathf.Max(16, (int)(area.height * scale));
+            // F9 and Shift+F9 capture the view as drawn here.
+            if (StudioCapture.HandleKeys(this, target => { StudioSession.Stage.Render(target, Current); return true; }, new Vector2Int(w, h))) return;
             StudioDropWindow.Drop(area);
             Controls(area);
             if (Event.current.type != EventType.Repaint) return;
-            float scale = EditorGUIUtility.pixelsPerPoint;
-            int w = Mathf.Max(16, (int)(area.width * scale)), h = Mathf.Max(16, (int)(area.height * scale));
             if (rt == null || rt.width != w || rt.height != h)
             {
                 if (rt != null) { rt.Release(); DestroyImmediate(rt); }
@@ -83,6 +85,7 @@ namespace OpenKingdomsUnity.Studio
                     StudioSession.Stage.TurntableYaw = 0;
                 }
                 GUILayout.FlexibleSpace();
+                if (GUILayout.Button(new GUIContent("Gallery", "Every model in a folder at once, each on its own plinth."), EditorStyles.toolbarButton)) StudioGalleryWindow.Open();
                 if (GUILayout.Button("Screenshot", EditorStyles.toolbarButton)) StudioSession.Screenshot(StudioSession.View.Classic);
             }
         }
