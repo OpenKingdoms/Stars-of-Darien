@@ -1,8 +1,9 @@
 // FormationInput.cs - the formation drag in a running game. Reads the
 // mouse and keys into a PointerFrame (or takes a test's frames), feeds the
 // gesture, lays out the formation while the drag is live, and at the
-// release sends one MoveFormation per layer. A press that stays a click
-// goes back to OrderInput, which does what it always did.
+// release sends one MoveFormation per role block, so each block keeps to
+// its own slowest unit. A press that stays a click goes back to
+// OrderInput, which does what it always did.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -55,9 +56,13 @@ namespace OpenKingdomsUnity.Game.World
         bool lastFace, lastAlt, lastPace, computed;
         float lastTime;
         Vector2 pointer;
+        Vector3 anchor;
+        Camera lastCam;
         string readout = "", readoutQueued = "", readHead;
         int readWide, readDeep;
-        bool readPace;
+        bool readPace, readKeys, shapeChanged;
+        // Drags this session, for the key hints on the first few.
+        static int drags;
         static GUIStyle readoutStyle;
         static Texture2D readoutBack;
         readonly GUIContent readoutContent = new GUIContent();
@@ -99,6 +104,7 @@ namespace OpenKingdomsUnity.Game.World
         bool Step(Camera cam, in PointerFrame frame, bool onGround, Vector3 at, bool mouseTaken)
         {
             Gesture.Classic = orders.Classic;
+            lastCam = cam;
             var f = frame;
             f.OnGround = onGround;
             f.Ground = at;
@@ -113,8 +119,13 @@ namespace OpenKingdomsUnity.Game.World
             bool canStart = Gesture.State == GestureState.Idle && (f.LeftDown || f.RightDown) && Collect() > 0;
             var shape = Shape;
             var e = Gesture.Feed(f, canStart, armed);
-            // Tab's choice sticks for later drags and games.
-            if (Shape != shape) GameOptions.SaveFormation(Shape);
+            if (Shape != shape) shapeChanged = true;
+            // Tab's choice sticks for later drags and games, kept when a drag ends.
+            if (shapeChanged && e != GestureEvent.Pending && e != GestureEvent.Started && e != GestureEvent.Dragging)
+            {
+                GameOptions.SaveFormation(Shape);
+                shapeChanged = false;
+            }
             switch (e)
             {
                 case GestureEvent.Pending:
@@ -126,6 +137,7 @@ namespace OpenKingdomsUnity.Game.World
                     Idle();
                     return true;
                 case GestureEvent.Started:
+                    drags++;
                     a = Flat(Gesture.Press.Ground);
                     b = f.OnGround && !f.OverUi ? Flat(f.Ground) : a;
                     ground.Prepare(backend, world);
@@ -176,6 +188,7 @@ namespace OpenKingdomsUnity.Game.World
             RightDown = Input.GetMouseButtonDown(1), RightHeld = Input.GetMouseButton(1), RightUp = Input.GetMouseButtonUp(1),
             Shift = Shift,
             Ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl),
+            Seconds = Time.unscaledTime,
             Alt = Input.GetKey(KeyCode.LeftAlt) || Input.GetKey(KeyCode.RightAlt),
             TabDown = Input.GetKeyDown(KeyCode.Tab), FDown = Input.GetKeyDown(KeyCode.F), GDown = Input.GetKeyDown(KeyCode.G),
             EscapeDown = Input.GetKeyDown(KeyCode.Escape),
@@ -217,7 +230,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             if (kinds.TryGetValue(def, out var k)) return k;
             var d = def >= 0 && def < backend.UnitDefs.Count ? backend.UnitDefs[def] : null;
-            k = FormationRoles.Classify(d?.Name, d?.Category, d != null ? d.Footprint.x : 0);
+            k = FormationRoles.Classify(d?.Name, d?.Category, d != null ? d.Footprint.x : 0, canFly: d != null && d.CanFly);
             kinds[def] = k;
             return k;
         }
@@ -269,30 +282,42 @@ namespace OpenKingdomsUnity.Game.World
             {
                 A = a, B = b, Shape = Shape, FaceAbout = Gesture.FaceAbout, AsTheyStand = Gesture.Alt, Facing = Facing, CameraRight = right,
             };
+            bool groundSnapped = false;
             foreach (var l in Layers)
             {
                 if (l.Count == 0) continue;
                 FormationPlanner.Plan(l, req);
                 assign.Assign(l);
-                snap.Snap(l, ground);
+                // Boats keep clear of the cells the ground layer's hovers took.
+                snap.Snap(l, ground, l.Layer == FormationLayer.Water && groundSnapped);
+                groundSnapped |= l.Layer == FormationLayer.Ground;
             }
             Preview.Build(this);
             var main = Main();
-            SetReadout(Gesture.Alt ? "As they stand" : FormationPlanner.Name(Shape), main.Wide, main.Deep, pace);
+            var mid = Vector2.zero;
+            for (int s = 0; s < main.Count; s++) mid += main.Slots[s].World;
+            mid /= Mathf.Max(1, main.Count);
+            anchor = new Vector3(mid.x, backend.GroundHeight(mid.x, mid.y), mid.y);
+            bool keys = drags <= FormationTuning.ReadoutKeyDrags;
+            if (Gesture.Alt) SetReadout("As they stand", -1, -1, pace, keys);
+            else SetReadout(FormationPlanner.Name(Shape), main.Wide, main.Deep, pace, keys);
         }
 
         // The readout's text, made again only when what it says changes.
-        void SetReadout(string head, int wide, int deep, bool pace)
+        // A group as it stands has no ranks worth counting.
+        void SetReadout(string head, int wide, int deep, bool pace, bool keys)
         {
-            if (head == readHead && wide == readWide && deep == readDeep && pace == readPace && readout.Length > 0) return;
+            if (head == readHead && wide == readWide && deep == readDeep && pace == readPace && keys == readKeys && readout.Length > 0) return;
             readHead = head;
             readWide = wide;
             readDeep = deep;
             readPace = pace;
-            string first = $"{head}   {wide} wide, {deep} deep   {(pace ? "together" : "own pace")}";
-            const string keys = "\nTab shape   F face about   G pace   Alt as they stand   Shift queue";
-            readout = first + keys;
-            readoutQueued = first + "   queued" + keys;
+            readKeys = keys;
+            string size = wide >= 0 ? $"   {wide} wide, {deep} deep" : "";
+            string first = $"{head}{size}   {(pace ? "block pace" : "own pace")}";
+            string hint = keys ? "\nTab shape   F face about   G pace   Alt as they stand   Shift queue" : "";
+            readout = first + hint;
+            readoutQueued = first + "   queued" + hint;
         }
 
         // The layer with the most units, for the readout and the arrow.
@@ -314,6 +339,20 @@ namespace OpenKingdomsUnity.Game.World
 
         // ---- The order ----
 
+        // With the pace kept, one call per role block: the melee, the
+        // archers, the riders, and the casters, siege and command together.
+        // Each block marches at its own slowest, as a unit does in Total War.
+        static int PaceBlock(FormationRole r) =>
+            r == FormationRole.Melee ? 0 : r == FormationRole.Ranged ? 1 : r == FormationRole.Cavalry ? 2 : 3;
+
+        // A boat with no water near its slot stays out of the order.
+        public static bool IsSent(FormationLayout l, int s)
+        {
+            var slot = l.Slots[s];
+            if (slot.Member < 0) return false;
+            return slot.State != SlotState.Nowhere || l.Members[slot.Member].Kind.Mover != FormationMover.Boat;
+        }
+
         void Send()
         {
             bool pace = Pace ^ Gesture.PaceFlip;
@@ -322,19 +361,27 @@ namespace OpenKingdomsUnity.Game.World
             {
                 if (l.Count == 0) continue;
                 formationId++;
-                for (int start = 0; start < l.Count; start += FormationTuning.UnitsPerCall)
+                for (int block = 0; block < (pace ? 4 : 1); block++)
                 {
-                    int n = Mathf.Min(FormationTuning.UnitsPerCall, l.Count - start);
-                    var ids = new int[n];
-                    var to = new Vector2[n];
-                    for (int s = 0; s < n; s++)
+                    int total = 0;
+                    for (int s = 0; s < l.Count; s++)
+                        if (IsSent(l, s) && (!pace || PaceBlock(l.Slots[s].Role) == block)) total++;
+                    for (int s = 0, start = 0; start < total; start += FormationTuning.UnitsPerCall)
                     {
-                        var slot = l.Slots[start + s];
-                        ids[s] = l.Members[slot.Member].Handle;
-                        to[s] = slot.World;
-                        remembered[ids[s]] = new Remembered { Slot = slot.World, Heading = l.Heading, Formation = formationId };
+                        int n = Mathf.Min(FormationTuning.UnitsPerCall, total - start);
+                        var ids = new int[n];
+                        var to = new Vector2[n];
+                        for (int j = 0; j < n; s++)
+                        {
+                            if (!IsSent(l, s) || pace && PaceBlock(l.Slots[s].Role) != block) continue;
+                            var slot = l.Slots[s];
+                            ids[j] = l.Members[slot.Member].Handle;
+                            to[j] = slot.World;
+                            remembered[ids[j]] = new Remembered { Slot = slot.World, Heading = l.Heading, Formation = formationId };
+                            j++;
+                        }
+                        backend.MoveFormation(ids, to, l.Heading, pace, queue);
                     }
-                    backend.MoveFormation(ids, to, l.Heading, pace, queue);
                 }
                 if (queue) Preview.AddQueued(l, Time.unscaledTime);
                 else Preview.ForgetQueued(l);
@@ -359,8 +406,17 @@ namespace OpenKingdomsUnity.Game.World
             readoutStyle.fontSize = Mathf.RoundToInt(15f * Mathf.Max(1f, Screen.height / 1080f));
             readoutContent.text = Gesture.Shift ? readoutQueued : readout;
             var size = readoutStyle.CalcSize(readoutContent);
-            float x = Mathf.Min(pointer.x + 22f, Screen.width - size.x - 8f);
-            float y = Mathf.Clamp(Screen.height - pointer.y + 18f, 4f, Screen.height - size.y - 8f);
+            // Beside the pointer on the side away from the formation, so it
+            // never sits on the slots being placed.
+            bool left = false, above = false;
+            if (lastCam != null)
+            {
+                var c = lastCam.WorldToScreenPoint(anchor);
+                if (c.z > 0) { left = c.x > pointer.x; above = c.y < pointer.y; }
+            }
+            float gy = Screen.height - pointer.y;
+            float x = Mathf.Clamp(left ? pointer.x - 22f - size.x : pointer.x + 22f, 8f, Mathf.Max(8f, Screen.width - size.x - 8f));
+            float y = Mathf.Clamp(above ? gy - 18f - size.y : gy + 18f, 4f, Mathf.Max(4f, Screen.height - size.y - 8f));
             var box = new Rect(x - 6f, y - 3f, size.x + 12f, size.y + 6f);
             var old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.55f);
@@ -382,6 +438,7 @@ namespace OpenKingdomsUnity.Game.World
             public int Height { get; private set; }
             byte[] land = Array.Empty<byte>();
             bool[] blocked = Array.Empty<bool>();
+            int[] walkRegions = Array.Empty<int>(), sailRegions = Array.Empty<int>();
             MapTerrain built;
 
             const byte Walk = 1, Sail = 2;
@@ -407,6 +464,10 @@ namespace OpenKingdomsUnity.Game.World
                             if (sea && h <= t.SeaLevel - 0.5f) v |= Sail;
                             land[y * Width + x] = v;
                         }
+                    walkRegions = new int[Width * Height];
+                    sailRegions = new int[Width * Height];
+                    FormationRegions.Label(Width, Height, land, Walk, walkRegions);
+                    FormationRegions.Label(Width, Height, land, Sail, sailRegions);
                 }
                 Array.Clear(blocked, 0, blocked.Length);
                 var units = world.Entities.Units;
@@ -436,6 +497,18 @@ namespace OpenKingdomsUnity.Game.World
                     case FormationMover.Hover: return true;
                     case FormationMover.Boat: return (land[i] & Sail) != 0;
                     default: return (land[i] & Walk) != 0;
+                }
+            }
+
+            // Hovers and flyers reach anywhere on the map.
+            public int Region(FormationMover mover, int x, int y)
+            {
+                if (x < 0 || y < 0 || x >= Width || y >= Height) return -1;
+                switch (mover)
+                {
+                    case FormationMover.Boat: return sailRegions[y * Width + x];
+                    case FormationMover.Walker: return walkRegions[y * Width + x];
+                    default: return 0;
                 }
             }
         }

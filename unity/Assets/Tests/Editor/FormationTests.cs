@@ -1,6 +1,7 @@
 // FormationTests.cs - the formation drag's pure parts: facing, frontage and
-// ranks, roles, wings, the four shapes and "as they stand", matching units
-// to slots, snapping off impassable ground, and the gesture itself.
+// ranks, short drags, mixed footprints, roles, wings, the four shapes and
+// "as they stand", matching units to slots, snapping off impassable ground
+// within reach, and the gesture itself.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -102,13 +103,27 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(4, l.Deep);
         }
 
+        // The middle of a layout's slots in the world, across and along its facing.
+        static Vector2 Middle(FormationLayout l)
+        {
+            var w = l.Slots.Take(l.Count).Select(s => s.Wanted).ToArray();
+            float x0 = w.Min(v => Vector2.Dot(v, l.Right)), x1 = w.Max(v => Vector2.Dot(v, l.Right));
+            float y0 = w.Min(v => Vector2.Dot(v, l.Face)), y1 = w.Max(v => Vector2.Dot(v, l.Face));
+            return l.Right * ((x0 + x1) * 0.5f) + l.Face * ((y0 + y1) * 0.5f);
+        }
+
         [Test]
-        public void AShortDragMakesAFileAndALongOneStopsAtItsWidest()
+        public void AShortDragMakesABlockOnThePressAndALongOneStopsAtItsWidest()
         {
             var a = new Vector2(10, -30);
-            var file = Planned(Layout((FormationRole.Melee, 5, 2)), Drag(a, a + new Vector2(1.5f, 0)));
-            Assert.IsTrue(file.Slots.Take(5).All(s => Mathf.Abs(s.Local.x) < 0.001f), "one unit wide");
-            CollectionAssert.AreEqual(new[] { 1, 1, 1, 1, 1 }, RankSizes(file.Slots.Take(5)));
+            var block = Planned(Layout((FormationRole.Melee, 5, 2)), Drag(a, a + new Vector2(1.5f, 0)));
+            CollectionAssert.AreEqual(new[] { 2, 2, 1 }, RankSizes(block.Slots.Take(5)), "never a file");
+            Assert.IsFalse(block.Drawn);
+            Assert.AreEqual(0f, block.Heading, 0.01f, "too short to set a facing, it faces the camera's way");
+            Near(a, Middle(block), "centred on the press");
+
+            var army = Planned(Layout((FormationRole.Melee, 27, 2)), Drag(a, a + new Vector2(0.6f, 0.3f)));
+            CollectionAssert.AreEqual(new[] { 7, 7, 7, 6 }, RankSizes(army.Slots.Take(27)), "no more than four ranks deep");
 
             var wide = Planned(Layout((FormationRole.Melee, 12, 2)), Drag(a, a + new Vector2(60, 0)));
             Assert.AreEqual(36f, wide.Frontage, 0.001f, "12 at a pitch of 3");
@@ -232,39 +247,41 @@ namespace OpenKingdomsUnity.Tests
         [Test]
         public void LargeGroupsAreSortedByProjection()
         {
-            // A hundred melee in a grid, sent to a line far ahead.
+            // A hundred melee in four rows of 25, sent to a line far ahead.
             var l = Layout((FormationRole.Melee, 100, 2));
-            for (int i = 0; i < 100; i++) l.Members[i].Position = new Vector2(10 + (i % 10) * 3, -80 - (i / 10) * 3);
+            for (int i = 0; i < 100; i++) l.Members[i].Position = new Vector2(10 + (i % 25) * 3, -80 - (i / 25) * 3);
             Planned(l, Drag(new Vector2(20, -20), new Vector2(50, -20)));
             CollectionAssert.AreEquivalent(Enumerable.Range(0, 100), l.Slots.Take(100).Select(s => s.Member));
-            CollectionAssert.AreEqual(Enumerable.Repeat(10, 10).ToArray(), RankSizes(l.Slots.Take(100)), "ten ranks of ten");
+            CollectionAssert.AreEqual(Enumerable.Repeat(25, 4).ToArray(), RankSizes(l.Slots.Take(100)), "four ranks of 25, as deep as a line goes");
             Assert.AreEqual(0, Crossings(l, (s, t) => Mathf.Abs(s.Local.y - t.Local.y) < 0.01f), "no paths cross within a rank");
             // The front rank goes to the units in front.
             var frontUnits = l.Slots.Take(100).Where(s => Mathf.Abs(s.Local.y) < 0.01f).Select(s => l.Members[s.Member].Position.y).ToArray();
             Assert.IsTrue(frontUnits.All(y => y >= -80 - 0.01f), "the front rank came from the front");
         }
 
+        // Each unit's handle and where it is sent.
+        static Dictionary<int, Vector2> Sent(FormationLayout l) =>
+            Enumerable.Range(0, l.Count).ToDictionary(i => l.Members[l.Slots[i].Member].Handle, i => l.Slots[i].World);
+
         [Test]
         public void TheSameInputGivesTheSameFormation()
         {
+            // Two clients see the selection in different orders; both sort
+            // it by handle, as FormationInput does, and send the same.
             var rng = new System.Random(11);
-            var l1 = Layout((FormationRole.Melee, 30, 2), (FormationRole.Ranged, 80, 2), (FormationRole.Cavalry, 9, 3), (FormationRole.Command, 2, 2));
+            var l1 = Layout((FormationRole.Melee, 30, 2), (FormationRole.Ranged, 80, 2), (FormationRole.Cavalry, 9, 3), (FormationRole.Command, 2, 2), (FormationRole.Siege, 3, 4));
             for (int i = 0; i < l1.Count; i++) l1.Members[i].Position = new Vector2((float)rng.NextDouble() * 60f, -(float)rng.NextDouble() * 60f);
+            var shuffled = l1.Members.Take(l1.Count).OrderBy(_ => rng.Next()).ToArray();
             var l2 = new FormationLayout();
             l2.Reserve(l1.Count);
-            Array.Copy(l1.Members, l2.Members, l1.Count);
+            Array.Copy(shuffled.OrderBy(m => m.Handle).ToArray(), l2.Members, l1.Count);
             l2.Count = l1.Count;
             foreach (var shape in new[] { FormationShape.Line, FormationShape.Block, FormationShape.Wedge, FormationShape.Loose })
-            {
-                var r = Drag(new Vector2(12, -20), new Vector2(40, -31), shape);
-                Planned(l1, r);
-                Planned(l2, r);
-                for (int i = 0; i < l1.Count; i++)
+                foreach (var b in new[] { new Vector2(40, -31), new Vector2(12.5f, -20) })
                 {
-                    Assert.AreEqual(l1.Slots[i].Member, l2.Slots[i].Member);
-                    Assert.AreEqual(l1.Slots[i].World, l2.Slots[i].World);
+                    var r = Drag(new Vector2(12, -20), b, shape);
+                    CollectionAssert.AreEquivalent(Sent(Planned(l1, r)), Sent(Planned(l2, r)), $"{shape} to {b}");
                 }
-            }
         }
 
         // ---- 7. Snapping ----
@@ -274,8 +291,27 @@ namespace OpenKingdomsUnity.Tests
             public int Width { get; set; } = 60;
             public int Height { get; set; } = 60;
             public Func<int, int, bool> Land = (x, y) => true;
+            int[] walk, sail;
+
             public bool CanStand(FormationMover mover, int x, int y) =>
                 mover == FormationMover.Flyer || (mover == FormationMover.Boat ? !Land(x, y) : Land(x, y));
+
+            public int Region(FormationMover mover, int x, int y)
+            {
+                if (x < 0 || y < 0 || x >= Width || y >= Height) return -1;
+                if (mover == FormationMover.Flyer) return 0;
+                if (walk == null)
+                {
+                    var mask = new byte[Width * Height];
+                    for (int j = 0; j < Height; j++)
+                        for (int i = 0; i < Width; i++) mask[j * Width + i] = (byte)(Land(i, j) ? 1 : 2);
+                    walk = new int[mask.Length];
+                    sail = new int[mask.Length];
+                    FormationRegions.Label(Width, Height, mask, 1, walk);
+                    FormationRegions.Label(Width, Height, mask, 2, sail);
+                }
+                return (mover == FormationMover.Boat ? sail : walk)[y * Width + x];
+            }
         }
 
         [Test]
@@ -341,7 +377,7 @@ namespace OpenKingdomsUnity.Tests
             // Only a 2 by 2 patch on the corner of the sixth ring out can take it.
             var g = new Ground { Land = (x, y) => x >= 27 && x <= 28 && y >= 25 && y <= 26 };
             var l = Layout((FormationRole.Melee, 1, 2));
-            FormationPlanner.Plan(l, Drag(new Vector2(20, -20), new Vector2(21, -20)));
+            FormationPlanner.Plan(l, Drag(new Vector2(20, -20), new Vector2(23, -20)));
             new FormationAssign().Assign(l);
             new FormationSnap().Snap(l, g);
             Assert.AreEqual(SlotState.Snapped, l.Slots[0].State);
@@ -387,6 +423,12 @@ namespace OpenKingdomsUnity.Tests
             var point = l.Slots.Take(10).Single(s => Mathf.Abs(s.Local.y) < 0.01f);
             Assert.AreEqual(FormationRole.Cavalry, point.Role);
             Assert.AreEqual(0f, point.Local.x, 0.001f);
+            // The second rank holds a rider, so it keeps a rider's pitch.
+            var second = l.Slots.Take(10).Where(s => s.Local.y < -0.01f && s.Local.y > -4f).OrderBy(s => s.Local.x).ToArray();
+            Assert.AreEqual(2, second.Length);
+            Assert.GreaterOrEqual(second[1].Local.x - second[0].Local.x, 4f - 0.001f);
+            foreach (var s in l.Slots.Take(10))
+                Assert.AreEqual(s.Role == FormationRole.Cavalry ? 3 : 2, FormationPlanner.Footprint(l.Members[s.Member]), "each slot went to a unit of its size");
         }
 
         [Test]
@@ -479,6 +521,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(FormationRole.Siege, FormationRoles.Classify("MOD8", "ARA BALLISTIC", 4).Role);
             Assert.AreEqual(FormationMover.Hover, FormationRoles.Classify("VERMAGE", "", 0).Mover);
             Assert.AreEqual(2, FormationRoles.Classify("MOD9", "", 0).Footprint, "a footprint of 0 counts as 2");
+            Assert.AreEqual(FormationLayer.Air, FormationRoles.Classify("aramon_flyer", "air", 1, canFly: true).Layer, "the engine's flag makes a flyer");
         }
 
         [Test]
@@ -493,6 +536,161 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(ground.Heading, air.Heading);
             Assert.AreEqual(6, ground.Wide);
             Assert.AreEqual(3, air.Wide);
+        }
+
+        // ---- Short drags ----
+
+        [Test]
+        public void TwoHundredAtOnePointFormOnThePressFacingTheCameraWay()
+        {
+            var a = new Vector2(300, -300);
+            // The camera looks east: its right is south, so the formation faces east.
+            var r = new FormationRequest { A = a, B = a, CameraRight = new Vector2(0, -1) };
+            foreach (var shape in new[] { FormationShape.Line, FormationShape.Block, FormationShape.Wedge, FormationShape.Loose })
+            {
+                r.Shape = shape;
+                var l = Planned(Layout((FormationRole.Melee, 200, 2)), r);
+                Assert.AreEqual(90f, l.Heading, 0.01f, $"{shape} faces the camera's way");
+                // Loose staggers every other row by half a spacing.
+                Assert.Less((a - Middle(l)).magnitude, shape == FormationShape.Loose ? 1.5f : 1e-3f, $"{shape} is centred on the press");
+                var w = l.Slots.Take(200).Select(s => s.Wanted).ToArray();
+                float deep = w.Max(v => Vector2.Dot(v, l.Face)) - w.Min(v => Vector2.Dot(v, l.Face));
+                float wide = w.Max(v => Vector2.Dot(v, l.Right)) - w.Min(v => Vector2.Dot(v, l.Right));
+                Assert.LessOrEqual(deep, wide, $"{shape} is no column: {wide:0} wide, {deep:0} deep");
+                if (shape == FormationShape.Line || shape == FormationShape.Loose) Assert.LessOrEqual(l.Deep, FormationTuning.MaxRanks, $"{shape} ranks");
+            }
+        }
+
+        [Test]
+        public void AThresholdLengthDragSetsTheFacingAndAShorterOneDoesNot()
+        {
+            var a = new Vector2(20, -40);
+            var drawn = Planned(Layout((FormationRole.Melee, 8, 2)), Drag(a, a + new Vector2(0, -FormationTuning.ShortestLine - 0.1f)));
+            Assert.IsTrue(drawn.Drawn);
+            Assert.AreEqual(90f, drawn.Heading, 0.01f, "dragged south, it faces east");
+            var undrawn = Planned(Layout((FormationRole.Melee, 8, 2)), Drag(a, a + new Vector2(0, -FormationTuning.ShortestLine + 0.1f)));
+            Assert.IsFalse(undrawn.Drawn);
+            Assert.AreEqual(0f, undrawn.Heading, 0.01f, "a shorter drag faces the camera's way");
+            Near(a, Middle(undrawn));
+        }
+
+        [Test]
+        public void AShortDragBlockStillGuardsItsMonarch()
+        {
+            var a = new Vector2(30, -30);
+            var l = Planned(Layout((FormationRole.Melee, 24, 2), (FormationRole.Command, 1, 2)), Drag(a, a, FormationShape.Block));
+            CollectionAssert.AreEqual(new[] { 5, 5, 5, 5, 5 }, RankSizes(l.Slots.Take(25)));
+            var king = SlotsOf(l, FormationRole.Command).Single();
+            Near(a, king.World, "the monarch in the middle, on the press");
+        }
+
+        [Test]
+        public void AWedgeKeepsItsPointOnTheDrawnLine()
+        {
+            var a = new Vector2(100, -100);
+            var b = a + new Vector2(40, 0);
+            var l = Planned(Layout((FormationRole.Cavalry, 20, 3), (FormationRole.Melee, 150, 2), (FormationRole.Ranged, 30, 2)), Drag(a, b, FormationShape.Wedge));
+            var point = l.Slots.Take(l.Count).Single(s => Mathf.Abs(s.Local.y) < 0.01f).Wanted;
+            Assert.AreEqual(a.y, point.y, 0.001f);
+            Assert.IsTrue(point.x >= a.x - 0.001f && point.x <= b.x + 0.001f, $"the point {point} lies on the line");
+
+            var few = Planned(Layout((FormationRole.Melee, 6, 2)), Drag(a, a + new Vector2(60, 0), FormationShape.Wedge));
+            var tip = few.Slots.Take(6).Single(s => Mathf.Abs(s.Local.y) < 0.01f).Wanted;
+            Assert.AreEqual(a.x + few.Frontage * 0.5f, tip.x, 0.001f, "on a long line it grows out from the press");
+        }
+
+        [Test]
+        public void ALastRankIsNeverOneAlone()
+        {
+            var a = new Vector2(10, -30);
+            var l = Planned(Layout((FormationRole.Melee, 12, 2)), Drag(a, a + new Vector2(33, 0)));
+            CollectionAssert.AreEqual(new[] { 12 }, RankSizes(l.Slots.Take(12)), "one wider rank, not eleven and one");
+            var m = Planned(Layout((FormationRole.Melee, 23, 2)), Drag(a, a + new Vector2(33, 0)));
+            CollectionAssert.AreEqual(new[] { 12, 11 }, RankSizes(m.Slots.Take(23)));
+        }
+
+        // ---- Mixed footprints ----
+
+        static float[] Gaps(IEnumerable<FormationSlot> rank) =>
+            rank.Select(s => s.Local.x).OrderBy(x => x).Zip(rank.Select(s => s.Local.x).OrderBy(x => x).Skip(1), (x0, x1) => x1 - x0).ToArray();
+
+        [Test]
+        public void OneCatapultDoesNotSpreadABlock()
+        {
+            var l = Planned(Layout((FormationRole.Melee, 24, 2), (FormationRole.Siege, 1, 4)), Drag(new Vector2(10, -30), new Vector2(25, -30), FormationShape.Block));
+            var melee = SlotsOf(l, FormationRole.Melee).ToArray();
+            foreach (var rank in melee.GroupBy(s => Mathf.Round(s.Local.y * 100)))
+                foreach (float gap in Gaps(rank)) Assert.AreEqual(3f, gap, 0.001f, "the soldiers keep a pitch of 3");
+            var siege = SlotsOf(l, FormationRole.Siege).Single();
+            Assert.Less(siege.Local.y, melee.Min(s => s.Local.y), "the catapult stands behind the block");
+            Assert.AreEqual(4, FormationPlanner.Footprint(l.Members[siege.Member]));
+        }
+
+        [Test]
+        public void AGodStandsBehindTheSwordsmenAtItsOwnPitch()
+        {
+            var l = Planned(Layout((FormationRole.Melee, 12, 2), (FormationRole.Melee, 2, 3), (FormationRole.Ranged, 6, 2)), Drag(new Vector2(10, -30), new Vector2(46, -30)));
+            var swords = l.Slots.Take(l.Count).Where(s => s.Role == FormationRole.Melee && FormationPlanner.Footprint(l.Members[s.Member]) == 2).ToArray();
+            var gods = l.Slots.Take(l.Count).Where(s => s.Role == FormationRole.Melee && FormationPlanner.Footprint(l.Members[s.Member]) == 3).ToArray();
+            CollectionAssert.AreEqual(new[] { 12 }, RankSizes(swords), "the swordsmen keep one rank");
+            foreach (float gap in Gaps(swords)) Assert.AreEqual(3f, gap, 0.001f);
+            Assert.IsTrue(gods.All(g => g.Local.y < -0.01f), "the gods stand behind them");
+            Assert.AreEqual(4f, Gaps(gods).Single(), 0.001f, "at their own pitch");
+            Assert.IsTrue(SlotsOf(l, FormationRole.Ranged).All(s => s.Local.y < gods.Min(g => g.Local.y)), "and before the archers");
+        }
+
+        // ---- Loose ----
+
+        [Test]
+        public void LooseKeepsTheCommandInTheMiddle()
+        {
+            var l = Planned(Layout((FormationRole.Melee, 12, 2), (FormationRole.Command, 3, 2)), Drag(new Vector2(10, -30), new Vector2(43, -30), FormationShape.Loose));
+            float pitch = 2 * 2 + FormationTuning.Gap;
+            foreach (var s in SlotsOf(l, FormationRole.Command))
+                Assert.LessOrEqual(Mathf.Abs(s.Local.x), pitch + 0.001f, $"a command slot at {s.Local.x} strays from the middle");
+            Assert.AreEqual(33f, SlotsOf(l, FormationRole.Melee).Max(s => s.Local.x) - SlotsOf(l, FormationRole.Melee).Min(s => s.Local.x), 0.001f, "the melee still spreads over the line");
+        }
+
+        // ---- Snapping within reach ----
+
+        // Water in rows 40 to 43 of an 80 row map, forty melee north of it.
+        static (Ground g, FormationLayout l) River()
+        {
+            var g = new Ground { Width = 60, Height = 80, Land = (x, y) => y < 40 || y > 43 };
+            var l = Layout((FormationRole.Melee, 40, 2));
+            for (int i = 0; i < 40; i++) l.Members[i].Position = new Vector2(8 + (i % 20) * 2.2f, -20 - (i / 20) * 3);
+            return (g, l);
+        }
+
+        static void OnTheNorthBank(Ground g, FormationLayout l)
+        {
+            for (int i = 0; i < l.Count; i++)
+            {
+                var s = l.Slots[i];
+                Assert.AreNotEqual(SlotState.Nowhere, s.State, $"slot {i}");
+                int y0 = Mathf.FloorToInt(-s.World.y - 1 + 0.5f);
+                Assert.Less(y0 + 1, 40, $"slot {i} at {s.World} stands on the north bank");
+            }
+        }
+
+        [Test]
+        public void ALineDrawnAtARiverStaysOnItsBank()
+        {
+            var (g, l) = River();
+            FormationPlanner.Plan(l, Drag(new Vector2(5, -38), new Vector2(55, -38)));
+            new FormationAssign().Assign(l);
+            new FormationSnap().Snap(l, g);
+            OnTheNorthBank(g, l);
+        }
+
+        [Test]
+        public void ALineDrawnOnARiverGoesToTheBankItsUnitsStandOn()
+        {
+            var (g, l) = River();
+            FormationPlanner.Plan(l, Drag(new Vector2(5, -42), new Vector2(55, -42)));
+            new FormationAssign().Assign(l);
+            new FormationSnap().Snap(l, g);
+            OnTheNorthBank(g, l);
         }
 
         // ---- 11. The gesture ----
@@ -591,15 +789,73 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(GestureEvent.None, off.Feed(Down(1, p), true, false));
             var on = new FormationGesture { Classic = true };
             on.Feed(Down(1, p), true, false);
-            Assert.AreEqual(GestureEvent.Pending, on.Feed(Held(1, p + new Vector2(15, 0)), true, false), "15 pixels is still a deselect");
-            Assert.AreEqual(GestureEvent.Started, on.Feed(Held(1, p + new Vector2(16, 0)), true, false));
+            Assert.AreEqual(GestureEvent.Pending, on.Feed(Later(Held(1, p + new Vector2(15, 0)), 0.3f), true, false), "15 pixels is still a deselect");
+            Assert.AreEqual(GestureEvent.Started, on.Feed(Later(Held(1, p + new Vector2(16, 0)), 0.3f), true, false));
             var hi = new FormationGesture { Classic = true };
             var d = Down(1, p);
             d.Dpi = 192;
             hi.Feed(d, true, false);
-            var h = Held(1, p + new Vector2(20, 0));
+            var h = Later(Held(1, p + new Vector2(20, 0)), 0.3f);
             h.Dpi = 192;
             Assert.AreEqual(GestureEvent.Pending, hi.Feed(h, true, false), "the threshold scales with the screen");
+        }
+
+        static PointerFrame Later(PointerFrame f, float seconds) { f.Seconds = seconds; return f; }
+
+        [Test]
+        public void AClassicRightFlickStaysACancelHoweverFarItMoves()
+        {
+            var p = new Vector2(400, 300);
+            var g = new FormationGesture { Classic = true };
+            Assert.AreEqual(GestureEvent.Pending, g.Feed(Down(1, p), true, false));
+            Assert.AreEqual(GestureEvent.Pending, g.Feed(Later(Held(1, p + new Vector2(40, 0)), 0.06f), true, false), "swept 40 pixels, not yet held");
+            Assert.AreEqual(GestureEvent.Click, g.Feed(Later(Up(1, p + new Vector2(40, 0)), 0.12f), true, false), "released inside the hold, it cancels");
+
+            Assert.AreEqual(GestureEvent.Pending, g.Feed(Down(1, p), true, false));
+            Assert.AreEqual(GestureEvent.Pending, g.Feed(Later(Held(1, p + new Vector2(40, 0)), 0.1f), true, false));
+            Assert.AreEqual(GestureEvent.Started, g.Feed(Later(Held(1, p + new Vector2(41, 0)), 0.21f), true, false), "held past the flick, it draws");
+            Assert.AreEqual(GestureEvent.Committed, g.Feed(Later(Up(1, p + new Vector2(60, 0)), 0.4f), true, false));
+
+            // The order buttons go by distance alone.
+            var modern = new FormationGesture { Classic = false };
+            modern.Feed(Down(1, p), true, false);
+            Assert.AreEqual(GestureEvent.Started, modern.Feed(Later(Held(1, p + new Vector2(40, 0)), 0.02f), true, false));
+            var ctrl = Down(0, p);
+            ctrl.Ctrl = true;
+            g.Feed(ctrl, true, false);
+            Assert.AreEqual(GestureEvent.Started, g.Feed(Later(Held(0, p + new Vector2(40, 0)), 0.02f), true, false));
+        }
+
+        [Test]
+        public void APressOnAnEnemyStaysAnAttack()
+        {
+            var p = new Vector2(400, 300);
+            foreach (bool classic in new[] { false, true })
+            {
+                var g = new FormationGesture { Classic = classic };
+                var down = Down(classic ? 0 : 1, p);
+                down.Ctrl = classic;
+                down.OnEnemy = true;
+                Assert.AreEqual(GestureEvent.None, g.Feed(down, true, false), $"classic {classic}: the order button on an enemy");
+                Assert.AreEqual(GestureEvent.None, g.Feed(Later(Held(classic ? 0 : 1, p + new Vector2(40, 0)), 0.5f), true, false), "dragged 40 pixels it is still the attack's");
+                Assert.AreEqual(GestureEvent.None, g.Feed(Later(Up(classic ? 0 : 1, p + new Vector2(40, 0)), 0.6f), true, false));
+                down.OnEnemy = false;
+                Assert.AreEqual(GestureEvent.Pending, g.Feed(down, true, false), "on the ground or the player's own units it can start");
+            }
+        }
+
+        [Test]
+        public void ARightPressDuringABoxDragIsLeftToTheBox()
+        {
+            var p = new Vector2(400, 300);
+            foreach (bool classic in new[] { false, true })
+            {
+                var g = new FormationGesture { Classic = classic };
+                var right = Down(1, p);
+                right.LeftHeld = true;
+                Assert.AreEqual(GestureEvent.None, g.Feed(right, true, false), $"classic {classic}");
+                Assert.AreEqual(GestureState.Idle, g.State);
+            }
         }
 
         [Test]

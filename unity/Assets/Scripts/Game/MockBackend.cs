@@ -247,6 +247,7 @@ namespace OpenKingdomsUnity.Game
             economy.Clear();
             chunks.Clear();
             libraryChunk.Clear();
+            ForgetFormations();
             Terrain = null;
             Tick = 0;
             Status = GameStatus.Idle;

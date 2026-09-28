@@ -75,7 +75,7 @@ namespace OpenKingdomsUnity.Tests
                 frame.RightHeld = false;
                 frame.RightUp = true;
                 yield return null;
-                Assert.AreEqual(256, mock.LastFormation.Accepted);
+                Assert.AreEqual(256, mock.FormationCalls.Sum(k => k.Accepted), "every unit took its order");
             }
             finally { Object.Destroy(root.gameObject); }
         }

@@ -126,6 +126,23 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AFlyerKeepsAFlyersPaceAndEndGameForgetsTheOrders()
+        {
+            var b = Loaded();
+            var flyer = Own(b, MockBackend.Role.Flyer)[0];
+            var knight = Own(b, MockBackend.Role.Knight)[0];
+            Assert.IsTrue(b.MoveFormation(new[] { flyer }, new[] { Flat(Unit(b, flyer).Position) + new Vector2(0, 10) }, 0f, true, false));
+            Assert.AreEqual(MockBackend.FlyerSpeed, b.PaceOf(flyer));
+            Assert.IsTrue(b.MoveFormation(new[] { knight }, new[] { Flat(Unit(b, knight).Position) + new Vector2(0, 10) }, 0f, true, true));
+            Assert.AreEqual(2, b.FormationCalls.Count);
+            b.EndGame();
+            Assert.AreEqual(0, b.FormationCalls.Count);
+            Assert.IsNull(b.LastFormation);
+            Assert.IsNull(b.PaceOf(flyer));
+            Assert.AreEqual(0, b.QueuedLegs(knight));
+        }
+
+        [Test]
         public void CategoriesReadLikeTheGames()
         {
             var b = new MockBackend();

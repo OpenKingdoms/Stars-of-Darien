@@ -20,8 +20,10 @@ namespace OpenKingdomsUnity.Game
         public bool ClassicControls = true;
         // The pointer's scale, 0 to fit the screen, else 1 to 4 times.
         public int CursorScale = 0;
-        // Formation drags: the group keeps one pace, the classic scheme's
-        // right drag makes one, which way it faces, and the last shape used.
+        // Formation drags: each role block keeps to its slowest, the classic
+        // scheme's held right drag makes one, which way it faces, and the
+        // last shape used (written only by SaveFormation, so a copy loaded
+        // before a drag cannot put an older shape back).
         public bool FormationPace = true;
         public bool ClassicRightDrag = true;
         public FormationFacing FacingRule = FormationFacing.ByDrag;
@@ -64,7 +66,6 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.SetInt(Prefix + "formationpace", FormationPace ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "rightdrag", ClassicRightDrag ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "facing", (int)FacingRule);
-            PlayerPrefs.SetInt(Prefix + "formation", (int)Formation);
             PlayerPrefs.Save();
         }
 

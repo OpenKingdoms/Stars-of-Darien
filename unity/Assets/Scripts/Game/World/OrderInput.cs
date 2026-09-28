@@ -174,6 +174,8 @@ namespace OpenKingdomsUnity.Game.World
             PointerOnGround = onGround;
             PointerAt = at;
             PointerUnit = overUi ? -1 : Pick(cam, m, units, count, null);
+            // A press on an enemy stays an attack, never a formation.
+            if ((p.LeftDown || p.RightDown) && !overUi) p.OnEnemy = EnemyUnder(cam, m, units, count);
 
             bool armedHasMouse = ArmedAction != null && UpdateArmedAction(cam, m, overUi, onGround, at, units, count);
             if (Formation.Update(cam, p, onGround, at, armedHasMouse) || armedHasMouse) return;
@@ -415,6 +417,14 @@ namespace OpenKingdomsUnity.Game.World
         {
             var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
             return cam == null ? -1 : Pick(cam, screen, world.Entities.Units, world.Entities.UnitCount, null);
+        }
+
+        bool EnemyUnder(Camera cam, Vector3 m, UnitState[] units, int count)
+        {
+            int h = Pick(cam, m, units, count, false);
+            for (int i = 0; h >= 0 && i < count; i++)
+                if (units[i].Handle == h) return !backend.Allied(units[i].Player, backend.LocalPlayer);
+            return false;
         }
 
         int Pick(Camera cam, Vector3 m, UnitState[] units, int count, bool? own)

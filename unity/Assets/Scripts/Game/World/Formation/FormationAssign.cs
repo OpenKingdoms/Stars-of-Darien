@@ -1,7 +1,9 @@
 // FormationAssign.cs - which unit takes which slot. Roles decide the slots
 // a unit may take, and within a role group units are matched to slots to
-// keep paths short and uncrossed: the Hungarian algorithm on straight-line
-// distance up to 64 units, a sort by projection above that. Pure.
+// keep paths short: the Hungarian algorithm on straight-line distance up to
+// 64 units, whose paths never cross, and above that a sort by projection,
+// whose paths stay uncrossed within a rank but may cross between ranks.
+// A slot with a class takes only members of that class. Pure.
 using System;
 using UnityEngine;
 
@@ -15,6 +17,7 @@ namespace OpenKingdomsUnity.Game.World
         const double TieWeight = 1e-9;
 
         int[] slots = new int[64], members = new int[64], work = new int[64], tmp = new int[64], tie = new int[64];
+        readonly int[] classes = new int[40];
         float[] key = new float[64];
         double[] cost = new double[65 * 65], u = new double[65], v = new double[65], minv = new double[65];
         int[] p = new int[65], way = new int[65];
@@ -28,13 +31,24 @@ namespace OpenKingdomsUnity.Game.World
             for (int r = 0; r < 6; r++)
             {
                 var role = (FormationRole)r;
-                int ns = 0, nm = 0;
-                for (int i = 0; i < n; i++) if (l.Slots[i].Role == role) slots[ns++] = i;
-                for (int i = 0; i < n; i++) if (l.Members[i].Kind.Role == role) members[nm++] = i;
-                int c = Mathf.Min(ns, nm);
-                if (c == 0) continue;
-                if (c <= FormationTuning.HungarianMax) Hungarian(l, c);
-                else Projection(l, c);
+                int nc = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (l.Slots[i].Role != role) continue;
+                    int cls = l.Slots[i].Class, j = 0;
+                    while (j < nc && classes[j] != cls) j++;
+                    if (j == nc && nc < classes.Length) classes[nc++] = cls;
+                }
+                for (int ci = 0; ci < nc; ci++)
+                {
+                    int cls = classes[ci], ns = 0, nm = 0;
+                    for (int i = 0; i < n; i++) if (l.Slots[i].Role == role && l.Slots[i].Class == cls) slots[ns++] = i;
+                    for (int i = 0; i < n; i++) if (l.Members[i].Kind.Role == role && l.Classes[i] == cls) members[nm++] = i;
+                    int c = Mathf.Min(ns, nm);
+                    if (c == 0) continue;
+                    if (c <= FormationTuning.HungarianMax) Hungarian(l, c);
+                    else Projection(l, c);
+                }
             }
         }
 

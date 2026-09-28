@@ -1,7 +1,9 @@
 // FormationPlayTests.cs - the formation drag in a running game on the mock,
 // driven by synthetic pointer frames: a drag previews a slot per unit and
-// the release marches them into it, Shift queues, a short press is still a
-// click in both schemes, and a plain left drag is left to the box select.
+// the release marches each role block into it at its own pace, Shift
+// queues, a short press is still a click in both schemes, a press on an
+// enemy still attacks, a plain left drag is left to the box select, and a
+// flyer forms in the air.
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -48,6 +50,7 @@ namespace OpenKingdomsUnity.Tests
             f.Source = () =>
             {
                 var r = frame;
+                r.Seconds = Time.unscaledTime;
                 frame.LeftDown = frame.RightDown = frame.LeftUp = frame.RightUp = false;
                 frame.TabDown = frame.FDown = frame.GDown = frame.EscapeDown = false;
                 return r;
@@ -137,6 +140,9 @@ namespace OpenKingdomsUnity.Tests
             return (k, a);
         }
 
+        // The calls sent since a count of them was taken.
+        MockBackend.FormationCall[] CallsSince(int count) => mock.FormationCalls.Skip(count).ToArray();
+
         [UnityTest]
         public IEnumerator ADragPreviewsASlotPerUnitAndTheyMarchIntoIt()
         {
@@ -168,28 +174,37 @@ namespace OpenKingdomsUnity.Tests
 
             yield return Release(1);
             Assert.IsFalse(f.Busy);
-            var sent = mock.LastFormation;
-            Assert.IsNotNull(sent, "the release sends the order");
-            Assert.AreEqual(12, sent.Accepted);
-            Assert.AreEqual(0f, Mathf.DeltaAngle(sent.Heading.Value, 0f), 0.5f, "dragged left to right, the line faces away from the camera");
-            Assert.IsTrue(sent.GroupSpeed);
-            Assert.IsFalse(sent.Queue);
-            for (int i = 0; i < 12; i++) Assert.AreEqual(shown.First(s => s.Handle == sent.Units[i]).World, sent.Targets[i], "what the preview showed is what is sent");
+            var calls = CallsSince(0);
+            Assert.AreEqual(2, calls.Length, "the release sends one order per role block");
+            CollectionAssert.AreEquivalent(knights, calls[0].Units, "the knights, who are the melee");
+            CollectionAssert.AreEquivalent(archers, calls[1].Units, "then the archers");
+            Assert.AreEqual(12, calls.Sum(c => c.Accepted));
+            foreach (var sent in calls)
+            {
+                Assert.AreEqual(0f, Mathf.DeltaAngle(sent.Heading.Value, 0f), 0.5f, "dragged left to right, the line faces away from the camera");
+                Assert.IsTrue(sent.GroupSpeed);
+                Assert.IsFalse(sent.Queue);
+                for (int i = 0; i < sent.Units.Length; i++) Assert.AreEqual(shown.First(s => s.Handle == sent.Units[i]).World, sent.Targets[i], "what the preview showed is what is sent");
+            }
+            Assert.AreEqual(MockBackend.KnightSpeed, mock.PaceOf(knights[0]), "the knights keep their own block's pace");
+            Assert.AreEqual(MockBackend.FootSpeed, mock.PaceOf(archers[0]), "and the archers theirs");
 
             var (knightStep, archerStep) = March(knights, archers, 30 * 20);
-            Assert.LessOrEqual(knightStep, archerStep + 1e-4f, "no knight outpaced the archers");
-            var face = FormationPlanner.DirOf(sent.Heading.Value);
+            Assert.LessOrEqual(knightStep, MockBackend.KnightSpeed / MockBackend.Tps + 1e-4f);
+            Assert.LessOrEqual(archerStep, MockBackend.FootSpeed / MockBackend.Tps + 1e-4f);
+            var face = FormationPlanner.DirOf(calls[0].Heading.Value);
             float rearKnight = float.MaxValue, frontArcher = float.MinValue;
-            for (int i = 0; i < sent.Units.Length; i++)
-            {
-                var u = UnitOf(sent.Units[i]);
-                var at = new Vector2(u.Position.x, u.Position.z);
-                Assert.Less((at - sent.Targets[i]).magnitude, 0.5f, $"unit {u.Handle} stands in its slot");
-                Assert.Less(Mathf.Abs(Mathf.DeltaAngle(u.Heading, sent.Heading.Value)), 10f, $"unit {u.Handle} faces the formation's way");
-                float depth = Vector2.Dot(at, face);
-                if (knights.Contains(u.Handle)) rearKnight = Mathf.Min(rearKnight, depth);
-                else frontArcher = Mathf.Max(frontArcher, depth);
-            }
+            foreach (var sent in calls)
+                for (int i = 0; i < sent.Units.Length; i++)
+                {
+                    var u = UnitOf(sent.Units[i]);
+                    var at = new Vector2(u.Position.x, u.Position.z);
+                    Assert.Less((at - sent.Targets[i]).magnitude, 0.5f, $"unit {u.Handle} stands in its slot");
+                    Assert.Less(Mathf.Abs(Mathf.DeltaAngle(u.Heading, sent.Heading.Value)), 10f, $"unit {u.Handle} faces the formation's way");
+                    float depth = Vector2.Dot(at, face);
+                    if (knights.Contains(u.Handle)) rearKnight = Mathf.Min(rearKnight, depth);
+                    else frontArcher = Mathf.Max(frontArcher, depth);
+                }
             Assert.Less(frontArcher, rearKnight, "every archer stands behind every knight");
         }
 
@@ -420,13 +435,94 @@ namespace OpenKingdomsUnity.Tests
             for (int i = 0; i < 5; i++) yield return null;
             yield return Press(1, a);
             yield return DragTo(a, b);
-            Assert.IsTrue(root.Orders.Formation.Live, "the classic right drag makes a formation");
+            // The classic right button draws only once held past a flick.
+            yield return new WaitForSecondsRealtime(FormationTuning.ClassicRightHoldSeconds + 0.05f);
+            yield return null;
+            Assert.IsTrue(root.Orders.Formation.Live, "held, the classic right drag makes a formation");
             root.BattleKey(KeyCode.Escape);
             Assert.IsFalse(root.Orders.Formation.Busy, "Escape aborts the drag");
             Assert.AreEqual(4, mock.ReadSelection(new int[8]), "and only the drag");
             yield return Release(1);
             Assert.IsNull(mock.LastFormation);
             Assert.AreEqual(4, mock.ReadSelection(new int[8]), "the release after it does nothing");
+        }
+
+        [UnityTest]
+        public IEnumerator APressOnAnEnemyStillAttacks()
+        {
+            yield return Begin(false);
+            var knights = Own(MockBackend.Role.Knight, 4);
+            Select(knights);
+            var enemy = Units().First(u => !mock.Allied(u.Player, mock.LocalPlayer) && mock.RoleOf(u.Def) == MockBackend.Role.Lodge);
+            var at = new Vector2(enemy.Position.x, enemy.Position.z);
+            Look(at);
+            for (int i = 0; i < 5; i++) yield return null;
+            Assert.AreEqual(enemy.Handle, root.Orders.UnitAt(ScreenOf(at)), "the press lands on the enemy");
+            yield return Press(1, at);
+            Assert.AreEqual(GestureState.Idle, root.Orders.Formation.Gesture.State, "no formation starts on an enemy");
+            frame.Screen += new Vector2(40, 0);
+            yield return null;
+            yield return Release(1);
+            Assert.AreEqual(0, mock.FormationCalls.Count, "dragged 40 pixels it sends no formation");
+            foreach (var h in knights)
+            {
+                var o = mock.ReadOrder(h);
+                Assert.AreEqual(OrderKind.Attack, o.Kind, $"knight {h} attacks");
+                Assert.AreEqual(enemy.Handle, o.TargetUnit);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ARightPressDuringABoxDragKeepsTheBox()
+        {
+            yield return Begin(false);
+            var knights = Own(MockBackend.Role.Knight, 3);
+            var archer = Own(MockBackend.Role.Archer, 1);
+            Select(archer);
+            var k0 = UnitOf(knights[0]).Position;
+            Look(new Vector2(k0.x, k0.z));
+            for (int i = 0; i < 5; i++) yield return null;
+            var box = BoxAround(knights, 30f);
+            yield return LeftDragOnScreen(box.min, box.max, false);
+            frame.RightDown = frame.RightHeld = true;
+            yield return null;
+            Assert.AreEqual(GestureState.Idle, root.Orders.Formation.Gesture.State, "the right press does not take the mouse from the box");
+            // The left comes up first, while the right is still held.
+            yield return Release(0);
+            CollectionAssert.IsSubsetOf(knights, Selection(), "the box still selects");
+            frame.RightHeld = false;
+            frame.RightUp = true;
+            yield return null;
+            Assert.AreEqual(0, mock.FormationCalls.Count);
+        }
+
+        [UnityTest]
+        public IEnumerator AFlyerFormsInTheAirAtItsOwnPace()
+        {
+            yield return Begin(false);
+            var knights = Own(MockBackend.Role.Knight, 4);
+            var flyer = Own(MockBackend.Role.Flyer, 1);
+            Assert.AreEqual(1, flyer.Length, "the mock gives every side a flyer");
+            Select(knights.Concat(flyer).ToArray());
+            var c = UnitOf(knights[0]).Position;
+            var a = new Vector2(c.x - 6, c.z + 10);
+            var b = new Vector2(c.x + 6, c.z + 10);
+            Look(new Vector2(c.x, c.z + 8));
+            for (int i = 0; i < 5; i++) yield return null;
+            yield return Press(1, a);
+            yield return DragTo(a, b);
+            var f = root.Orders.Formation;
+            Assert.IsTrue(f.Live);
+            Assert.AreEqual(4, f.Layers[(int)FormationLayer.Ground].Count);
+            Assert.AreEqual(1, f.Layers[(int)FormationLayer.Air].Count, "the flyer is in the air layer");
+            Assert.AreEqual(FormationMover.Flyer, f.KindOf(UnitOf(flyer[0]).Def).Mover);
+            yield return Release(1);
+            var toAir = mock.FormationCalls.Single(k => k.Units.Contains(flyer[0]));
+            CollectionAssert.AreEqual(flyer, toAir.Units, "the flyer gets its own order");
+            Assert.AreEqual(MockBackend.FlyerSpeed, mock.PaceOf(flyer[0]), "at a flyer's speed, not a walker's");
+            March(knights, flyer, 30 * 12);
+            var u = UnitOf(flyer[0]);
+            Assert.Less((new Vector2(u.Position.x, u.Position.z) - toAir.Targets[0]).magnitude, 0.5f, "it flies to its slot");
         }
     }
 }

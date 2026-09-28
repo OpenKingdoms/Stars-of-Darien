@@ -79,6 +79,7 @@ namespace OpenKingdomsUnity.Game.World
             Res.Ensure();
             for (int s = 0; s < l.Count; s++)
             {
+                if (!FormationInput.IsSent(l, s)) continue;
                 var m = MarkerFor(l, s, true);
                 m.Since = now;
                 queued.Add(m);
@@ -89,10 +90,15 @@ namespace OpenKingdomsUnity.Game.World
         // has died, or two minutes have passed.
         public void Prune(FormationInput input, float now)
         {
-            queued.RemoveAll(q =>
-                now - q.Since > FormationTuning.QueuedSeconds
-                || !input.UnitAt(q.Unit, out var p)
-                || new Vector2(p.x - q.At.x, p.z - q.At.z).magnitude <= FormationTuning.QueuedArrive);
+            int kept = 0;
+            for (int i = 0; i < queued.Count; i++)
+            {
+                var q = queued[i];
+                if (now - q.Since > FormationTuning.QueuedSeconds || !input.UnitAt(q.Unit, out var p)
+                    || new Vector2(p.x - q.At.x, p.z - q.At.z).magnitude <= FormationTuning.QueuedArrive) continue;
+                queued[kept++] = q;
+            }
+            queued.RemoveRange(kept, queued.Count - kept);
         }
 
         Marker MarkerFor(FormationLayout l, int s, bool isQueued)
@@ -113,7 +119,7 @@ namespace OpenKingdomsUnity.Game.World
             var m = new Marker
             {
                 Base = Matrix4x4.TRS(at, turn, new Vector3(size, 1, size)),
-                Icon = Matrix4x4.TRS(at + normal * 0.01f, turn, new Vector3(size * 0.6f, 1, size * 0.6f)),
+                Icon = Matrix4x4.TRS(at + normal * 0.01f, turn, new Vector3(size * 0.8f, 1, size * 0.8f)),
                 Tick = Matrix4x4.TRS(at + normal * 0.01f, turn, new Vector3(size, 1, size)),
                 Mark = Matrix4x4.TRS(at + normal * 0.01f + turn * new Vector3(size * 0.32f, 0, -size * 0.32f), turn, new Vector3(size * 0.3f, 1, size * 0.3f)),
                 Stem = Matrix4x4.TRS(ground, Quaternion.Euler(0, l.Heading, 0), new Vector3(1, 0.5f, 1)),
@@ -196,15 +202,23 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // The line as drawn, lying on the ground, solid where the formation
-        // stands and faded past its widest.
+        // stands and faded past its widest. Too short to set a direction,
+        // it is not drawn at all.
         void AddLine(FormationInput input)
         {
             var a = input.LineFrom;
             var b = input.LineTo;
             float len = (b - a).magnitude;
-            if (len < 0.05f) return;
-            float used = 0;
-            foreach (var l in input.Layers) if (l.Count > 0) used = Mathf.Max(used, l.Fixed ? len : l.Frontage);
+            float from = float.MaxValue, to = float.MinValue;
+            foreach (var l in input.Layers)
+            {
+                if (l.Count == 0 || !l.Drawn) continue;
+                float along = Vector2.Dot(l.Origin - l.A, l.Dir);
+                float half = l.Fixed ? len : l.Frontage * 0.5f;
+                from = Mathf.Min(from, along - half);
+                to = Mathf.Max(to, along + half);
+            }
+            if (from > to) return;
             int n = Mathf.Clamp(Mathf.CeilToInt(len), 1, 64);
             var prev = new Vector3(a.x, Height(a.x, a.y) + 0.09f, a.y);
             for (int i = 1; i <= n; i++)
@@ -212,7 +226,8 @@ namespace OpenKingdomsUnity.Game.World
                 float t = (float)i / n;
                 var q = Vector2.Lerp(a, b, t);
                 var p = new Vector3(q.x, Height(q.x, q.y) + 0.09f, q.y);
-                bool solid = (t - 0.5f / n) * len <= used + 1e-3f;
+                float mid = (t - 0.5f / n) * len;
+                bool solid = mid >= from - 1e-3f && mid <= to + 1e-3f;
                 draws.Add(Res.Flat, 0, Res.Paints[solid ? Res.LineUsed : Res.LineFaded], Segment(prev, p, 0.18f));
                 prev = p;
             }

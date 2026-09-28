@@ -1,9 +1,10 @@
 // FormationSnap.cs - moves slots off ground their units cannot stand on.
 // Slots go in exposure order, so the front keeps the best ground. A slot
 // that fits stays, else it takes the nearest free spot that fits, ring by
-// ring out to 16 cells, preferring spots behind it. Each placed slot claims
-// its footprint's cells, and a slot with nowhere to go is sent as drawn.
-// Pure: the ground is behind an interface.
+// ring out to 16 cells, preferring spots behind it. A spot counts only in
+// the region its unit can reach, so a line at a river stays on its bank.
+// Each placed slot claims its footprint's cells, and a slot with nowhere
+// to go is sent as drawn. Pure: the ground is behind an interface.
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
@@ -15,6 +16,46 @@ namespace OpenKingdomsUnity.Game.World
         int Width { get; }
         int Height { get; }
         bool CanStand(FormationMover mover, int x, int y);
+        // The connected stretch of ground (or water) a cell is in for a
+        // mover, -1 where it cannot stand. A unit reaches only its own.
+        int Region(FormationMover mover, int x, int y);
+    }
+
+    public static class FormationRegions
+    {
+        // Labels each cell whose mask has the bit with its 4-connected
+        // region, from 0, and the rest -1. Returns the number of regions.
+        public static int Label(int w, int h, byte[] mask, byte bit, int[] ids)
+        {
+            int n = w * h;
+            for (int i = 0; i < n; i++) ids[i] = -1;
+            var stack = new int[n];
+            int next = 0;
+            for (int start = 0; start < n; start++)
+            {
+                if (ids[start] >= 0 || (mask[start] & bit) == 0) continue;
+                int top = 0;
+                stack[top++] = start;
+                ids[start] = next;
+                while (top > 0)
+                {
+                    int c = stack[--top], x = c % w;
+                    if (x > 0 && Open(c - 1)) stack[top++] = c - 1;
+                    if (x < w - 1 && Open(c + 1)) stack[top++] = c + 1;
+                    if (c >= w && Open(c - w)) stack[top++] = c - w;
+                    if (c + w < n && Open(c + w)) stack[top++] = c + w;
+                }
+                next++;
+            }
+            return next;
+
+            bool Open(int c)
+            {
+                if (ids[c] >= 0 || (mask[c] & bit) == 0) return false;
+                ids[c] = next;
+                return true;
+            }
+        }
     }
 
     public sealed class FormationSnap
@@ -27,7 +68,9 @@ namespace OpenKingdomsUnity.Game.World
         // budget and the slots left over are sent as drawn.
         public int Tried { get; private set; }
 
-        public void Snap(FormationLayout l, IFormationGround ground)
+        // keepClaims: the cells the last Snap placed stay taken, so the water
+        // layer's boats and the ground layer's hovers never share a cell.
+        public void Snap(FormationLayout l, IFormationGround ground, bool keepClaims = false)
         {
             int n = l.Count;
             if (ground == null || ground.Width <= 0 || ground.Height <= 0)
@@ -36,10 +79,11 @@ namespace OpenKingdomsUnity.Game.World
                 return;
             }
             int w = ground.Width, h = ground.Height;
-            if (claimed.Length < w * h) { claimed = new int[w * h]; stamp = 0; }
-            if (++stamp == int.MaxValue) { System.Array.Clear(claimed, 0, claimed.Length); stamp = 1; }
+            if (claimed.Length < w * h) { claimed = new int[w * h]; stamp = 0; keepClaims = false; }
+            if (!keepClaims || stamp == 0) { if (++stamp == int.MaxValue) { System.Array.Clear(claimed, 0, claimed.Length); stamp = 1; } }
             budget = FormationTuning.SnapBudget;
             Tried = 0;
+            var middle = l.A + l.Dir * (l.Length * 0.5f);
 
             for (int o = 0; o < n; o++)
             {
@@ -52,6 +96,9 @@ namespace OpenKingdomsUnity.Game.World
                 var want = new Vector2(Mathf.Clamp(s.Wanted.x, half, Mathf.Max(half, w - half)), Mathf.Clamp(s.Wanted.y, -Mathf.Max(half, h - half), -half));
                 s.Wanted = want;
                 float gx = want.x, gy = -want.y;
+                // Where its unit stands, else where the line was drawn.
+                region = RegionNear(ground, m.Kind.Mover, m.Position);
+                if (region < 0) region = RegionNear(ground, m.Kind.Mover, middle);
                 if (Fits(ground, m.Kind.Mover, fp, gx, gy))
                 {
                     Claim(w, fp, gx, gy);
@@ -89,7 +136,7 @@ namespace OpenKingdomsUnity.Game.World
                     float ahead = dx * face.x - dy * face.y;
                     float score = (dx * dx + dy * dy) * 4f + (ahead < -1e-4f ? 0f : ahead > 1e-4f ? 2f : 1f);
                     if (score >= best) continue;
-                    if (budget <= 0) return false;
+                    if (budget <= 0) return best < float.MaxValue;
                     budget--;
                     Tried++;
                     if (!Fits(g, mover, fp, gx + dx, gy + dy)) continue;
@@ -117,6 +164,27 @@ namespace OpenKingdomsUnity.Game.World
 
         static int First(float centre, int fp) => Mathf.FloorToInt(centre - fp * 0.5f + 0.5f);
 
+        // The region of the cell at a world point, or of one close by when
+        // that cell is not standable (a unit at the water's edge).
+        static int RegionNear(IFormationGround g, FormationMover mover, Vector2 at)
+        {
+            int cx = Mathf.FloorToInt(at.x), cy = Mathf.FloorToInt(-at.y);
+            for (int r = 0; r <= 2; r++)
+                for (int dy = -r; dy <= r; dy++)
+                    for (int dx = -r; dx <= r; dx++)
+                    {
+                        if (Mathf.Max(Mathf.Abs(dx), Mathf.Abs(dy)) != r) continue;
+                        int x = cx + dx, y = cy + dy;
+                        if (x < 0 || y < 0 || x >= g.Width || y >= g.Height) continue;
+                        int id = g.Region(mover, x, y);
+                        if (id >= 0) return id;
+                    }
+            return -1;
+        }
+
+        // The region the slot being placed must stay in, -1 for any.
+        int region;
+
         bool Fits(IFormationGround g, FormationMover mover, int fp, float gx, float gy)
         {
             int x0 = First(gx, fp), y0 = First(gy, fp), w = g.Width, h = g.Height;
@@ -124,7 +192,7 @@ namespace OpenKingdomsUnity.Game.World
             for (int y = y0; y < y0 + fp; y++)
                 for (int x = x0; x < x0 + fp; x++)
                     if (claimed[y * w + x] == stamp || !g.CanStand(mover, x, y)) return false;
-            return true;
+            return region < 0 || g.Region(mover, x0, y0) == region;
         }
 
         void Claim(int w, int fp, float gx, float gy)

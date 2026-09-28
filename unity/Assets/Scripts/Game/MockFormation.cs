@@ -30,18 +30,25 @@ namespace OpenKingdomsUnity.Game
         readonly Dictionary<int, float> holdHeading = new Dictionary<int, float>();
         readonly Dictionary<int, Queue<Leg>> legs = new Dictionary<int, Queue<Leg>>();
 
-        // The last MoveFormation, for tests.
+        // Every MoveFormation this game and the last one, for tests.
+        public readonly List<FormationCall> FormationCalls = new List<FormationCall>();
         public FormationCall LastFormation { get; private set; }
 
         public const float KnightSpeed = 3.2f, FootSpeed = 2.4f;
 
-        float MockSpeed(Unit u) => RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? KnightSpeed : FootSpeed;
+        float MockSpeed(Unit u)
+        {
+            var d = unitDefs[u.Def];
+            if (d.CanFly) return d.MaxSpeed;
+            return RoleOf(u.Def) == Role.Knight || RoleOf(u.Def) == Role.Wagon ? KnightSpeed : FootSpeed;
+        }
 
         public bool MoveFormation(int[] handles, Vector2[] targets, float? heading, bool groupSpeed, bool queue)
         {
             if (Status != GameStatus.Running || handles == null || targets == null || handles.Length != targets.Length) return false;
             var call = new FormationCall { Units = (int[])handles.Clone(), Targets = (Vector2[])targets.Clone(), Heading = heading, GroupSpeed = groupSpeed, Queue = queue };
             LastFormation = call;
+            FormationCalls.Add(call);
             var taken = new List<(Unit u, Vector2 to)>();
             float pace = float.MaxValue;
             for (int i = 0; i < handles.Length; i++)
@@ -74,6 +81,15 @@ namespace OpenKingdomsUnity.Game
             u.Home = leg.To;
             if (leg.Pace > 0) paceCap[u.Handle] = leg.Pace; else paceCap.Remove(u.Handle);
             if (leg.Heading is float h) holdHeading[u.Handle] = h; else holdHeading.Remove(u.Handle);
+        }
+
+        void ForgetFormations()
+        {
+            paceCap.Clear();
+            holdHeading.Clear();
+            legs.Clear();
+            FormationCalls.Clear();
+            LastFormation = null;
         }
 
         // Another order: the pace, the held heading and the queue go.

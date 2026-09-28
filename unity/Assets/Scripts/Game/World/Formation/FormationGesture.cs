@@ -1,9 +1,11 @@
 // FormationGesture.cs - the press, drag and release that draws a formation,
 // as a state machine fed one PointerFrame a frame. A press that can start
 // one waits. Released before the threshold it is a click, which the old
-// path carries out. Past it the drag is live until the release sends the
-// order, or Escape, the other button, lost focus or a missed release
-// aborts it. Pure, so a test feeds it frames by hand.
+// path carries out. The classic right button, a cancel, must also be held
+// a moment first, so a flick while the hand moves on stays a cancel. Past
+// it the drag is live until the release sends the order, or Escape, the
+// other button, lost focus or a missed release aborts it. A press on an
+// enemy stays the attack it always was. Pure, so a test feeds it frames.
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
@@ -17,8 +19,10 @@ namespace OpenKingdomsUnity.Game.World
         public bool TabDown, FDown, GDown, EscapeDown;
         public bool Focused;
         public bool OverUi, OnGround;
+        public bool OnEnemy;            // an enemy unit is under the pointer
         public Vector3 Ground;
         public float Dpi;
+        public float Seconds;           // unscaled time of the frame
 
         public bool Down(int b) => b == 0 ? LeftDown : RightDown;
         public bool Held(int b) => b == 0 ? LeftHeld : RightHeld;
@@ -64,6 +68,9 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     int b = StartButton(f);
                     if (b < 0 || !canStart || armed || f.OverUi || !f.OnGround) return GestureEvent.None;
+                    // Not while the other button drags a box, nor on an enemy
+                    // with an order button: that press attacks.
+                    if (f.Held(1 - b) || f.OnEnemy && !(Classic && b == 1)) return GestureEvent.None;
                     State = GestureState.Pending;
                     Button = b;
                     Press = f;
@@ -77,6 +84,7 @@ namespace OpenKingdomsUnity.Game.World
                     if (f.Up(Button)) { State = GestureState.Idle; return GestureEvent.Click; }
                     if (!f.Held(Button)) return Abort();
                     if ((f.Screen - Press.Screen).magnitude < Threshold(Button, f.Dpi)) return GestureEvent.Pending;
+                    if (Classic && Button == 1 && f.Seconds - Press.Seconds < FormationTuning.ClassicRightHoldSeconds) return GestureEvent.Pending;
                     State = GestureState.Live;
                     Keys(f);
                     return GestureEvent.Started;

@@ -8,14 +8,16 @@ namespace OpenKingdomsUnity.Game.World
 {
     public sealed class InstancedDraws
     {
-        struct Key
+        // Equatable, so a dictionary lookup does not box it.
+        struct Key : System.IEquatable<Key>
         {
             public Mesh Mesh;
             public int Submesh;
             public Material Material;
 
             public override int GetHashCode() => (Mesh.GetHashCode() * 397 ^ Submesh) * 397 ^ Material.GetHashCode();
-            public override bool Equals(object o) => o is Key k && k.Mesh == Mesh && k.Submesh == Submesh && k.Material == Material;
+            public bool Equals(Key k) => k.Mesh == Mesh && k.Submesh == Submesh && k.Material == Material;
+            public override bool Equals(object o) => o is Key k && Equals(k);
         }
 
         readonly Dictionary<Key, List<Matrix4x4>> groups = new Dictionary<Key, List<Matrix4x4>>();
