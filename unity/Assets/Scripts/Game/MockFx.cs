@@ -87,7 +87,11 @@ namespace OpenKingdomsUnity.Game
             W("MOCK FROST SPELL", FxDraw.Picture, "iceburst", "iceballexp", FxMotion.Straight, 14f, FxLight.Small, nimbus: true),
         };
 
-        public static FxWeapon FxWeaponNamed(string name) => System.Array.Find(FxWeapons, w => w != null && w.Name == name);
+        public static FxWeapon FxWeaponNamed(string name)
+        {
+            foreach (var w in FxWeapons) if (w != null && w.Name == name) return w;
+            return null;
+        }
 
         // The reference stage's rows: each shooter, its weapon and how far off its target stands (engine pixels).
         public static readonly Dictionary<string, (int spacing, (string weapon, int dist, bool ground)[] pairs)> FxScenes =
@@ -406,14 +410,17 @@ namespace OpenKingdomsUnity.Game
             if (spec == null) { fxStripIds[name] = -1; return -1; }
             var s = new FxStrip { Spec = spec, Image = MockFxArt.Draw(spec), Frames = new EffectFrame[spec.Frames] };
             int ticks = World.FxLook.FrameTicks(spec.Duration, Tps);
-            float w = spec.W / 16f, h = spec.H / 16f;
             for (int f = 0; f < spec.Frames; f++)
+            {
+                float k = spec.Grows ? Mathf.Lerp(0.2f, 1f, Mathf.Clamp01(f / (spec.Frames * 0.3f))) : 1f;
+                float w = spec.W / 16f * k, h = spec.H / 16f * k;
                 s.Frames[f] = new EffectFrame
                 {
                     Top = spec.AnchorY * h, Bottom = spec.AnchorY * h - h, OffsetX = spec.AnchorX * w, Width = w,
                     UvMin = new Vector2(f / (float)spec.Frames, 0f), UvMax = new Vector2((f + 1) / (float)spec.Frames, 1f),
                     Ticks = ticks, Additive = spec.Additive,
                 };
+            }
             fxStrips.Add(s);
             fxStripIds[name] = fxStrips.Count - 1;
             return fxStrips.Count - 1;
@@ -422,6 +429,33 @@ namespace OpenKingdomsUnity.Game
         public RgbaImage EffectStrip(int strip) => strip >= 0 && strip < fxStrips.Count ? fxStrips[strip].Image : null;
 
         public EffectFrame[] EffectFrames(int strip) => strip >= 0 && strip < fxStrips.Count ? fxStrips[strip].Frames : null;
+
+        // The strips of every weapon the mock fires, and their blasts.
+        public IReadOnlyList<int> WarmEffectStrips()
+        {
+            var ids = new List<int>();
+            foreach (var w in FxWeapons)
+            {
+                if (w == null) continue;
+                foreach (var name in new[] { w.Draw == FxDraw.Model ? null : w.Art, w.Impact })
+                {
+                    int id = FxStripId(name);
+                    if (id >= 0 && !ids.Contains(id)) ids.Add(id);
+                }
+            }
+            return ids;
+        }
+
+        // Shows one picture of the mock's art standing at a point for a
+        // number of ticks, for tests of how art lands on the screen.
+        public bool ShowFx(string art, Vector3 at, int ticks)
+        {
+            int strip = FxStripId(art);
+            if (strip < 0) return false;
+            var b = SpawnBlast(strip, at, loops: true, light: FxLight.None);
+            b.Life = ticks;
+            return true;
+        }
 
         public int ReadEffects(EffectState[] into)
         {

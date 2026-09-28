@@ -90,6 +90,8 @@ namespace OpenKingdomsUnity.Game
         // shows it and how it blends. Null when the backend cannot say, and
         // a frame it does not know yet has Width 0.
         EffectFrame[] EffectFrames(int strip);
+        // The effect strips a game will want, made ready while it loads.
+        IReadOnlyList<int> WarmEffectStrips();
         // A pose of a model outside any game, in model space, for the
         // studio. The animation is one of UnitDef.Animations. Returns the
         // piece count, or 0 when the backend cannot pose it.

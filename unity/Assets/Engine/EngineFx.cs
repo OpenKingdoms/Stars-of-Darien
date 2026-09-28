@@ -11,12 +11,16 @@ namespace OpenKingdomsUnity.Engine
     public sealed class EngineFx
     {
         const float S = EngineSettings.PxToUnits;
-        // The engine's own pace for every picture, ticks a frame.
+        // The engine's pace for an impact picture, ticks a frame, which
+        // dates a blast first seen past its first frame.
         public const int EngineTicksPerFrame = 2;
         // Ticks a new beam waits for its first flames before it is called lightning.
         public const int BreathWait = 1;
         // Blasts kept playing after the engine lets them go, at most.
         public const int MaxKept = 768;
+        // How far a blast drifts from where it began before it counts as a
+        // mover (a ring's sprite, a drop of rain, a flame), world units.
+        public const float MoverDrift = 2f * S;
 
         sealed class StripInfo
         {
@@ -29,7 +33,7 @@ namespace OpenKingdomsUnity.Engine
         sealed class Blast
         {
             public int OutId, Strip, EngineId;
-            public Vector3 At;
+            public Vector3 At, From;
             public uint Born, Seen;
             public bool Moving, Kept;
             public OkxEffect Last;
@@ -47,6 +51,8 @@ namespace OpenKingdomsUnity.Engine
         readonly Dictionary<int, Blast> live = new Dictionary<int, Blast>();
         readonly List<Blast> kept = new List<Blast>();
         readonly Dictionary<int, Flight> flights = new Dictionary<int, Flight>();
+        readonly Stack<Blast> spareBlasts = new Stack<Blast>();
+        readonly Stack<Flight> spareFlights = new Stack<Flight>();
         readonly Dictionary<int, int> pictureStrip = new Dictionary<int, int>();
         readonly List<int> drop = new List<int>();
         readonly List<Vector3> flameSpawns = new List<Vector3>();
@@ -61,7 +67,12 @@ namespace OpenKingdomsUnity.Engine
 
         public void Reset()
         {
-            strips.Clear(); live.Clear(); kept.Clear(); flights.Clear(); pictureStrip.Clear();
+            strips.Clear(); pictureStrip.Clear();
+            foreach (var b in live.Values) Free(b);
+            foreach (var b in kept) Free(b);
+            live.Clear(); kept.Clear();
+            foreach (var f in flights.Values) spareFlights.Push(f);
+            flights.Clear();
             outEffects.Clear(); outShots.Clear();
             nextId = 1;
         }
@@ -88,22 +99,30 @@ namespace OpenKingdomsUnity.Engine
             // Blasts the engine has let go keep playing, and moving ones end with it.
             drop.Clear();
             foreach (var kv in live)
+                if (kv.Value.Seen != tick) drop.Add(kv.Key);
+            foreach (int k in drop)
             {
-                var b = kv.Value;
-                if (b.Seen == tick) continue;
-                drop.Add(kv.Key);
-                if (!b.Moving) Keep(b);
+                var b = live[k];
+                live.Remove(k);
+                if (b.Moving) Free(b);
+                else Keep(b);
             }
-            foreach (int k in drop) live.Remove(k);
             foreach (var b in live.Values) EmitBlast(b);
-            for (int i = kept.Count - 1; i >= 0; i--) if (!EmitBlast(kept[i])) kept.RemoveAt(i);
+            int w = 0;
+            for (int i = 0; i < kept.Count; i++)
+            {
+                var b = kept[i];
+                if (EmitBlast(b)) kept[w++] = b;
+                else Free(b);
+            }
+            kept.RemoveRange(w, kept.Count - w);
 
             for (int i = 0; i < fxCount; i++)
                 if (fx[i].kind == OkEngine.EffectProjectile) EmitPicture(fx[i]);
 
             drop.Clear();
             foreach (var kv in flights) if (kv.Value.Seen < prevTick) drop.Add(kv.Key);
-            foreach (int k in drop) flights.Remove(k);
+            foreach (int k in drop) { spareFlights.Push(flights[k]); flights.Remove(k); }
             for (int i = 0; i < shotCount; i++) EmitShot(shots[i]);
         }
 
@@ -121,7 +140,13 @@ namespace OpenKingdomsUnity.Engine
             return outShots.Count;
         }
 
-        public EffectFrame[] Frames(int strip) => strips.TryGetValue(strip, out var s) ? s.Frames : null;
+        // A strip's frames, known from its size alone when it is retail art.
+        public EffectFrame[] Frames(int strip)
+        {
+            var s = Strip(strip);
+            if (s.N == 0) Count(s, RetailCount(s.W, s.H));
+            return s.Frames;
+        }
 
         public int KeptCount => kept.Count;
 
@@ -142,17 +167,9 @@ namespace OpenKingdomsUnity.Engine
             var s = Strip(e.sprite);
             if (s.N == 0)
             {
-                if (e.frame > 0 && e.u0 > 1e-6f) s.N = Mathf.RoundToInt(e.frame / e.u0);
-                else if (e.frame == 0 && e.u1 >= 0.999f) s.N = 1;
-                else s.N = RetailCount(s.W, s.H);
-                if (s.N > 0)
-                {
-                    s.Known = s.W > 0 && s.W % s.N == 0 && FxLook.KnownArt(s.W / s.N, s.H, s.N, out s.Rule);
-                    if (!s.Known) s.Rule = new FxLook.ArtRule { Additive = false, Duration = FxLook.DefaultDuration };
-                    s.Frames = new EffectFrame[s.N];
-                    int ticks = FxLook.FrameTicks(s.Rule.Duration, tps);
-                    for (int f = 0; f < s.N; f++) s.Frames[f] = new EffectFrame { Ticks = ticks, Additive = s.Rule.Additive };
-                }
+                if (e.frame > 0 && e.u0 > 1e-6f) Count(s, Mathf.RoundToInt(e.frame / e.u0));
+                else if (e.frame == 0 && e.u1 >= 0.999f) Count(s, 1);
+                else Count(s, RetailCount(s.W, s.H));
             }
             if (s.Frames != null && e.frame >= 0 && e.frame < s.N && s.Frames[e.frame].Width <= 0)
             {
@@ -162,6 +179,17 @@ namespace OpenKingdomsUnity.Engine
                 f.UvMin = new Vector2(e.u0, 0f); f.UvMax = new Vector2(e.u1, e.v1);
                 s.Frames[e.frame] = f;
             }
+        }
+
+        void Count(StripInfo s, int n)
+        {
+            if (n <= 0) return;
+            s.N = n;
+            s.Known = s.W > 0 && s.W % n == 0 && FxLook.KnownArt(s.W / n, s.H, n, out s.Rule);
+            if (!s.Known) s.Rule = new FxLook.ArtRule { Additive = false, Duration = FxLook.DefaultDuration };
+            s.Frames = new EffectFrame[n];
+            int ticks = FxLook.FrameTicks(s.Rule.Duration, tps);
+            for (int f = 0; f < n; f++) s.Frames[f] = new EffectFrame { Ticks = ticks, Additive = s.Rule.Additive };
         }
 
         // The one frame count that makes a strip of this size retail art, else 0.
@@ -188,14 +216,18 @@ namespace OpenKingdomsUnity.Engine
                 bool other = b.Strip != e.sprite || (e.frame < b.Last.frame && (!b.Moving || jumped)) || (jumped && e.frame <= 1);
                 if (other)
                 {
-                    if (!b.Moving) Keep(b);
+                    if (b.Moving) Free(b);
+                    else Keep(b);
                     b = null;
                 }
-                else if ((b.At - at).sqrMagnitude > 1e-4f) b.Moving = true;
+                else if ((b.From - at).sqrMagnitude > MoverDrift * MoverDrift) b.Moving = true;
             }
             if (b == null)
             {
-                b = new Blast { OutId = nextId++, Strip = e.sprite, EngineId = e.id, Born = tick - (uint)(Mathf.Max(0, e.frame) * EngineTicksPerFrame) };
+                b = spareBlasts.Count > 0 ? spareBlasts.Pop() : new Blast();
+                b.OutId = nextId++; b.Strip = e.sprite; b.EngineId = e.id;
+                b.Born = tick - (uint)(Mathf.Max(0, e.frame) * EngineTicksPerFrame);
+                b.From = at; b.Moving = false; b.Kept = false;
                 if (nextId == int.MaxValue) nextId = 1;
                 live[e.id] = b;
             }
@@ -210,41 +242,59 @@ namespace OpenKingdomsUnity.Engine
         {
             if (b.Kept) return;
             b.Kept = true;
-            if (kept.Count >= MaxKept) kept.RemoveAt(0);
+            if (kept.Count >= MaxKept) { Free(kept[0]); kept.RemoveAt(0); }
             kept.Add(b);
         }
 
-        // The blast at its own pace. False once it has played out.
+        void Free(Blast b)
+        {
+            b.Kept = false;
+            spareBlasts.Push(b);
+        }
+
+        // A still blast at the original's pace, each frame held for its TAF
+        // time (legacy:255772-255794), played once. A mover keeps the
+        // engine's own frame. False once it has played out.
         bool EmitBlast(Blast b)
         {
             var s = Strip(b.Strip);
             int frame, age = (int)(tick - b.Born);
             float phase = 0f;
-            bool loops = b.Moving;
-            if (s.N > 0)
+            bool fromTable;
+            EffectFrame q;
+            if (b.Moving)
+            {
+                if (b.Kept) return false;
+                frame = b.Last.frame;
+                q = QuadFor(s, ref frame, b.Last, out fromTable);
+                if (!fromTable) frame = b.Last.frame;
+            }
+            else if (s.N > 0)
             {
                 int tpf = TicksPerFrame(s);
                 frame = age / tpf;
                 phase = (age % tpf) / (float)tpf;
-                if (frame >= s.N)
+                if (frame >= s.N) return false;
+                q = QuadFor(s, ref frame, b.Last, out fromTable);
+                if (!fromTable)
                 {
-                    // Played out at the original's pace, whatever the engine still shows.
-                    if (!loops) return false;
-                    frame %= s.N;
+                    if (b.Kept) return true;
+                    frame = b.Last.frame;
+                    phase = 0f;
                 }
             }
             else
             {
                 if (b.Kept) return false;
                 frame = b.Last.frame;
+                q = QuadFor(s, ref frame, b.Last, out fromTable);
+                frame = b.Last.frame;
             }
-            var q = QuadFor(s, ref frame, b.Last, out bool fromTable);
-            if (!fromTable && b.Kept) return true;
             outEffects.Add(new EffectState
             {
                 Id = b.OutId, Strip = b.Strip, IsProjectile = false, Position = b.At,
                 Top = q.Top, Bottom = q.Bottom, OffsetX = q.OffsetX, Width = q.Width, UvMin = q.UvMin, UvMax = q.UvMax,
-                Frame = fromTable ? frame : b.Last.frame, Phase = fromTable ? phase : 0f, Loops = loops,
+                Frame = frame, Phase = phase, Loops = b.Moving,
                 Additive = s.Rule.Additive, Light = FxLight.Auto, Follow = -1, Struck = -1, Age = age,
             });
             return true;
@@ -273,7 +323,12 @@ namespace OpenKingdomsUnity.Engine
         Flight FlightOf(int slot, Vector3 at)
         {
             if (!flights.TryGetValue(slot, out var f) || (f.At - at).sqrMagnitude > 64f)
-                flights[slot] = f = new Flight { Born = tick };
+            {
+                if (f == null) f = spareFlights.Count > 0 ? spareFlights.Pop() : new Flight();
+                f.Born = tick;
+                f.Breath = false;
+                flights[slot] = f;
+            }
             f.At = at;
             f.Seen = tick;
             return f;
@@ -289,6 +344,7 @@ namespace OpenKingdomsUnity.Engine
             bool fromTable = false;
             if (s.N > 0)
             {
+                // A shot's picture loops at its TAF pace (legacy:247579-247581).
                 int tpf = TicksPerFrame(s);
                 frame = (age / tpf) % s.N;
                 phase = (age % tpf) / (float)tpf;

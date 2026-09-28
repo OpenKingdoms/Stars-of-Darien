@@ -13,6 +13,7 @@ namespace OpenKingdomsUnity.Game.World
             public float Width;     // world units at the head
             public float Seconds;   // how long a point lasts
             public float Glow;      // brightness, past 1 to bloom
+            public float Length;    // the longest it grows, world units, 0 for no limit
             public bool Additive;
         }
 
@@ -25,14 +26,22 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         readonly Dictionary<int, Trail> trails = new Dictionary<int, Trail>();
+        readonly Stack<Trail> spare = new Stack<Trail>();
         readonly List<int> gone = new List<int>();
         public int Count => trails.Count;
+        // The longest trail the last Draw drew, world units.
+        public float Longest { get; private set; }
 
         // A shot at its latest point. A shot far from where its id last was
         // is a new one in an old slot, and starts a new trail.
         public void Track(int id, Vector3 at, Style style, float now)
         {
-            if (!trails.TryGetValue(id, out var t)) trails[id] = t = new Trail();
+            if (!trails.TryGetValue(id, out var t))
+            {
+                t = spare.Count > 0 ? spare.Pop() : new Trail();
+                t.Points.Clear(); t.Times.Clear();
+                trails[id] = t;
+            }
             int n = t.Points.Count;
             if (n > 0 && ((t.Points[n - 1] - at).sqrMagnitude > 36f || now < t.Times[n - 1])) { t.Points.Clear(); t.Times.Clear(); n = 0; }
             t.Style = style;
@@ -46,18 +55,35 @@ namespace OpenKingdomsUnity.Game.World
         public void Draw(FxMesh glow, FxMesh smoke, Vector3 eye, float now)
         {
             gone.Clear();
+            Longest = 0f;
             foreach (var kv in trails)
             {
                 var t = kv.Value;
                 float life = Mathf.Max(0.02f, t.Style.Seconds);
                 int drop = 0;
                 while (drop < t.Times.Count && now - t.Times[drop] > life) drop++;
+                if (t.Style.Length > 0f) drop = Mathf.Max(drop, Beyond(t, t.Style.Length));
                 if (drop > 0) { t.Points.RemoveRange(0, drop); t.Times.RemoveRange(0, drop); }
                 if (t.Points.Count == 0 || now - t.Seen > life) { gone.Add(kv.Key); continue; }
                 if (t.Points.Count < 2) continue;
+                float run = 0f;
+                for (int i = 1; i < t.Points.Count; i++) run += (t.Points[i] - t.Points[i - 1]).magnitude;
+                Longest = Mathf.Max(Longest, run);
                 Ribbon(t, t.Style.Additive ? glow : smoke, eye, now, life);
             }
-            foreach (int id in gone) trails.Remove(id);
+            foreach (int id in gone) { spare.Push(trails[id]); trails.Remove(id); }
+        }
+
+        // How many of the oldest points lie further than length behind the head.
+        static int Beyond(Trail t, float length)
+        {
+            float run = 0f;
+            for (int i = t.Points.Count - 1; i > 0; i--)
+            {
+                run += (t.Points[i] - t.Points[i - 1]).magnitude;
+                if (run > length) return i - 1;
+            }
+            return 0;
         }
 
         static void Ribbon(Trail t, FxMesh into, Vector3 eye, float now, float life)
@@ -85,6 +111,10 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
-        public void Clear() => trails.Clear();
+        public void Clear()
+        {
+            foreach (var t in trails.Values) spare.Push(t);
+            trails.Clear();
+        }
     }
 }

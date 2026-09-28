@@ -33,6 +33,9 @@ namespace OpenKingdomsUnity.Game.World
             Fog = new FogView(backend);
             Fog.Update(true);
             Entities.Hidden = u => !Fog.InSight(u.Position) && !Friendly(u.Player);
+            // Impacts show in sight, and shots also when a friend fired them.
+            Effects.Hidden = (at, player) => !Fog.InSight(at) && (player < 0 || !Friendly(player));
+            Effects.Warm(backend.WarmEffectStrips());
             Entities.Unseen = p => Fog.State(p) == 0;
 
             var cam = UnityEngine.Camera.main;

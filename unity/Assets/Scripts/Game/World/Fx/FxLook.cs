@@ -13,6 +13,12 @@ namespace OpenKingdomsUnity.Game.World
         public const int DefaultDuration = 2;
 
         // Ticks a frame of `duration` legacy frames lasts at the backend's rate.
+        // The original steps a picture once a game tick and holds each frame
+        // for its TAF time, at least one (legacy:255772-255794, the time read
+        // at legacy:255140-255150): blasts (legacy:125787-125800, played once,
+        // legacy:126377), shots' pictures (legacy:247579-247581) and falling
+        // rain (legacy:202670-202692). A ring's sprites differ: they spread
+        // their frames once over the ring's life (legacy:202824-202843).
         public static int FrameTicks(int duration, int ticksPerSecond) =>
             Mathf.Max(1, Mathf.RoundToInt(Mathf.Max(1, duration) * ticksPerSecond / (float)LegacyHz));
 
@@ -131,6 +137,20 @@ namespace OpenKingdomsUnity.Game.World
         {
             t = Mathf.Clamp01(t);
             return t < 0.08f ? t / 0.08f : Mathf.Pow(1f - (t - 0.08f) / 0.92f, 1.6f);
+        }
+
+        // ── Trails ────────────────────────────────────────────────────
+
+        // How strong a trail behind added art is at its head.
+        public const float TrailAlpha = 0.18f;
+
+        // Warm, strong art (fire) trails. Cool orbs of water, ice and
+        // lightning and pale art do not, as the original trails nothing.
+        public static bool Trails(Color mean)
+        {
+            Color.RGBToHSV(mean, out float h, out float sat, out _);
+            h *= 360f;
+            return sat >= 0.3f && (h <= 70f || h >= 330f);
         }
 
         // ── Scorch ────────────────────────────────────────────────────

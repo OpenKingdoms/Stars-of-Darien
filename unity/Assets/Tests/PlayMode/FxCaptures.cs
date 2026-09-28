@@ -17,7 +17,7 @@ namespace OpenKingdomsUnity.Tests
         static int W => int.TryParse(Env("OKU_CAPTURE_W"), out int w) ? w : 1280;
         static int H => int.TryParse(Env("OKU_CAPTURE_H"), out int h) ? h : 720;
 
-        [UnityTest]
+        [UnityTest, Timeout(3600000)]
         public IEnumerator CaptureFxScenes()
         {
             string dir = Env("OKU_FX_DIR");
@@ -71,7 +71,8 @@ namespace OpenKingdomsUnity.Tests
             var fx = root.World.Effects;
             if (Env("OKU_FX_LOOK") == "original") fx.Smooth = fx.Glow = fx.Soft = fx.Lights = fx.Trails = fx.Scorch = false;
             var b = root.Backend;
-            var log = new List<string> { $"scene {scene} on {b.Name} map {root.Setup.MapId} look {Env("OKU_FX_LOOK") ?? "remastered"}" };
+            var log = new List<string> { $"scene {scene} on {b.Name} map {root.Setup.MapId} look {Env("OKU_FX_LOOK") ?? "remastered"}, {fx.Warmed} strips warmed in {fx.WarmMs:0} ms" };
+            var dumped = new HashSet<int>();
             Vector3 centre;
             if (engine)
             {
@@ -85,6 +86,15 @@ namespace OpenKingdomsUnity.Tests
                 centre = mock.StageCentre;
             }
             var gc = root.World.Camera;
+            // A closer look: OKU_FX_DIST units off, turned on a column OKU_FX_DX
+            // pixels from the stage's middle ("fire:-130,magic:190").
+            float.TryParse(Env("OKU_FX_DIST"), out float close);
+            foreach (var part in (Env("OKU_FX_DX") ?? "").Split(','))
+            {
+                var kv = part.Split(':');
+                if (kv.Length == 2 && kv[0] == scene && float.TryParse(kv[1], out float dx)) centre += new Vector3(dx / 16f, 0f, 0f);
+            }
+            centre.y = b.GroundHeight(centre.x, centre.z);
             foreach (var s in shots.Split(','))
             {
                 int t = int.Parse(s);
@@ -98,20 +108,28 @@ namespace OpenKingdomsUnity.Tests
                 cam.rect = new Rect(0, 0, 1, 1);
                 cam.aspect = W / (float)H;
                 float d = W / 16f * 0.5f / (Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) * cam.aspect);
+                if (close > 0f) d = close;
                 gc.maxDistance = Mathf.Max(gc.maxDistance, d);
                 gc.Zoom(d);
                 for (int i = 0; i < 3; i++) yield return null;
-                // The smooth copies of new art are made on a worker, and wait for it.
-                float wait = Time.realtimeSinceStartup + 10f;
-                while (fx.ArtPending > 0 && Time.realtimeSinceStartup < wait) yield return null;
+                // New art is laid out on a worker, and waited for.
+                fx.WaitForArt();
+                yield return null;
                 yield return Shoot(cam, Path.Combine(dir, $"{scene}-{t:D4}.png"));
-                log.Add($"tick {t} drawn {b.Tick} effects {fx.Count} shots {fx.Shots} beams {fx.Beams} models {fx.ModelShots} lights {fx.LightsLit} marks {fx.Marks} trails {fx.TrailCount}");
+                log.Add($"tick {t} drawn {b.Tick} effects {fx.Count} pictures {fx.Pictures} shots {fx.Shots} beams {fx.Beams} models {fx.ModelShots} lights {fx.LightsLit} marks {fx.Marks} trails {fx.TrailCount}");
                 if (Env("OKU_FX_DUMP") == "1")
                 {
                     var all = new EffectState[4096];
                     int ne = Mathf.Min(b.ReadEffects(all), all.Length);
                     for (int i = 0; i < ne; i++)
-                        log.Add($"  effect {all[i].Id} strip {all[i].Strip} frame {all[i].Frame} age {all[i].Age} loops {all[i].Loops} shot {all[i].IsProjectile} add {all[i].Additive} at {all[i].Position} h {all[i].Top - all[i].Bottom:0.0}");
+                    {
+                        var e = all[i];
+                        log.Add($"  effect {e.Id} strip {e.Strip} frame {e.Frame} age {e.Age} loops {e.Loops} shot {e.IsProjectile} add {e.Additive} at {e.Position} ground {b.GroundHeight(e.Position.x, e.Position.z):0.00} h {e.Top - e.Bottom:0.0}");
+                        if (!dumped.Add(e.Strip)) continue;
+                        var img = b.EffectStrip(e.Strip);
+                        var frames = b.EffectFrames(e.Strip);
+                        log.Add($"  strip {e.Strip}: {img?.Width ?? 0}x{img?.Height ?? 0} pixels, {frames?.Length ?? 0} frames of {(frames != null && frames.Length > 0 ? frames[0].Ticks : 0)} ticks");
+                    }
                     var shotsNow = new ProjectileState[1024];
                     int ns = Mathf.Min(b.ReadProjectiles(shotsNow), shotsNow.Length);
                     for (int i = 0; i < ns; i++)
@@ -125,10 +143,14 @@ namespace OpenKingdomsUnity.Tests
         static IEnumerator Shoot(Camera cam, string path)
         {
             yield return null;
-            var rt = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.ARGB32);
+            // HDR as the screen's buffer is: URP draws into a camera's own target.
+            var hdr = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.DefaultHDR, RenderTextureReadWrite.Linear);
+            var rt = RenderTexture.GetTemporary(W, H, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
             var old = cam.targetTexture;
-            cam.targetTexture = rt;
+            cam.targetTexture = hdr;
             cam.Render();
+            Graphics.Blit(hdr, rt);
+            RenderTexture.ReleaseTemporary(hdr);
             RenderTexture.active = rt;
             var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
             tex.ReadPixels(new Rect(0, 0, W, H), 0, 0);

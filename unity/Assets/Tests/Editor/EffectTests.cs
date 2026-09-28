@@ -305,6 +305,204 @@ namespace OpenKingdomsUnity.Tests
             CollectionAssert.AreEquivalent(new[] { ShotKind.Picture, ShotKind.Dot, ShotKind.Model, ShotKind.Beam }, kinds);
         }
 
+        // ── The engine's records, read less often ─────────────────────
+
+        [Test]
+        public void ABlastReadEveryThirdTickStillPlaysAtThePaceToItsEnd()
+        {
+            // lightning1 read every third tick, so the engine's frames 2, 5, 8
+            // and so on are never seen and their quads never learned.
+            var fx = new EngineFx(Size);
+            var effects = new EffectState[16];
+            int last = -1, reads = 0;
+            for (uint t = 0; t < 140; t += 3)
+            {
+                var rec = new[] { Record(OkEngine.EffectImpact, 5, 1, (int)t / EngineFx.EngineTicksPerFrame, 30, 95, 72) };
+                fx.Update(t, Tps, rec, t < 60 ? 1 : 0, new OkxProjectile[0], 0);
+                int n = fx.Effects(effects);
+                if (n == 0) continue;
+                reads++;
+                var e = effects[0];
+                Assert.GreaterOrEqual(e.Frame, last, "never backwards at tick " + t);
+                Assert.LessOrEqual(e.Frame, (int)t / 4, "no faster than 2 legacy frames a picture");
+                Assert.Greater(e.Width, 0f, "a quad from a frame that was seen");
+                Assert.Greater(fx.Frames(1)[e.Frame].Width, 0f, "the frame drawn is one the table knows");
+                last = e.Frame;
+            }
+            Assert.GreaterOrEqual(last, 28, "it played to the end");
+            Assert.Greater(reads, 35);
+        }
+
+        [Test]
+        public void AMoverKeepsTheEnginesOwnFrameAndABlastThatBarelyMovesStaysABlast()
+        {
+            // A ring's sprite runs 4 pixels a tick at the engine's 2 ticks a frame.
+            var fx = new EngineFx(Size);
+            var effects = new EffectState[16];
+            for (uint t = 0; t < 40; t++)
+            {
+                int frame = (int)(t / 2) % 12;
+                fx.Update(t, Tps, new[] { Record(OkEngine.EffectImpact, 3, 3, frame, 12, 36, 34, 320 + t * 4f) }, 1, new OkxProjectile[0], 0);
+                Assert.AreEqual(1, fx.Effects(effects));
+                if (t < 2) continue;
+                Assert.IsTrue(effects[0].Loops, "a mover");
+                Assert.AreEqual(frame, effects[0].Frame, "the engine's frame at tick " + t);
+                Assert.AreEqual(0f, effects[0].Phase);
+            }
+            fx.Update(40, Tps, new OkxEffect[0], 0, new OkxProjectile[0], 0);
+            Assert.AreEqual(0, fx.Effects(effects), "a mover ends with the engine's");
+
+            // A blast nudged half a pixel is still a still blast, played out.
+            fx = new EngineFx(Size);
+            for (uint t = 0; t < 30; t++)
+                fx.Update(t, Tps, new[] { Record(OkEngine.EffectImpact, 4, 1, (int)t / 2, 30, 95, 72, 320 + t * 0.02f) }, 1, new OkxProjectile[0], 0);
+            fx.Effects(effects);
+            Assert.IsFalse(effects[0].Loops);
+            fx.Update(30, Tps, new OkxEffect[0], 0, new OkxProjectile[0], 0);
+            Assert.AreEqual(1, fx.Effects(effects), "kept after the engine let it go");
+        }
+
+        // ── The remaster's parts ──────────────────────────────────────
+
+        static EffectRenderer Renderer(MockBackend b, out Camera cam, out ModelCache models)
+        {
+            models = new ModelCache(b);
+            var fx = new EffectRenderer(b, models);
+            cam = new GameObject("fx test camera").AddComponent<Camera>();
+            var at = b.StageCentre;
+            cam.transform.position = at + new Vector3(0, 30, -20);
+            cam.transform.LookAt(at);
+            fx.Warm(b.WarmEffectStrips());
+            Assert.IsTrue(fx.WaitForArt());
+            return fx;
+        }
+
+        [Test]
+        public void ABeamCutShortAtItsSourceShowsNoBallOfLight()
+        {
+            var b = MockGame();
+            var fx = Renderer(b, out var cam, out var models);
+            try
+            {
+                var at = b.StageCentre + Vector3.up;
+                foreach (var (gap, beams, ends) in new[] { (0.3f, false, false), (0.8f, true, false), (6f, true, true) })
+                {
+                    b.FireFx("CRECHIE 1", at, at + new Vector3(0, 0, gap));
+                    bool drew = false, glowed = false;
+                    for (int t = 0; t < 20; t++) { b.Advance(1); fx.Render(cam); drew |= fx.Beams > 0; glowed |= fx.BeamEnds > 0; }
+                    Assert.AreEqual(beams, drew, $"a ray {gap} long draws");
+                    Assert.AreEqual(ends, glowed, $"a ray {gap} long glows at its ends");
+                    b.Advance(200);
+                    fx.Render(cam);
+                }
+            }
+            finally { fx.Dispose(); models.Dispose(); Object.DestroyImmediate(cam.gameObject); b.Dispose(); }
+        }
+
+        [Test]
+        public void FlamesHoldTheirFramesWhileAStillBlastEases()
+        {
+            var b = MockGame();
+            var fx = Renderer(b, out var cam, out var models);
+            try
+            {
+                var at = b.StageCentre;
+                b.FireFx("ARADRAG 1", at + new Vector3(0, 1, -5), at + new Vector3(0, 1, 5));
+                int flames = 0;
+                for (int t = 0; t < 40; t++)
+                {
+                    b.Advance(1);
+                    fx.Render(cam);
+                    Assert.AreEqual(fx.Pictures, fx.Sprites, "one quad a flame, never two cross-faded, at tick " + t);
+                    flames = Mathf.Max(flames, fx.Pictures);
+                }
+                Assert.Greater(flames, 5, "a stream of flames");
+                b.Advance(300);
+                b.FireFx("TARNECRO 2", at + new Vector3(0, 1, -2), at + new Vector3(0, 1, 0.5f));
+                bool eased = false;
+                for (int t = 0; t < 90; t++) { b.Advance(1); fx.Render(cam); eased |= fx.Sprites > fx.Pictures; }
+                Assert.IsTrue(eased, "a still blast eases into its next frame");
+            }
+            finally { fx.Dispose(); models.Dispose(); Object.DestroyImmediate(cam.gameObject); b.Dispose(); }
+        }
+
+        [Test]
+        public void OnlyFireLeavesATrailAndNoLongerThanTheShot()
+        {
+            Assert.IsTrue(FxLook.Trails(new Color(0.69f, 0.33f, 0.01f)), "FireballB");
+            Assert.IsTrue(FxLook.Trails(new Color(0.91f, 0.74f, 0.53f)), "meteor");
+            Assert.IsFalse(FxLook.Trails(new Color(0.36f, 0.42f, 0.43f)), "WaterBall");
+            Assert.IsFalse(FxLook.Trails(new Color(0.17f, 0.67f, 0.74f)), "LtngBall_1a");
+            Assert.IsFalse(FxLook.Trails(new Color(0.55f, 0.55f, 0.73f)), "LtngBall_2a");
+            Assert.IsFalse(FxLook.Trails(new Color(0.59f, 0.71f, 0.71f)), "iceballspin");
+            Assert.LessOrEqual(FxLook.TrailAlpha, 0.2f);
+
+            var b = MockGame();
+            var fx = Renderer(b, out var cam, out var models);
+            try
+            {
+                var at = b.StageCentre;
+                foreach (var (weapon, trails) in new[] { ("VERMAGE 2", false), ("ZONHUNT 2", false), ("TARDRAG 2", true) })
+                {
+                    b.FireFx(weapon, at + new Vector3(0, 1, -8), at + new Vector3(0, 1, 8));
+                    bool left = false;
+                    float longest = 0f;
+                    for (int t = 0; t < 60; t++)
+                    {
+                        b.Advance(1);
+                        fx.Render(cam);
+                        left |= fx.TrailCount > 0;
+                        longest = Mathf.Max(longest, fx.LongestTrail);
+                    }
+                    Assert.AreEqual(trails, left, weapon + " trails");
+                    // FireballB stands 65 pixels tall, about four units.
+                    if (trails) Assert.LessOrEqual(longest, 65f / 16f + 0.5f, weapon + "'s trail is no longer than it is tall");
+                    b.Advance(300);
+                    fx.Render(cam);
+                }
+            }
+            finally { fx.Dispose(); models.Dispose(); Object.DestroyImmediate(cam.gameObject); b.Dispose(); }
+        }
+
+        [Test]
+        public void LightsInACrowdOfBlastsHoldStillAndFadeRatherThanBlink()
+        {
+            var lights = new FxLights();
+            try
+            {
+                // Twenty four blasts in six knots, each flickering and swelling
+                // a little, with ties in their strength round the cut.
+                const int frames = 120;
+                int most = 0;
+                for (int f = 0; f < frames; f++)
+                {
+                    lights.Begin();
+                    float now = f / 60f;
+                    for (int i = 0; i < 24; i++)
+                    {
+                        var at = new Vector3((i % 6) * 12f + (i / 6) * 0.8f, 1f, (i / 6) * 0.6f);
+                        float life = 0.8f + 0.1f * Mathf.Sin(now * 1.5f + i);
+                        float flicker = 0.92f + 0.08f * Mathf.Sin(now * 23f + i * 1.7f);
+                        lights.Ask(at, Color.white, FxLight.Medium, life, i, flicker);
+                    }
+                    lights.Commit(new Vector3(30f, 0f, 0f), 40f, 1f / 60f);
+                    most = Mathf.Max(most, lights.Lit);
+                }
+                Debug.Log($"Fx lights: {lights.Toggles} switched on or off over {frames} frames, {most} lit at most");
+                Assert.LessOrEqual(most, FxLights.Budget);
+                Assert.Greater(most, 0);
+                Assert.LessOrEqual(lights.Toggles, FxLights.Budget + 2, "lights hold their places rather than blink");
+
+                // A light that loses its place goes out over a few frames.
+                lights.Begin();
+                lights.Commit(Vector3.zero, 40f, 1f / 60f);
+                Assert.Greater(lights.Lit, 0, "still fading on the first frame without asks");
+                for (int f = 0; f < 30; f++) { lights.Begin(); lights.Commit(Vector3.zero, 40f, 1f / 60f); }
+                Assert.AreEqual(0, lights.Lit, "and gone soon after");
+            }
+            finally { lights.Dispose(); }
+        }
+
         // ── Every family draws ────────────────────────────────────────
 
         static MockBackend MockGame()
@@ -330,6 +528,8 @@ namespace OpenKingdomsUnity.Tests
                 var at = b.StageCentre;
                 cam.transform.position = at + new Vector3(0, 30, -20);
                 cam.transform.LookAt(at);
+                fx.Warm(b.WarmEffectStrips());
+                Assert.IsTrue(fx.WaitForArt());
                 foreach (var w in MockBackend.FxWeapons)
                 {
                     b.FireFx(w.Name, at + new Vector3(0, 1, -5), at + new Vector3(0, 1, 5));
@@ -369,22 +569,27 @@ namespace OpenKingdomsUnity.Tests
         public void AFireBlastScorchesTheGroundAndAShotsTrailFollowsItsPath()
         {
             var b = MockGame();
-            var fx = new EffectRenderer(b, new ModelCache(b));
+            var models = new ModelCache(b);
+            var fx = new EffectRenderer(b, models);
             var cam = new GameObject("fx test camera").AddComponent<Camera>();
             try
             {
                 var at = b.StageCentre;
                 cam.transform.position = at + new Vector3(0, 30, -20);
                 cam.transform.LookAt(at);
+                fx.Warm(b.WarmEffectStrips());
+                Assert.IsTrue(fx.WaitForArt());
+                // Its blast, explodeb, grows from a first frame too small to scorch.
                 b.FireFx("TARDRAG 2", at + new Vector3(0, 1, -6), at + new Vector3(0, 1, 6));
                 int trails = 0;
                 for (int t = 0; t < 120; t++) { b.Advance(1); fx.Render(cam); trails = Mathf.Max(trails, fx.TrailCount); }
                 Assert.Greater(trails, 0, "the fireball left a trail");
-                Assert.Greater(fx.Marks, 0, "its blast left a scorch");
+                Assert.Greater(fx.Marks, 0, "its blast left a scorch once it grew");
             }
             finally
             {
                 fx.Dispose();
+                models.Dispose();
                 Object.DestroyImmediate(cam.gameObject);
                 b.Dispose();
             }
@@ -402,9 +607,10 @@ namespace OpenKingdomsUnity.Tests
                     img.Pixels[i] = (byte)(x < 4 ? 255 : 0); img.Pixels[i + 2] = (byte)(x < 4 ? 0 : 255); img.Pixels[i + 3] = 255;
                 }
             var px = FxArt.Atlas(img, 2, out int w, out int h);
-            var art = FxArt.Build(img, 2, false);
+            var art = FxArt.Build(img, 2);
             try
             {
+                Assert.IsTrue(art.Wait(), "the worker laid the strip out");
                 Assert.AreEqual(2, art.Frames);
                 Assert.AreEqual(2 * (4 + 2 * FxArt.Pad), w);
                 var r = art.Rect(0, new Vector2(0f, 0f), new Vector2(0.5f, 1f));

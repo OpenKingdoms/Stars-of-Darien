@@ -13,6 +13,8 @@ namespace OpenKingdomsUnity.Game.World
         readonly List<Vector2> uv = new List<Vector2>();
         readonly List<Vector4> fx = new List<Vector4>();
         readonly List<int> t = new List<int>();
+        float[] depth = new float[64];
+        int[] order = new int[64], sorted = new int[384];
         Mesh mesh;
         public int Quads { get; private set; }
         public int Vertices => v.Count;
@@ -44,6 +46,27 @@ namespace OpenKingdomsUnity.Game.World
             Quads++;
         }
 
+        // Quads farthest from the eye first, as alpha art needs. Only for a
+        // mesh made of quads alone.
+        public void SortQuads(Vector3 eye)
+        {
+            int n = Quads;
+            if (n < 2 || t.Count != n * 6) return;
+            if (depth.Length < n) { depth = new float[Mathf.NextPowerOfTwo(n)]; order = new int[depth.Length]; }
+            if (sorted.Length < n * 6) sorted = new int[depth.Length * 6];
+            for (int q = 0; q < n; q++)
+            {
+                int i = t[q * 6];
+                var mid = (v[i] + v[i + 2]) * 0.5f;
+                depth[q] = -(mid - eye).sqrMagnitude;
+                order[q] = q;
+            }
+            System.Array.Sort(depth, order, 0, n);
+            for (int k = 0; k < n; k++)
+                for (int j = 0; j < 6; j++) sorted[k * 6 + j] = t[order[k] * 6 + j];
+            for (int k = 0; k < n * 6; k++) t[k] = sorted[k];
+        }
+
         public void Draw(Material material, int layer = 0)
         {
             if (v.Count == 0 || material == null) return;
@@ -55,7 +78,13 @@ namespace OpenKingdomsUnity.Game.World
             mesh.SetUVs(0, uv);
             mesh.SetUVs(1, fx);
             mesh.SetTriangles(t, 0, false);
-            mesh.bounds = new Bounds(Vector3.zero, Vector3.one * 100000f);
+            // The mesh's own bounds, so the renderer sorts it among the others.
+            Vector3 lo = v[0], hi = v[0];
+            for (int i = 1; i < v.Count; i++) { lo = Vector3.Min(lo, v[i]); hi = Vector3.Max(hi, v[i]); }
+            var b = new Bounds();
+            b.SetMinMax(lo, hi);
+            b.Expand(0.5f);
+            mesh.bounds = b;
             Graphics.RenderMesh(new RenderParams(material) { shadowCastingMode = ShadowCastingMode.Off, receiveShadows = false, layer = layer }, mesh, 0, Matrix4x4.identity);
         }
 

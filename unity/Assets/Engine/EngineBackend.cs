@@ -997,6 +997,19 @@ namespace OpenKingdomsUnity.Engine
 
         public EffectFrame[] EffectFrames(int strip) => fx.Frames(strip);
 
+        // API 20 cannot say which strips a unit's weapons use, so every
+        // strip the engine holds, found by asking each index in turn.
+        public IReadOnlyList<int> WarmEffectStrips()
+        {
+            var ids = new List<int>();
+            for (int i = 0, misses = 0; i < 1024 && misses < 32; i++)
+            {
+                if (OkEngine.okx_effect_strip(i, null, 0, out _, out _) > 0) { ids.Add(i); misses = 0; }
+                else misses++;
+            }
+            return ids;
+        }
+
         public RgbaImage EffectStrip(int strip)
         {
             int need = OkEngine.okx_effect_strip(strip, null, 0, out int w, out int h);

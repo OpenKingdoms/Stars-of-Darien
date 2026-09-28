@@ -74,6 +74,7 @@ namespace OpenKingdomsUnity.Game
         readonly List<PlayerInfo> players = new List<PlayerInfo>();
         readonly List<ModelData> models = new List<ModelData>();
         readonly Dictionary<string, int> modelIds = new Dictionary<string, int>();
+        readonly Dictionary<(string, int), int> modelById = new Dictionary<(string, int), int>();
         readonly List<RgbaImage> textures = new List<RgbaImage>();
         readonly List<RgbaImage> sprites = new List<RgbaImage>();
         readonly Dictionary<int, RgbaImage> chunks = new Dictionary<int, RgbaImage>();
@@ -853,12 +854,14 @@ namespace OpenKingdomsUnity.Game
 
         public int LoadModel(string objectName, int colour)
         {
+            if (objectName != null && modelById.TryGetValue((objectName, colour), out int known)) return known;
             string key = objectName + "#" + colour;
-            if (modelIds.TryGetValue(key, out int id)) return id;
+            if (modelIds.TryGetValue(key, out int id)) { if (objectName != null) modelById[(objectName, colour)] = id; return id; }
             var m = MockModels.Build(objectName, Palette[Mathf.Abs(colour) % Palette.Length]);
             if (m == null) return -1;
             models.Add(m);
             modelIds[key] = models.Count - 1;
+            if (objectName != null) modelById[(objectName, colour)] = models.Count - 1;
             return models.Count - 1;
         }
 

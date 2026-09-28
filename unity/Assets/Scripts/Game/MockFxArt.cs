@@ -16,6 +16,9 @@ namespace OpenKingdomsUnity.Game
             // The point the picture stands on, as fractions of the frame
             // from the left and from the top.
             public float AnchorX = 0.5f, AnchorY = 0.5f;
+            // The first frames drawn small, growing to full size as the
+            // retail blasts' trimmed frames do.
+            public bool Grows;
             // Colour and alpha at x, y in -1..1 (y down) and phase t in 0..1.
             public Func<float, float, float, Color> Paint;
         }
@@ -86,6 +89,7 @@ namespace OpenKingdomsUnity.Game
             Add("cannblg", 13, 12, 4, false, (x, y, t) => Cannon(x, y, t));
             // Impacts, standing on the ground.
             Add("explodeb", 74, 59, 31, true, (x, y, t) => Blast(x, y, t, fire), 0.5f, 0.8f, 1);
+            specs["explodeb"].Grows = true;
             Add("VBlast", 61, 63, 21, true, (x, y, t) => Blast(x, y, t, fire), 0.5f, 0.8f);
             Add("flamestrike", 68, 85, 14, true, (x, y, t) => Column(x, y, t, fire), 0.5f, 0.9f);
             Add("teeny", 40, 44, 18, true, (x, y, t) => Blast(x, y, t, fire), 0.5f, 0.8f);
@@ -107,6 +111,9 @@ namespace OpenKingdomsUnity.Game
             Add("nimbus_aramon", 52, 47, 11, true, (x, y, t) => Nimbus(x, y, t, yellow), 0.5f, 0.6f, 3);
             Add("nimbus_taros", 52, 47, 11, true, (x, y, t) => Nimbus(x, y, t, fire), 0.5f, 0.6f, 3);
             Add("nimbus_veruna", 52, 47, 11, true, (x, y, t) => Nimbus(x, y, t, water), 0.5f, 0.6f, 3);
+            // One flat colour of added light standing on its point, for tests.
+            Add("flat", 32, 32, 1, true, (x, y, t) => new Color(0.30f, 0.12f, 0.02f, 1f), 0.5f, 1f);
+            Add("flatbright", 32, 32, 1, true, (x, y, t) => new Color(0.60f, 0.55f, 0.10f, 1f), 0.5f, 1f);
             Add("nimbus_zhon", 52, 47, 11, true, (x, y, t) => Nimbus(x, y, t, green), 0.5f, 0.6f, 3);
         }
 
