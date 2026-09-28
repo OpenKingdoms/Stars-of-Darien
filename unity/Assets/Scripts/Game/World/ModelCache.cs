@@ -74,20 +74,92 @@ namespace OpenKingdomsUnity.Game.World
             return m;
         }
 
+        // The original models are one-sided polygons over open shells, such
+        // as a tower's cannon port or a flag's cloth seen from behind, so
+        // they draw from both sides. Texels are cut below the 3D view's
+        // own alpha of 0.2.
+        public const float ModelCutoff = 0.2f;
+
         public Material MaterialFor(int texture)
         {
             if (materials.TryGetValue(texture, out var m)) return m;
             Texture tex = null;
             if (texture >= 0)
             {
-                var t = UI.UiKit.ToTexture(backend.Texture(texture), true, false);
+                var t = CoverageMipped(backend.Texture(texture));
                 if (t != null) { t.wrapMode = TextureWrapMode.Repeat; t.filterMode = FilterMode.Trilinear; t.anisoLevel = 4; owned.Add(t); }
                 tex = t;
             }
             m = Looks.Model(tex);
+            m.SetFloat("_Cull", (float)CullMode.Off);
+            m.SetFloat("_Cutoff", ModelCutoff);
             owned.Add(m);
             materials[texture] = m;
             return m;
+        }
+
+        // A picture with mips that keep its cut-out coverage. Plain mips
+        // average the see-through texels of the atlas in, so thin parts
+        // such as flag cloth, a few texels tall in the atlas, fall under the
+        // cutoff and open up as the view zooms out. Here each smaller level
+        // takes the most opaque of the four texels under it, and its colour
+        // weighted by alpha, so what shows up close still shows from afar.
+        public static Texture2D CoverageMipped(RgbaImage img)
+        {
+            if (img == null) return null;
+            int w = img.Width, h = img.Height;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, true) { hideFlags = HideFlags.DontSave };
+            tex.SetPixelData(img.Pixels, 0);
+            var rgb = new float[w * h * 3];
+            var a = new float[w * h];
+            for (int i = 0; i < w * h; i++)
+            {
+                a[i] = img.Pixels[i * 4 + 3] / 255f;
+                for (int k = 0; k < 3; k++) rgb[i * 3 + k] = img.Pixels[i * 4 + k] / 255f;
+            }
+            for (int level = 1; level < tex.mipmapCount; level++)
+            {
+                int nw = Mathf.Max(1, w >> 1), nh = Mathf.Max(1, h >> 1);
+                var nrgb = new float[nw * nh * 3];
+                var na = new float[nw * nh];
+                for (int y = 0; y < nh; y++)
+                    for (int x = 0; x < nw; x++)
+                    {
+                        float sa = 0, r = 0, g = 0, b = 0, pr = 0, pg = 0, pb = 0;
+                        int n = 0;
+                        for (int dy = 0; dy < 2; dy++)
+                            for (int dx = 0; dx < 2; dx++)
+                            {
+                                int sx = Mathf.Min(w - 1, x * 2 + dx), sy = Mathf.Min(h - 1, y * 2 + dy);
+                                int s = sy * w + sx;
+                                float al = a[s];
+                                sa += al;
+                                r += rgb[s * 3] * al; g += rgb[s * 3 + 1] * al; b += rgb[s * 3 + 2] * al;
+                                pr += rgb[s * 3]; pg += rgb[s * 3 + 1]; pb += rgb[s * 3 + 2];
+                                n++;
+                            }
+                        int o = y * nw + x;
+                        float most = 0;
+                        for (int dy = 0; dy < 2; dy++)
+                            for (int dx = 0; dx < 2; dx++)
+                                most = Mathf.Max(most, a[Mathf.Min(h - 1, y * 2 + dy) * w + Mathf.Min(w - 1, x * 2 + dx)]);
+                        na[o] = most;
+                        if (sa > 1e-4f) { nrgb[o * 3] = r / sa; nrgb[o * 3 + 1] = g / sa; nrgb[o * 3 + 2] = b / sa; }
+                        else { nrgb[o * 3] = pr / n; nrgb[o * 3 + 1] = pg / n; nrgb[o * 3 + 2] = pb / n; }
+                    }
+                var bytes = new byte[nw * nh * 4];
+                for (int i = 0; i < nw * nh; i++)
+                {
+                    bytes[i * 4] = (byte)Mathf.Clamp(Mathf.RoundToInt(nrgb[i * 3] * 255f), 0, 255);
+                    bytes[i * 4 + 1] = (byte)Mathf.Clamp(Mathf.RoundToInt(nrgb[i * 3 + 1] * 255f), 0, 255);
+                    bytes[i * 4 + 2] = (byte)Mathf.Clamp(Mathf.RoundToInt(nrgb[i * 3 + 2] * 255f), 0, 255);
+                    bytes[i * 4 + 3] = (byte)Mathf.Clamp(Mathf.RoundToInt(na[i] * 255f), 0, 255);
+                }
+                tex.SetPixelData(bytes, level);
+                w = nw; h = nh; rgb = nrgb; a = na;
+            }
+            tex.Apply(false);
+            return tex;
         }
 
         PresentedModel Build(ModelData d)
