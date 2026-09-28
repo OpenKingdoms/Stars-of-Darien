@@ -1,7 +1,8 @@
 // WaterTextures.cs - the sea's textures, made in code once a session from
 // fixed seeds: wave slopes from a wind-driven spectrum of lattice waves,
 // foam lace, caustic nets and slow noise, each tiling seamlessly. Per map,
-// the sea's depth and shore distance, baked from the height grid.
+// the sea's depth, shore distance and how wide the water is round each
+// point, baked from the height grid over the map and its edge ring.
 using System;
 using UnityEngine;
 
@@ -10,7 +11,14 @@ namespace OpenKingdomsUnity.Game.World
     public static class WaterTextures
     {
         public const int NormalSize = 256, FoamSize = 256, CausticSize = 256, NoiseSize = 128;
-        public const int SeaTexelsPerCell = 2, SeaMargin = 16;
+        // The sea data covers the edge ring too, so its coasts and shallows
+        // carry on past the map. Shore distances stop at ShoreCap cells, and
+        // the width of the water round a point is looked for Around cells off.
+        public const int SeaTexelsPerCell = 2, SeaMargin = (int)EdgeRing.Width;
+        public const float ShoreCap = 16f, WideCap = 8f;
+        public const int Around = 6;
+        // How many texels an edit to the ground can change, either way.
+        public const int EditReach = (int)ShoreCap * SeaTexelsPerCell + 4;
 
         static Texture2D normals, foam, caustics, noise;
 
@@ -226,9 +234,11 @@ namespace OpenKingdomsUnity.Game.World
         public static Vector4 SeaRect(Vector2 size, float cell) =>
             new Vector4(-SeaMargin * cell, SeaMargin * cell, size.x + 2 * SeaMargin * cell, size.y + 2 * SeaMargin * cell);
 
-        // Depth under the sea (R, over 8 units) and signed distance to the
-        // shore (G, 0.5 + cells / 16, negative on land), row 0 north, from
-        // ground heights sampled at texel centres.
+        // Depth under the sea (R, over 8 units), signed distance to the
+        // shore (G, 0.5 + cells / 32, negative on land) and the widest the
+        // water is within Around cells, as its greatest distance to land (B,
+        // over WideCap cells, small in a pool), row 0 north, from ground
+        // heights sampled at texel centres.
         public static Color32[] SeaData(Vector4 rect, float cell, float sea, Func<float, float, float> ground, out int w, out int h)
         {
             w = Mathf.Max(2, Mathf.RoundToInt(rect.z / cell * SeaTexelsPerCell));
@@ -256,17 +266,48 @@ namespace OpenKingdomsUnity.Game.World
                 }
             var toLand = Distance(wet, w, h, false);
             var toWater = Distance(wet, w, h, true);
-            var px = new Color32[n];
             float perTexel = 1f / SeaTexelsPerCell;
+            var wide = new float[n];
+            for (int i = 0; i < n; i++) wide[i] = wet[i] ? Mathf.Min(toLand[i], Around * SeaTexelsPerCell) : 0f;
+            MaxFilter(wide, w, h, Around * SeaTexelsPerCell);
+            var px = new Color32[n];
             for (int i = 0; i < n; i++)
             {
                 // Half a texel either side of the line where the ground crosses the sea.
                 float shore = wet[i] ? (toLand[i] - 0.5f) * perTexel : -(toWater[i] - 0.5f) * perTexel;
                 byte r = (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Max(0, depth[i]) / 8f * 255f), 0, 255);
-                byte g = (byte)Mathf.Clamp(Mathf.RoundToInt((0.5f + shore / 16f) * 255f), 0, 255);
-                px[i] = new Color32(r, g, 0, 255);
+                byte g = (byte)Mathf.Clamp(Mathf.RoundToInt((0.5f + Mathf.Clamp(shore, -ShoreCap, ShoreCap) / (2 * ShoreCap)) * 255f), 0, 255);
+                byte b = (byte)Mathf.Clamp(Mathf.RoundToInt(Mathf.Min(wide[i] * perTexel, WideCap) / WideCap * 255f), 0, 255);
+                px[i] = new Color32(r, g, b, 255);
             }
             return px;
+        }
+
+        // Each value becomes the greatest within r texels either way, in a
+        // square, by rows then columns.
+        static void MaxFilter(float[] v, int w, int h, int r)
+        {
+            var line = new float[Mathf.Max(w, h)];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++) line[x] = v[y * w + x];
+                for (int x = 0; x < w; x++)
+                {
+                    float m = 0;
+                    for (int k = Mathf.Max(0, x - r); k <= Mathf.Min(w - 1, x + r); k++) m = Mathf.Max(m, line[k]);
+                    v[y * w + x] = m;
+                }
+            }
+            for (int x = 0; x < w; x++)
+            {
+                for (int y = 0; y < h; y++) line[y] = v[y * w + x];
+                for (int y = 0; y < h; y++)
+                {
+                    float m = 0;
+                    for (int k = Mathf.Max(0, y - r); k <= Mathf.Min(h - 1, y + r); k++) m = Mathf.Max(m, line[k]);
+                    v[y * w + x] = m;
+                }
+            }
         }
 
         // Exact Euclidean distance, in texels, from each texel to the

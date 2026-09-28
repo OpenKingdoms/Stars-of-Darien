@@ -17,11 +17,12 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
             CGPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma target 3.0
             #pragma multi_compile_fog
             #include "UnityCG.cginc"
             #include "../../Shaders/OkuFog.hlsl"
+            #include "../../Shaders/OkuWaterCommon.hlsl"
             sampler2D _MainTex;
-            float4 _OkuHaze;    // the climate's haze, set with the fog
             float _Width;
             float4 _OkuSunDir, _OkuSunColor, _OkuAmbient;
             struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; float2 dist : TEXCOORD1; };
@@ -39,7 +40,8 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
             }
             fixed4 frag(v2f i) : SV_Target
             {
-                fixed3 c = tex2D(_MainTex, i.uv).rgb;
+                // Under the sea the ring is sea bed, as the map's own ground is.
+                fixed3 c = OkuBed(tex2D(_MainTex, i.uv).rgb, i.world);
                 half ndl = saturate(dot(normalize(i.normal), normalize(_OkuSunDir.xyz)));
                 c *= (_OkuAmbient.rgb + _OkuSunColor.rgb * ndl) * 0.8;
                 // The fog of war at the nearest edge, so the ring is never

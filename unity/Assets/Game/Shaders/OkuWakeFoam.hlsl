@@ -1,41 +1,44 @@
-// OkuWakeFoam.hlsl - how much foam a wake vertex's uvs ask for, and how
-// much the churned water behind a hull is lightened by the air in it. For
-// the ribbon uv is (across -1 to 1, along in units from the stern,
-// strength, age) and size (half its width here, the hull's half beam), both
-// in units. For the hull's collar uv is (-1 to 1 across, -1 to 1 stern to
-// bow, speed, -1).
+// OkuWakeFoam.hlsl - how much foam a wake splat asks for, and how churned
+// the water is, before the sea's own lace breaks it up. For the ribbon uv
+// is (across -1 to 1, along in units from the stern, strength, age) and
+// size (half its width here, the hull's half beam), both in units. For the
+// hull's collar uv is (across, along) in units from the hull's middle,
+// z its speed, w -1, and size its half beam and half length.
 #ifndef OKU_WAKE_FOAM_INCLUDED
 #define OKU_WAKE_FOAM_INCLUDED
 
-float OkuWakeFoam(float4 uv, float2 size, float2 xz, out float churned)
+float OkuWakeFoam(float4 uv, float2 size, out float churned)
 {
-    float lace = OkuFoamLace(xz, 0.6);
-    float amount;
     if (uv.w < 0)
     {
-        // A thin collar just outside the hull, heaped up at the bow as
-        // the ship gets under way.
-        float r = length(uv.xy);
-        float rim = smoothstep(0.66, 0.8, r) * (1 - smoothstep(0.82, 1.0, r));
-        float bow = saturate(uv.y);
-        amount = rim * (0.3 + uv.z * (0.25 + 0.55 * bow * bow));
-        churned = rim * uv.z * 0.3;
+        // Round the hull at the waterline: heaped at the bow as the ship
+        // gets under way, a little at the stern, fading a few tenths of a
+        // unit out. d is the distance out from the hull's ellipse.
+        float2 q = uv.xy / max(size, 0.05);
+        float r = length(q);
+        float2 grad = float2(uv.x / (size.x * size.x), uv.y / (size.y * size.y)) / max(r, 1e-3);
+        float d = (r - 1) / max(length(grad), 1e-3);
+        float bow = saturate(q.y), stern = saturate(-q.y);
+        float reach = 0.2 + uv.z * (0.1 + 0.35 * bow * bow);
+        float ring = smoothstep(-0.12, 0.02, d) * (1 - smoothstep(0.0, reach, d));
+        float amount = ring * (0.3 + uv.z * (0.2 + 0.6 * bow * bow + 0.2 * stern));
+        churned = ring * uv.z * 0.35;
+        return saturate(amount);
     }
-    else
-    {
-        // Thin lines along the arms of the Kelvin wedge, and the churned
-        // strip the hull leaves, as wide as the hull, spreading and fading
-        // as it ages.
-        float across = abs(uv.x) * size.x;
-        float arm = 1 - smoothstep(0.0, 0.3, abs(size.x - 0.25 - across));
-        // Never out to the ribbon's own edge, which would show straight.
-        float spread = min(size.y * (1 + uv.w * 0.6), size.x * 0.8);
-        float churn = (1 - smoothstep(spread * 0.3, spread, across)) * saturate(1 - uv.w / 3.5);
-        float start = smoothstep(-0.3, 0.4, uv.y);
-        amount = (arm * 0.6 + churn * 1.2) * uv.z * start;
-        churned = (churn * 0.5 + arm * 0.15) * uv.z * start;
-    }
-    return OkuFoamCover(lace, saturate(amount)) * 0.9;
+    // Lines along the arms of the Kelvin wedge, and the churned strip the
+    // hull leaves, as wide as the hull, spreading and fading as it ages.
+    float across = abs(uv.x) * size.x;
+    float arm = 1 - smoothstep(0.0, 0.35, abs(size.x - 0.3 - across));
+    // Never out to the ribbon's own edge, which would show straight.
+    float spread = min(size.y * (1 + uv.w * 0.6), size.x * 0.8);
+    float churn = (1 - smoothstep(spread * 0.3, spread, across)) * saturate(1 - uv.w / 3.5);
+    float start = smoothstep(-0.3, 0.4, uv.y);
+    // The arms' crests carry a little air too.
+    churned = saturate(churn + arm * 0.25) * uv.z * start;
+    // Foam along the churn's edges and the arms. The churn's bulk is left to
+    // the churned channel, which the sea breaks into soft blobs.
+    float rim = churn * (1 - churn) * 4;
+    return saturate((arm * 0.55 + rim * 0.5 + churn * 0.25) * uv.z * start);
 }
 
 #endif

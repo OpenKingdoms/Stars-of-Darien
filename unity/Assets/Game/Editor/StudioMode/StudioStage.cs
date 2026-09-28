@@ -75,6 +75,7 @@ namespace OpenKingdomsUnity.Studio
                 ground = b.Terrain;
                 terrain = new TerrainView();
                 terrain.Build(b, Root.transform);
+                terrain.SetSeaClimate(climate);
                 Spot = PickSpot(ground, StartOf(b));
             }
             else
@@ -92,7 +93,7 @@ namespace OpenKingdomsUnity.Studio
             Camera.farClipPlane = 1500f;
             Camera.fieldOfView = StudioView.ClassicFov;
             Camera.depthTextureMode |= DepthTextureMode.Depth;
-            WaterView.Prepare(Camera);
+            WaterView.Prepare(Camera, HasSea);
             Atmosphere.SetPostEffects(true, Camera);
 
             turntable = new GameObject("Turntable");
@@ -211,10 +212,18 @@ namespace OpenKingdomsUnity.Studio
 
         WaterView studioSea;
 
+        bool HasSea => studioSea != null || terrain?.Sea != null;
+
         void BuildSea()
         {
             const float level = -0.35f, reach = 400f, rect = 64f;
-            studioSea?.Dispose();
+            // The island does not change with the climate, so neither does its sea.
+            if (studioSea != null)
+            {
+                studioSea.Root.transform.SetParent(neutral.transform, false);
+                studioSea.SetClimate(climate);
+                return;
+            }
             studioSea = new WaterView();
             studioSea.Build(neutral.transform, new Vector2(2 * rect, 2 * rect), 1f, level, GroundAt, reach - rect, new Vector2(-rect, rect));
             studioSea.SetClimate(climate);
@@ -281,12 +290,17 @@ namespace OpenKingdomsUnity.Studio
             if (terrain == null && (withSea != sea || neutral != null))
             {
                 sea = withSea;
+                // A sea that stays is kept, one that goes is let go with its globals.
+                if (studioSea != null && sea) studioSea.Root.transform.SetParent(Root.transform, false);
+                else { studioSea?.Dispose(); studioSea = null; }
                 if (neutral != null) Object.DestroyImmediate(neutral);
                 BuildNeutral();
                 RebuildGrid();
                 RebuildAnchor();
                 Place();
             }
+            terrain?.SetSeaClimate(climate);
+            if (Camera != null) WaterView.Prepare(Camera, HasSea);
             BuildSky(weather);
             Hide(Root);
         }
@@ -719,7 +733,8 @@ namespace OpenKingdomsUnity.Studio
             if (Root == null) return;
             if (turning) TurntableYaw = (TurntableYaw + Mathf.Min(dt, 0.25f) * 25f) % 360f;
             // The sea's clock, wind and weather.
-            studioSea?.Update(Atmosphere, null, null);
+            studioSea?.Update(Atmosphere, null, null, Camera);
+            terrain?.Sea?.Update(Atmosphere, null, null, Camera);
             if (Atmosphere != null)
                 foreach (var ps in Root.GetComponentsInChildren<ParticleSystem>())
                     ps.Simulate(Mathf.Min(dt, 0.1f), true, false, false);

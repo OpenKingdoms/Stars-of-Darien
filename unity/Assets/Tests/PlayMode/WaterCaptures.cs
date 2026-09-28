@@ -1,10 +1,14 @@
 // WaterCaptures.cs - pictures of the sea on real maps, for judging the
-// water by eye: the open sea, a coast close up, low toward the sun and
-// wide, in clear weather, rain and fog. Runs only with OKU_CAPTURE_DIR and
-// OKU_WATER_MAPS (map names split by ';'). A name ending "+fow" also shoots
-// the fog of war at the start with the map revealed, one ending "+ships"
-// builds a Veruna harbour and ships and sails them. On the engine with
-// OKU_CAPTURE_BACKEND=engine. Files are water-<tag>-<map>-<shot>.png.
+// water by eye: the open sea, a coast close up, low toward the sun, wide,
+// and a coast at the map's edge running on into the ring, in clear
+// weather, rain and fog. Runs only with OKU_CAPTURE_DIR and OKU_WATER_MAPS
+// (map names split by ';'). A name ending "+fow" also shoots the fog of
+// war at the start with the map revealed, and with the start's units
+// walked to the shore so their sight lies over the water. One ending
+// "+ships" builds a Veruna harbour and ships, shoots them at rest, low from
+// the side and in three frames as they bob, and sails them. On the engine
+// with OKU_CAPTURE_BACKEND=engine, in the built-in pipeline with
+// OKU_CAPTURE_PIPELINE=builtin. Files are water-<tag>-<pipeline>-<map>-<shot>.png.
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -20,6 +24,7 @@ namespace OpenKingdomsUnity.Tests
     public class WaterCaptures
     {
         string dir, tag;
+        bool builtin;
         StreamWriter log;
 
         [UnityTest]
@@ -28,7 +33,8 @@ namespace OpenKingdomsUnity.Tests
             dir = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_DIR");
             string maps = System.Environment.GetEnvironmentVariable("OKU_WATER_MAPS");
             if (string.IsNullOrEmpty(dir) || string.IsNullOrEmpty(maps)) Assert.Ignore("set OKU_CAPTURE_DIR and OKU_WATER_MAPS to capture the sea");
-            tag = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TAG") ?? "shot";
+            builtin = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_PIPELINE") == "builtin";
+            tag = (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_TAG") ?? "shot") + (builtin ? "-builtin" : "-urp");
             Directory.CreateDirectory(dir);
             bool engine = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine";
             if (engine && GameRoot.BackendFactory == null) Assert.Ignore("no engine");
@@ -58,6 +64,26 @@ namespace OpenKingdomsUnity.Tests
         static string Slug(string s) => new string(s.ToLowerInvariant().Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
 
         IEnumerator Map(bool engine, string map, bool fogOfWar, bool ships)
+        {
+            var pipeline = UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline;
+            var quality = QualitySettings.renderPipeline;
+            if (builtin)
+            {
+                UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline = null;
+                QualitySettings.renderPipeline = null;
+            }
+            try
+            {
+                yield return MapIn(engine, map, fogOfWar, ships);
+            }
+            finally
+            {
+                UnityEngine.Rendering.GraphicsSettings.defaultRenderPipeline = pipeline;
+                QualitySettings.renderPipeline = quality;
+            }
+        }
+
+        IEnumerator MapIn(bool engine, string map, bool fogOfWar, bool ships)
         {
             var root = engine ? GameRoot.Boot() : GameRoot.Boot(new MockBackend { StageSeconds = 0f });
             yield return null;
@@ -101,6 +127,9 @@ namespace OpenKingdomsUnity.Tests
                 yield return Shoot(cam, $"water-{tag}-{slug}-fow.png");
                 yield return View(gc, 70f, 55f, 0f);
                 yield return Shoot(cam, $"water-{tag}-{slug}-fow-wide.png");
+                // The start's units walked to the shore, so the lit round of
+                // their sight lies over the water, as in the owner's game.
+                yield return Shore(root, start, near, slug);
                 Object.Destroy(root.gameObject);
                 yield return null;
                 yield break;
@@ -127,6 +156,13 @@ namespace OpenKingdomsUnity.Tests
                 gc.focus = open;
                 yield return View(gc, 85f, 55f, 0f);
                 yield return Shoot(cam, $"water-{tag}-{slug}-{wn}-wide.png");
+                if (EdgeCoast(t, out var edge, out float outward))
+                {
+                    log.WriteLine($"{map}: coast at the map's edge at {edge}, looking {outward:F0} degrees");
+                    gc.focus = edge;
+                    yield return View(gc, 45f, 40f, outward);
+                    yield return Shoot(cam, $"water-{tag}-{slug}-{wn}-edge.png");
+                }
             }
             FogView.Disabled = false;
             Object.Destroy(root.gameObject);
@@ -162,6 +198,92 @@ namespace OpenKingdomsUnity.Tests
                 : new Vector3((i % w) * t.CellSize, Mathf.Max(0, t.SeaLevel), -(i / w) * t.CellSize);
             open = At(best);
             coast = At(shore >= 0 ? shore : best);
+        }
+
+        // A point on the map's edge where land meets the sea, a little inside
+        // the map, and the camera's yaw looking out over the ring from it.
+        static bool EdgeCoast(MapTerrain t, out Vector3 at, out float yaw)
+        {
+            at = default;
+            yaw = 0;
+            if (t.SeaLevel <= 0) return false;
+            var size = t.Size;
+            float step = t.CellSize;
+            // North, east, south and west edges, each walked along.
+            var edges = new[]
+            {
+                (from: new Vector2(0, 0), along: new Vector2(1, 0), inward: new Vector2(0, -1), yaw: 0f, length: size.x),
+                (from: new Vector2(size.x, 0), along: new Vector2(0, -1), inward: new Vector2(-1, 0), yaw: 90f, length: size.y),
+                (from: new Vector2(0, -size.y), along: new Vector2(1, 0), inward: new Vector2(0, 1), yaw: 180f, length: size.x),
+                (from: new Vector2(0, 0), along: new Vector2(0, -1), inward: new Vector2(1, 0), yaw: 270f, length: size.y),
+            };
+            foreach (var e in edges)
+            {
+                bool? wasWet = null;
+                for (float d = 8 * step; d <= e.length - 8 * step; d += step)
+                {
+                    var p = e.from + e.along * d;
+                    bool wet = t.Sample(p.x, p.y) < t.SeaLevel - 0.3f;
+                    if (wasWet.HasValue && wet != wasWet.Value)
+                    {
+                        var q = p + e.inward * 6f;
+                        at = new Vector3(q.x, t.SeaLevel, q.y);
+                        yaw = e.yaw;
+                        return true;
+                    }
+                    wasWet = wet;
+                }
+            }
+            return false;
+        }
+
+        // The local player's units sent to the shore nearest the start, then
+        // shot close and wide with line of sight on.
+        IEnumerator Shore(GameRoot root, Vector3 start, Vector3 water, string slug)
+        {
+            var b = root.Backend;
+            var t = b.Terrain;
+            // The last dry ground on the way from the start to the water.
+            var land = start;
+            for (float f = 0; f <= 1f; f += 0.01f)
+            {
+                var p = Vector3.Lerp(start, water, f);
+                if (t.Sample(p.x, p.z) < t.SeaLevel + 0.15f) break;
+                land = p;
+            }
+            var units = new UnitState[4096];
+            int n = b.ReadUnits(units);
+            int sent = 0, lead = -1;
+            for (int i = 0; i < n && sent < 6; i++)
+            {
+                var u = units[i];
+                if (u.Player != b.LocalPlayer || b.UnitDefs[u.Def].IsBuilding) continue;
+                if (b.Command(GameCommand.To(CommandKind.Move, u.Handle, land + new Vector3((sent % 3) - 1, 0, (sent / 3) - 0.5f) * 1.5f)))
+                {
+                    if (lead < 0) lead = u.Handle;
+                    sent++;
+                }
+            }
+            log.WriteLine($"fog: {sent} units sent from {start} to the shore at {land}");
+            if (lead < 0) yield break;
+            Vector3 at = start;
+            for (int step = 0; step < 400; step++)
+            {
+                b.Advance(10);
+                n = b.ReadUnits(units);
+                for (int i = 0; i < n; i++) if (units[i].Handle == lead) at = units[i].Position;
+                if ((new Vector2(at.x - land.x, at.z - land.z)).magnitude < 3f) break;
+                if (step % 10 == 0) yield return null;
+            }
+            log.WriteLine($"fog: the lead unit reached {at}");
+            root.World.Fog.Update(true);
+            var gc = root.World.Camera;
+            var cam = gc.GetComponent<Camera>();
+            gc.focus = Vector3.Lerp(at, water, 0.35f);
+            yield return View(gc, 36f, GameCamera.ClassicPitch, 0f);
+            yield return Shoot(cam, $"water-{tag}-{slug}-fow-shore.png");
+            yield return View(gc, 60f, 55f, 0f);
+            yield return Shoot(cam, $"water-{tag}-{slug}-fow-shore-wide.png");
         }
 
         static Vector3 NearestWater(MapTerrain t, Vector3 from)
@@ -246,6 +368,19 @@ namespace OpenKingdomsUnity.Tests
             yield return Shoot(cam, $"water-{tag}-{slug}-ships-harbour.png");
             yield return View(gc, 12f, 35f, 40f);
             yield return Shoot(cam, $"water-{tag}-{slug}-ships-close.png");
+            // Low from the side, to judge the waterline, and three frames of
+            // the same to see the ships bob.
+            float minPitch = gc.minPitch;
+            gc.minPitch = 4f;
+            yield return View(gc, 11f, 7f, first.Heading + 90f);
+            yield return Shoot(cam, $"water-{tag}-{slug}-ships-side.png");
+            for (int k = 1; k <= 3; k++)
+            {
+                float next = Time.realtimeSinceStartup + 0.45f;
+                while (Time.realtimeSinceStartup < next) yield return null;
+                yield return Shoot(cam, $"water-{tag}-{slug}-ships-bob-{k}.png");
+            }
+            gc.minPitch = minPitch;
             for (int k = 0; k < fleet.Count; k++)
                 b.Command(GameCommand.To(CommandKind.Move, fleet[k], open + new Vector3(k * 3f, 0, k * 2f)));
             float until = Time.realtimeSinceStartup + 6f;
@@ -253,7 +388,9 @@ namespace OpenKingdomsUnity.Tests
             n = b.ReadUnits(units);
             var lead = units.Take(n).First(u => u.Handle == fleet[0]);
             var ground = b.GroundHeight(lead.Position.x, lead.Position.z);
-            log.WriteLine($"ships: lead at {lead.Position}, ground {ground:F2}, sea {b.Terrain.SeaLevel:F2}, drawn {root.World.Entities.UnitBounds(fleet[0])}");
+            var hulls = root.World.Entities.Hulls;
+            string hullNote = hulls.TryGetValue(fleet[0], out var h) ? $"keel {h.hull.Keel:F2}, draft {h.hull.Draft:F2}, beam {h.hull.HalfBeam:F2}, length {h.hull.HalfLength:F2}, the game's waterline {b.UnitDefs[lead.Def].Waterline:F2}" : "no hull";
+            log.WriteLine($"ships: lead at {lead.Position}, ground {ground:F2}, sea {b.Terrain.SeaLevel:F2}, drawn {root.World.Entities.UnitBounds(fleet[0])}, {hullNote}");
             gc.focus = lead.Position;
             yield return View(gc, 26f, 55f, 0f);
             yield return Shoot(cam, $"water-{tag}-{slug}-ships-underway.png");

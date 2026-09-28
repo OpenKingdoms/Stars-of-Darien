@@ -1,6 +1,7 @@
 // The ground: its picture, lit, taking shadows, with detail and bumps up
 // close, rock laid on three planes over cliffs, a wet darkening near the
-// water line, and under the sea a sandy bed with caustics.
+// water line, and under the sea a sandy bed with caustics, lit more evenly
+// and softer the deeper it lies.
 Shader "OpenKingdoms/Presentation/Terrain"
 {
     Properties
@@ -58,7 +59,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
-                half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv);
+                half4 c = SAMPLE_TEXTURE2D_BIAS(_MainTex, sampler_MainTex, i.uv, OkuBedBlur(i.positionWS));
                 half3 n = normalize(i.normalWS);
                 if (_OkuDetailParams.w > 0)
                 {
@@ -89,15 +90,15 @@ Shader "OpenKingdoms/Presentation/Terrain"
                     }
                 }
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
-                c.rgb *= lerp(1, 0.72, wet);
+                c.rgb *= lerp(1, 0.72, wet) * OkuWetBand(i.positionWS);
                 c.rgb = OkuBed(c.rgb, i.positionWS);
-                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(_Glossiness, 0.6, wet), i.positionWS), 0);
+                n = normalize(lerp(n, half3(0, 1, 0), OkuBedFlat(i.positionWS)));
+                half shadow;
+                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(_Glossiness, 0.6, wet), i.positionWS), 0,
+                    saturate(OkuUnder(i.positionWS) / 1.5), shadow);
                 float2 gx = ddx(i.positionWS.xz), gy = ddy(i.positionWS.xz);
                 if (i.positionWS.y < _OkuSeaLevel - 0.02 && _OkuWaterSigma.a > 0)
-                {
-                    Light sun = GetMainLight(TransformWorldToShadowCoord(i.positionWS));
-                    rgb += c.rgb * sun.color * (OkuCaustics(i.positionWS, sun.direction, gx, gy) * sun.shadowAttenuation);
-                }
+                    rgb += c.rgb * _MainLightColor.rgb * (OkuCaustics(i.positionWS, _MainLightPosition.xyz, gx, gy) * shadow);
                 rgb *= OkuFogLight(i.positionWS) * OkuEdgeBand(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
             }
@@ -184,9 +185,9 @@ Shader "OpenKingdoms/Presentation/Terrain"
         };
         void surf(Input IN, inout SurfaceOutputStandard o)
         {
-            fixed4 c = tex2D(_MainTex, IN.uv_MainTex);
+            fixed4 c = tex2Dbias(_MainTex, float4(IN.uv_MainTex, 0, OkuBedBlur(IN.worldPos)));
             float wet = saturate(1 - (IN.worldPos.y - _SeaLevel) / 0.6);
-            c.rgb *= lerp(1, 0.72, wet);
+            c.rgb *= lerp(1, 0.72, wet) * OkuWetBand(IN.worldPos);
             c.rgb = OkuBed(c.rgb, IN.worldPos);
             o.Albedo = c.rgb * OkuFogLight(IN.worldPos) * OkuEdgeBand(IN.worldPos);
             o.Smoothness = OkuBedGloss(lerp(_Glossiness, 0.6, wet), IN.worldPos);

@@ -334,6 +334,15 @@ namespace OpenKingdomsUnity.Game
         public bool CanFly, Hovers;
         public float CruiseAltitude;    // world units above the ground
         public float MaxSpeed;          // world units per second
+        public float Waterline = -1f;   // how far a floater's hull sits under the sea, world units, -1 unknown
+
+        // Whether it floats, worked out once from the fields above.
+        public FloatKind Float => floatKind ??= Afloat.KindOf(this);
+        FloatKind? floatKind;
+
+        // The names a drop-in model may go by, for the renderer each frame.
+        public string[] ModelNames => modelNames ??= new[] { Name, ObjectName };
+        string[] modelNames;
     }
 
     public sealed class FeatureDef

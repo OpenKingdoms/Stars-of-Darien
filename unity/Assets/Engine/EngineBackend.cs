@@ -34,10 +34,9 @@ namespace OpenKingdomsUnity.Engine
         readonly byte[] statusBuf = new byte[128];
         GameStatus status = GameStatus.Idle;
         MapTerrain terrain;
-        // How far each unit afloat is drawn above the ground the engine
-        // reports, by handle, from the last ReadUnits.
+        // How far each unit afloat is drawn above the ground under it, by
+        // handle, from the last ReadUnits. Its pose is lifted to match.
         readonly Dictionary<int, float> lifts = new Dictionary<int, float>();
-        FloatKind[] floatKinds = Array.Empty<FloatKind>();
 
         public string Name => "OpenKingdoms";
 
@@ -226,10 +225,9 @@ namespace OpenKingdomsUnity.Engine
                 bool takesOff = Array.Exists(def.Animations, a => string.Equals(a, "BeginFlight", StringComparison.OrdinalIgnoreCase));
                 def.CanFly = takesOff || Array.Exists(def.Animations, a => string.Equals(a, "FlightControl", StringComparison.OrdinalIgnoreCase));
                 def.Hovers = def.CanFly && !takesOff;
+                if (d.floater != 0) def.Waterline = d.waterline * S;
                 unitDefs.Add(def);
             }
-            floatKinds = new FloatKind[unitDefs.Count];
-            for (int i = 0; i < unitDefs.Count; i++) floatKinds[i] = Afloat.KindOf(unitDefs[i]);
             featureDefs.Clear();
             int nf = OkEngine.okx_feature_def_count();
             for (int i = 0; i < nf; i++)
@@ -426,8 +424,11 @@ namespace OpenKingdomsUnity.Engine
                 var flags = u.state == OkEngine.UnitActive ? UnitFlags.Active : UnitFlags.Dying;
                 if (u.building != 0) flags |= UnitFlags.Building;
                 var at = EngineSettings.ToUnity(u.x, u.y, u.z);
-                float lift = Lift(u.def, at.y);
-                if (lift != 0f) { at.y += lift; lifts[u.handle] = lift; }
+                if (Floating(u.def, at, out float drawn, out float ground))
+                {
+                    at.y = drawn;
+                    lifts[u.handle] = drawn - ground;
+                }
                 into[i] = new UnitState
                 {
                     Handle = u.handle, StableId = u.stableId, Def = u.def, Player = u.player, Flags = flags,
@@ -458,13 +459,18 @@ namespace OpenKingdomsUnity.Engine
             return n;
         }
 
-        // The engine puts a ship on the sea floor. It is drawn in the
-        // surface instead, and a hovering unit on it.
-        float Lift(int def, float ground)
+        // A ship is drawn with its origin just under the surface and a
+        // hovering unit on it, from the ground under them, whether the engine
+        // reports them at the sea floor (before API 20) or at the sea.
+        bool Floating(int def, Vector3 at, out float drawn, out float ground)
         {
-            if (terrain == null || terrain.SeaLevel <= 0 || def < 0 || def >= floatKinds.Length) return 0f;
-            var kind = floatKinds[def];
-            return kind == FloatKind.None ? 0f : Afloat.Height(kind, ground, terrain.SeaLevel) - ground;
+            drawn = ground = at.y;
+            if (terrain == null || terrain.SeaLevel <= 0 || def < 0 || def >= unitDefs.Count) return false;
+            var kind = unitDefs[def].Float;
+            if (kind == FloatKind.None) return false;
+            ground = GroundHeight(at.x, at.z);
+            drawn = Afloat.Height(kind, ground, terrain.SeaLevel);
+            return true;
         }
 
         public int ReadFeatures(FeatureState[] into)
@@ -521,7 +527,9 @@ namespace OpenKingdomsUnity.Engine
             int nodes = OkEngine.okx_unit_pose(handle, pose, hidden, 128);
             if (nodes <= 0) return 0;
             WritePose(nodes, into, true);
-            if (into != null && lifts.TryGetValue(handle, out float lift))
+            // The engine poses a unit on the ground under it, even a floater
+            // it reports at the sea.
+            if (into != null && lifts.TryGetValue(handle, out float lift) && lift != 0f)
             {
                 var up = Matrix4x4.Translate(new Vector3(0, lift, 0));
                 for (int i = 0; i < Mathf.Min(nodes, into.Length); i++) into[i].Matrix = up * into[i].Matrix;

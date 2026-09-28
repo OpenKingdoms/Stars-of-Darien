@@ -656,8 +656,13 @@ namespace OpenKingdomsUnity.Game
                     t.Blocks[3 * b + 1] = (texX != null ? texX[y * w + x] : 0) * t.BlockTexels;
                     t.Blocks[3 * b + 2] = (texY != null ? texY[y * w + x] : 0) * t.BlockTexels;
                 }
+            // The engine reads its terrain afresh after a paint, a new object.
+            if (ReplacesTerrainOnPaint) Terrain = Clone(t);
             return true;
         }
+
+        // For tests: behave as the engine does after PaintBlocks.
+        public bool ReplacesTerrainOnPaint;
 
         public int PlaceFeature(int def, int cx, int cz)
         {
@@ -744,8 +749,7 @@ namespace OpenKingdomsUnity.Game
         }
 
         // As EngineBackend does: a ship afloat is drawn in the surface.
-        float Lift(Unit u) => Terrain == null ? 0f
-            : Afloat.Height(Afloat.KindOf(unitDefs[u.Def]), u.Pos.y, Terrain.SeaLevel) - u.Pos.y;
+        float Lift(Unit u) => Terrain == null ? 0f : Afloat.Lift(unitDefs[u.Def], u.Pos.y, Terrain.SeaLevel);
 
         public int ReadFeatures(FeatureState[] into)
         {
@@ -815,12 +819,15 @@ namespace OpenKingdomsUnity.Game
         public RgbaImage Texture(int texture) => texture >= 0 && texture < textures.Count ? textures[texture] : null;
         public RgbaImage Sprite(int sprite) => sprite >= 0 && sprite < sprites.Count ? sprites[sprite] : null;
 
+        Matrix4x4[] poseScratch = new Matrix4x4[64];
+
         public int PoseModel(int model, string animation, float seconds, PiecePose[] into)
         {
             var m = GetModel(model);
             if (m == null) return 0;
             int n = Mathf.Min(into.Length, m.Pieces.Length);
-            var local = new Matrix4x4[n];
+            if (poseScratch.Length < n) poseScratch = new Matrix4x4[Mathf.NextPowerOfTwo(n)];
+            var local = poseScratch;
             for (int i = 0; i < n; i++)
             {
                 var p = m.Pieces[i];

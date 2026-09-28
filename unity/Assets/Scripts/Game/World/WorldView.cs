@@ -25,7 +25,7 @@ namespace OpenKingdomsUnity.Game.World
             Terrain.Build(backend, Root.transform);
             var size = backend.Terrain.Size;
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
-            Terrain.Sea?.SetClimate(map != null ? map.Climate : "");
+            Terrain.SetSeaClimate(map != null ? map.Climate : "");
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
             Warm();
@@ -46,7 +46,7 @@ namespace OpenKingdomsUnity.Game.World
             cam.farClipPlane = 1500f;
             cam.fieldOfView = 40f;
             cam.depthTextureMode |= DepthTextureMode.Depth;
-            WaterView.Prepare(cam);
+            WaterView.Prepare(cam, Terrain.Sea != null);
             Camera = cam.GetComponent<GameCamera>();
             if (Camera == null) Camera = cam.gameObject.AddComponent<GameCamera>();
             Camera.enabled = true;
@@ -105,7 +105,9 @@ namespace OpenKingdomsUnity.Game.World
             using (new Unity.Profiling.ProfilerMarker("Oku.Fog").Auto()) Fog.Update();
             using (new Unity.Profiling.ProfilerMarker("Oku.Entities").Auto()) Entities.Render(cam);
             using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
-            using (new Unity.Profiling.ProfilerMarker("Oku.Water").Auto()) Terrain.Sea?.Update(Atmosphere, Entities, backend);
+            // An edit in the map editor can make a sea where there was none.
+            WaterView.Prepare(cam, Terrain.Sea != null);
+            using (new Unity.Profiling.ProfilerMarker("Oku.Water").Auto()) Terrain.Sea?.Update(Atmosphere, Entities, backend, cam);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 
@@ -117,7 +119,12 @@ namespace OpenKingdomsUnity.Game.World
             Models?.Dispose();
             Terrain.Dispose();
             Atmosphere.Dispose();
-            if (Camera != null) Camera.enabled = false;
+            if (Camera != null)
+            {
+                // The camera outlives the game: no copies for a sea that is gone.
+                WaterView.Prepare(Camera.GetComponent<UnityEngine.Camera>(), false);
+                Camera.enabled = false;
+            }
             if (Root != null) Looks.Release(Root);
             Root = null;
         }

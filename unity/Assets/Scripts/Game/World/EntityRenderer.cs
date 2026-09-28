@@ -374,8 +374,16 @@ namespace OpenKingdomsUnity.Game.World
 
         public bool IsDrawn(int handle) => DrawnSize.ContainsKey(handle);
 
-        // Half the beam and half the length of each ship's hull drawn this frame.
-        public readonly Dictionary<int, Vector2> Hulls = new Dictionary<int, Vector2>();
+        // Each ship drawn this frame: its hull at the waterline, and where
+        // that hull's middle and bow lie.
+        public readonly Dictionary<int, (ShipHull hull, Vector2 middle, Vector2 bow)> Hulls = new Dictionary<int, (ShipHull, Vector2, Vector2)>();
+        readonly Dictionary<PresentedModel, ShipHull> hullOf = new Dictionary<PresentedModel, ShipHull>();
+
+        ShipHull HullOf(PresentedModel m)
+        {
+            if (!hullOf.TryGetValue(m, out var h)) hullOf[m] = h = ShipHull.Of(m);
+            return h;
+        }
 
         // A ship rides the swell: heave, pitch and roll from the surface at
         // its bow, stern and sides, eased so it rocks rather than shakes.
@@ -386,7 +394,8 @@ namespace OpenKingdomsUnity.Game.World
         // The sway last drawn for a unit, identity for one not afloat.
         public Matrix4x4 SwayOf(int handle) => swayOf.TryGetValue(handle, out var m) ? m : Matrix4x4.identity;
 
-        Matrix4x4 Sway(in UnitState u, Bounds rest)
+        // The hull sinks to its own waterline, then rides the swell.
+        Matrix4x4 Sway(in UnitState u, ShipHull hull)
         {
             var t = backend.Terrain;
             if (t == null || t.SeaLevel <= 0) return Matrix4x4.identity;
@@ -396,7 +405,7 @@ namespace OpenKingdomsUnity.Game.World
             float yaw = u.Heading * Mathf.Deg2Rad;
             var fwd = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
             var right = new Vector2(fwd.y, -fwd.x);
-            float len = Mathf.Max(rest.extents.z, 0.5f) * 0.8f, beam = Mathf.Max(rest.extents.x, 0.3f) * 0.8f;
+            float len = Mathf.Max(hull.HalfLength, 0.5f) * 0.8f, beam = Mathf.Max(hull.HalfBeam, 0.3f) * 0.8f;
             var c = new Vector2(u.Position.x, u.Position.z);
             float bow = Surface(c + fwd * len, damp), stern = Surface(c - fwd * len, damp);
             float starboard = Surface(c + right * beam, damp), port = Surface(c - right * beam, damp);
@@ -409,7 +418,9 @@ namespace OpenKingdomsUnity.Game.World
             var pivot = new Vector3(u.Position.x, t.SeaLevel, u.Position.z);
             var turn = Quaternion.Euler(0, u.Heading, 0);
             var tilt = turn * Quaternion.Euler(now.y, 0, now.z) * Quaternion.Inverse(turn);
-            var m = Matrix4x4.Translate(pivot + Vector3.up * now.x) * Matrix4x4.Rotate(tilt) * Matrix4x4.Translate(-pivot);
+            // Never lower than the ground under it, in the shallows.
+            float sink = Mathf.Min(hull.Sink, Mathf.Max(0f, u.Position.y - ground));
+            var m = Matrix4x4.Translate(pivot + Vector3.up * (now.x - sink)) * Matrix4x4.Rotate(tilt) * Matrix4x4.Translate(-pivot);
             swayOf[u.Handle] = m;
             return m;
         }
@@ -423,18 +434,20 @@ namespace OpenKingdomsUnity.Game.World
             // only its construction sparkles mark the site.
             if ((u.Flags & UnitFlags.Building) != 0 && u.MaxHealth > 0 && u.Health * 2 < u.MaxHealth) return;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
-            var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
+            var model = models.Get(u.Model, OverrideKind.Unit, def?.ModelNames);
             float height = 1.5f, radius = 0.6f, air = 0f;
-            var kind = Afloat.KindOf(def);
-            var sway = kind == FloatKind.Ship && model != null ? Sway(u, model.RestBounds) : Matrix4x4.identity;
+            var kind = def != null ? def.Float : FloatKind.None;
+            var hull = kind == FloatKind.Ship && model != null ? HullOf(model) : default;
+            var sway = kind == FloatKind.Ship && model != null ? Sway(u, hull) : Matrix4x4.identity;
+            int posedCount = 0;
             if (model != null && model.Override != null)
             {
-                int n = Pose(u, def, model, sway, out air);
+                int n = posedCount = Pose(u, def, model, sway, out air);
                 AddOverride(model, n);
             }
             else if (model != null)
             {
-                int n = Pose(u, def, model, sway, out air);
+                int n = posedCount = Pose(u, def, model, sway, out air);
                 // A unit that is mostly a painted card draws its 3D model in
                 // place of the card, facing with the unit, on any plinth.
                 var card = def != null ? CardOverride.For(def.ObjectName) : null;
@@ -459,9 +472,16 @@ namespace OpenKingdomsUnity.Game.World
             DrawnSize[u.Handle] = new Vector2(height, radius);
             if (kind == FloatKind.Ship && model != null)
             {
-                // Sails and oars reach wider than the hull does.
-                var e = model.RestBounds.extents;
-                Hulls[u.Handle] = new Vector2(Mathf.Min(e.x, e.z * 0.3f), e.z);
+                float yaw = u.Heading * Mathf.Deg2Rad;
+                var bow = new Vector2(Mathf.Sin(yaw), Mathf.Cos(yaw));
+                // The waterline's middle, placed as the model's root piece is.
+                var mid = u.Position;
+                if (posedCount > 0)
+                {
+                    var o = model.Data.Pieces.Length > 0 ? model.Data.Pieces[0].Offset * model.Data.Scale : Vector3.zero;
+                    mid = posed[0].MultiplyPoint3x4(new Vector3(0, 0, hull.Middle) - o);
+                }
+                Hulls[u.Handle] = (hull, new Vector2(mid.x, mid.z), bow);
             }
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;

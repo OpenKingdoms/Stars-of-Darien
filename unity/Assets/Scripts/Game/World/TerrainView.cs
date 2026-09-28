@@ -45,18 +45,46 @@ namespace OpenKingdomsUnity.Game.World
             GroundDetail.Apply(true);
             chunkImages.Clear();
 
+            seaParent = parent;
             if (t.SeaLevel > 0)
             {
-                Sea = new WaterView();
-                float shelf = EdgeRing.Shelf(t);
-                var size = t.Size;
-                // Past the map the sea lies over the ring's own ground.
-                float Ground(float x, float z) =>
-                    x >= 0 && x <= size.x && z <= 0 && z >= -size.y ? t.Sample(x, z) : EdgeRing.Height(t, new Vector2(x, z), shelf);
-                Sea.Build(parent, size, t.CellSize, t.SeaLevel, Ground, EdgeRing.Width * t.CellSize + 40f);
-                Sea.SetBedLuma(BedLuma(t, whole));
+                seaShelf = EdgeRing.Shelf(t);
+                bedLuma = BedLuma(t, whole);
+                BuildSea();
+                // A sea level with no water under it anywhere draws no sea.
+                if (!Sea.AnyWater) { Sea.Dispose(); Sea = null; }
             }
-            else WaterView.ClearGlobals();
+            if (Sea == null) WaterView.ClearGlobals();
+        }
+
+        Transform seaParent;
+        float seaShelf, bedLuma;
+        string seaClimate = "";
+
+        // The climate whose water the sea shows, now and if an edit makes one.
+        public void SetSeaClimate(string climate)
+        {
+            seaClimate = climate ?? "";
+            Sea?.SetClimate(seaClimate);
+        }
+
+        void BuildSea()
+        {
+            var t = backend.Terrain;
+            Sea = new WaterView();
+            Sea.Build(seaParent, t.Size, t.CellSize, t.SeaLevel, SeaGround, EdgeRing.Width * t.CellSize + 40f);
+            Sea.SetBedLuma(bedLuma);
+            Sea.SetClimate(seaClimate);
+        }
+
+        // The ground under the sea, read from the backend each time, since
+        // an edit in the map editor may replace its terrain. Past the map
+        // the sea lies over the ring's own ground.
+        float SeaGround(float x, float z)
+        {
+            var t = backend.Terrain;
+            var size = t.Size;
+            return x >= 0 && x <= size.x && z <= 0 && z >= -size.y ? t.Sample(x, z) : EdgeRing.Height(t, new Vector2(x, z), seaShelf);
         }
 
         // The usual lightness of the painted ground under the sea, linear,
@@ -128,7 +156,18 @@ namespace OpenKingdomsUnity.Game.World
                     regions[rx, ry] = BuildRegion(t, rx, ry);
                 }
             chunkImages.Clear();
-            Sea?.Bake(blocks.xMin * t.BlockSize, blocks.xMax * t.BlockSize, -blocks.yMin * t.BlockSize, -blocks.yMax * t.BlockSize);
+            if (Sea != null) Sea.Bake(blocks.xMin * t.BlockSize, blocks.xMax * t.BlockSize, -blocks.yMin * t.BlockSize, -blocks.yMax * t.BlockSize);
+            else if (t.SeaLevel > 0 && WetIn(t, blocks)) BuildSea();
+        }
+
+        // Whether any ground in a rectangle of blocks lies under the sea.
+        static bool WetIn(MapTerrain t, RectInt blocks)
+        {
+            int per = TerrainBuilder.SamplesPerBlock(t);
+            for (int z = Mathf.Max(0, blocks.yMin * per); z <= Mathf.Min(t.HeightsH - 1, blocks.yMax * per); z++)
+                for (int x = Mathf.Max(0, blocks.xMin * per); x <= Mathf.Min(t.HeightsW - 1, blocks.xMax * per); x++)
+                    if (t.HeightAt(x, z) < t.SeaLevel) return true;
+            return false;
         }
 
         // The land past the playable edge: the edge ring, textured with a

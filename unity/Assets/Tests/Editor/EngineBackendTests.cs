@@ -478,5 +478,67 @@ namespace OpenKingdomsUnity.Tests
             if (enemy >= 0)
                 Assert.IsFalse(backend.MoveFormation(new[] { enemy }, new[] { to }, null, false, false), "nobody took it");
         }
+
+        // A ship the engine builds is drawn with its origin just under the
+        // surface, and posed there too: the engine reports a floater at the
+        // sea but poses it on the floor.
+        [Test, Order(11)]
+        public void AShipIsDrawnInTheSurfaceAndPosedWhereItIsDrawn()
+        {
+            var s = new SkirmishSetup { MapId = "per mare per terras", Seed = 7, LineOfSight = false, MapRevealed = true, StartMana = 20000 };
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = "VERUNA", Colour = 0, Team = 0 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "TAROS", Colour = 1, Team = 1 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 4, Team = 2 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 5, Team = 3 });
+            backend.StartSkirmish(s);
+            LoadProgress p = default;
+            for (int pumps = 0; pumps < 5000 && !p.Done && !p.Failed; pumps++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            int Find(string name) { for (int i = 0; i < backend.UnitDefs.Count; i++) if (string.Equals(backend.UnitDefs[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i; return -1; }
+            int yard = Find("verasy"), ship = Find("verscout");
+            Assert.GreaterOrEqual(yard, 0);
+            Assert.GreaterOrEqual(ship, 0);
+            Assert.AreEqual(FloatKind.Ship, backend.UnitDefs[ship].Float);
+            var units = new UnitState[1024];
+            int n = backend.ReadUnits(units), builder = -1;
+            Vector3 from = Vector3.zero;
+            for (int i = 0; i < n; i++)
+                if (units[i].Player == backend.LocalPlayer && Array.IndexOf(backend.UnitDefs[units[i].Def].BuildOptions, yard) >= 0) { builder = units[i].Handle; from = units[i].Position; }
+            Assert.GreaterOrEqual(builder, 0, "someone builds the harbour");
+            Vector3 site = from;
+            bool placed = false;
+            for (float r = 4; r <= 70 && !placed; r += 2)
+                for (int k = 0; k < 24 && !placed; k++)
+                {
+                    float a = k * Mathf.PI * 2 / 24;
+                    placed = backend.CanBuildAt(yard, from + new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)) * r, 0, out site);
+                }
+            Assert.IsTrue(placed, "a harbour site on the water");
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = builder, Target = site, TargetUnit = -1, BuildDef = yard }));
+            int harbour = -1, boat = -1;
+            for (int step = 0; step < 1200 && boat < 0; step++)
+            {
+                backend.Advance(20);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                {
+                    if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Building) != 0) continue;
+                    if (units[i].Def == yard && harbour < 0)
+                    {
+                        harbour = units[i].Handle;
+                        backend.Command(new GameCommand { Kind = CommandKind.FactoryEnqueue, Unit = harbour, TargetUnit = -1, BuildDef = ship });
+                    }
+                    if (units[i].Def == ship) boat = i;
+                }
+            }
+            Assert.GreaterOrEqual(boat, 0, "the harbour built a ship");
+            var u = units[boat];
+            float sea = backend.Terrain.SeaLevel, ground = backend.GroundHeight(u.Position.x, u.Position.z);
+            Assert.Less(ground, sea - 1f, "the ship is over deep water");
+            Assert.AreEqual(sea - Afloat.Draft, u.Position.y, 0.01f, "its origin is drawn just under the surface");
+            var pose = new PiecePose[128];
+            Assert.Greater(backend.ReadUnitPose(u.Handle, pose), 0);
+            Assert.AreEqual(u.Position.y, pose[0].Matrix.m13, 0.3f, "and its pose stands there, not on the floor");
+        }
     }
 }

@@ -1,7 +1,10 @@
-// WaterPlayTests.cs - the sea as it is drawn: ships sit in its surface, a
-// lake inside a high border shows as water, fogged water is dimmed water,
-// shallows are lighter than the deep, foam lines the shore, a moving ship
-// leaves a wake, the open sea shows no stripes or tiling, and what it costs.
+// WaterPlayTests.cs - the sea as it is drawn: ships sit in its surface at
+// their hull's waterline, a lake inside a high border shows as water in
+// either pipeline, fogged water is dimmed water, shallows are lighter than
+// the deep, a lace of foam lines the shore, a moving ship leaves a wake,
+// the open sea shows no stripes or tiling, a frame throws nothing away per
+// unit, a dry map after a sea map copies no scene for a sea, and what the
+// sea costs.
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -10,7 +13,9 @@ using System.Linq;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.World;
+using Unity.Profiling;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.TestTools;
 using Debug = UnityEngine.Debug;
@@ -30,9 +35,9 @@ namespace OpenKingdomsUnity.Tests
             root = null;
         }
 
-        IEnumerator Begin(string map, bool revealed, bool lineOfSight)
+        IEnumerator Begin(string map, bool revealed, bool lineOfSight, int extraSoldiers = 0)
         {
-            mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
+            mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f, ExtraSoldiers = extraSoldiers };
             root = GameRoot.Boot(mock);
             yield return null;
             root.Flow.Fire(FlowEvent.OpenSkirmish);
@@ -160,7 +165,7 @@ namespace OpenKingdomsUnity.Tests
             {
                 var u = e.Units[i];
                 float ground = mock.GroundHeight(u.Position.x, u.Position.z);
-                if (Afloat.KindOf(mock.UnitDefs[u.Def]) != FloatKind.Ship)
+                if (mock.UnitDefs[u.Def].Float != FloatKind.Ship)
                 {
                     Assert.AreEqual(ground, u.Position.y, 0.01f, "a unit on land stands on the ground");
                     onLand++;
@@ -168,8 +173,10 @@ namespace OpenKingdomsUnity.Tests
                 }
                 Assert.Less(ground, t.SeaLevel - 0.6f, "the boat is over water");
                 var b = e.UnitBounds(u.Handle);
-                Debug.Log($"Boat {u.Handle}: ground {ground:F2}, sea {t.SeaLevel:F2}, drawn from {b.min.y:F2} to {b.max.y:F2}");
+                var hull = e.Hulls[u.Handle].hull;
+                Debug.Log($"Boat {u.Handle}: ground {ground:F2}, sea {t.SeaLevel:F2}, drawn from {b.min.y:F2} to {b.max.y:F2}, hull draft {hull.Draft:F2}");
                 Assert.Less(b.min.y, t.SeaLevel - 0.1f, "its keel is under the surface");
+                Assert.AreEqual(t.SeaLevel - hull.Draft, b.min.y, 0.15f, "at its hull's own draft, give or take the swell");
                 Assert.Greater(b.max.y, t.SeaLevel + 1f, "and it stands out of the water");
                 float under = (t.SeaLevel - b.min.y) / b.size.y;
                 Assert.Less(under, 0.3f, "with most of the ship above the surface");
@@ -201,6 +208,45 @@ namespace OpenKingdomsUnity.Tests
             Debug.Log($"Moat lake: {c32}, saturation {Saturation(c32):F2}");
             Assert.Greater(Saturation(c32), 0.25f, "the lake is coloured water, not grey haze");
             Assert.Greater(c.b, c.r + 15f, "and bluer than it is red");
+        }
+
+        // The built-in pipeline draws the same sea over a grab of the screen.
+        [UnityTest]
+        public IEnumerator TheSeaDrawsInTheBuiltInPipeline()
+        {
+            yield return Begin("mock_moat", true, false);
+            FogView.Disabled = true;
+            root.World.Fog.Update(true);
+            var t = mock.Terrain;
+            var centre = new Vector3(48, t.SeaLevel, -48);
+            var pipeline = GraphicsSettings.defaultRenderPipeline;
+            var quality = QualitySettings.renderPipeline;
+            Texture2D shot;
+            List<Vector2> at;
+            try
+            {
+                GraphicsSettings.defaultRenderPipeline = null;
+                QualitySettings.renderPipeline = null;
+                Assert.IsNull(Looks.Urp, "the built-in pipeline draws");
+                yield return Look(centre, 40f, 70f);
+                var rt = RenderTexture.GetTemporary(960, 540, 24);
+                at = OnScreen(rt, SeaPoints(40, 56, -56, -40, 1.0f, 9f, 1f));
+                shot = Shot(Cam, rt);
+                RenderTexture.ReleaseTemporary(rt);
+            }
+            finally
+            {
+                GraphicsSettings.defaultRenderPipeline = pipeline;
+                QualitySettings.renderPipeline = quality;
+            }
+            Save(shot, "water-test-builtin.png");
+            Assert.Greater(at.Count, 50, "the lake is in view");
+            var c = Mean(shot, at);
+            var c32 = (Color32)new Color(c.r / 255f, c.g / 255f, c.b / 255f);
+            Debug.Log($"Built-in moat lake: {c32}, saturation {Saturation(c32):F2}");
+            Assert.Greater(Saturation(c32), 0.25f, "the lake is coloured water");
+            Assert.Greater(c.b, c.r + 15f, "and bluer than it is red");
+            Assert.Less(Mathf.Max(c.r, c.g, c.b), 230f, "not a blown-out or placeholder colour");
         }
 
         // ---- The fog of war over the sea ----
@@ -298,7 +344,8 @@ namespace OpenKingdomsUnity.Tests
         }
 
         // The foam at the shore pulses as the wash rolls in and its lace
-        // drifts, so it is judged over one wash, from four pictures.
+        // drifts, so it is judged over one wash, from four pictures. It is
+        // a broken lace, never a solid band.
         [UnityTest]
         public IEnumerator FoamLinesTheShore()
         {
@@ -307,12 +354,13 @@ namespace OpenKingdomsUnity.Tests
             root.World.Fog.Update(true);
             yield return Look(new Vector3(48, 2.5f, -64), 24f, 80f);
             var rt = RenderTexture.GetTemporary(960, 540, 24);
-            // Just inside the water's edge, and well out from it.
-            var edge = OnScreen(rt, SeaPoints(40, 56, -74, -54, 0.01f, 0.08f, 0.25f));
+            // Just off the water's edge, where the surf breaks, and well out from it.
+            var edge = OnScreen(rt, SeaPoints(40, 56, -74, -54, 0.03f, 0.12f, 0.2f));
             var open = OnScreen(rt, SeaPoints(40, 60, -74, -54, 1.6f, 2.0f, 0.25f));
             Assert.Greater(edge.Count, 30, "the shore is in view");
             Assert.Greater(open.Count, 30);
-            bool White(Color32 c) => Mathf.Min(c.r, Mathf.Min(c.g, c.b)) > 150 && Saturation(c) < 0.22f;
+            // Foam: much lighter than the water beside it, and pale.
+            bool White(Color32 c) => Luma(c) > 150 && Saturation(c) < 0.3f;
             float atEdge = 0, offshore = 0;
             const int shots = 4;
             for (int k = 0; k < shots; k++)
@@ -330,8 +378,9 @@ namespace OpenKingdomsUnity.Tests
             }
             RenderTexture.ReleaseTemporary(rt);
             Debug.Log($"Foam: {atEdge:P0} of the water's edge is white, {offshore:P0} of open water");
-            Assert.Greater(atEdge, 0.3f, "foam lines the water's edge");
-            Assert.Less(offshore, 0.1f, "and not the open water");
+            Assert.Greater(atEdge, 0.08f, "foam lines the water's edge");
+            Assert.Less(atEdge, 0.7f, "broken along the shore, not a solid band");
+            Assert.Less(offshore, 0.02f, "and not the open water");
         }
 
         [UnityTest]
@@ -349,27 +398,37 @@ namespace OpenKingdomsUnity.Tests
             Assert.Less(u.Position.z, -26f, "the boat is under way, south");
             var t = mock.Terrain;
             yield return Look(new Vector3(u.Position.x, t.SeaLevel, u.Position.z + 3f), 24f, 85f);
-            u = UnitOf(boat);
+            // The lace drifts and the churn fades, so three pictures a little
+            // apart are averaged.
+            float lb = 0, la = 0;
+            const int shots = 3;
             var rt = RenderTexture.GetTemporary(960, 540, 24);
-            var behind = new List<Vector3>();
-            var aside = new List<Vector3>();
-            for (float d = 2.8f; d <= 5.5f; d += 0.25f)
-                for (float s = -1.6f; s <= 1.6f; s += 0.2f)
-                {
-                    behind.Add(new Vector3(u.Position.x + s, t.SeaLevel, u.Position.z + d));
-                    aside.Add(new Vector3(u.Position.x + 6f + s * 0.5f, t.SeaLevel, u.Position.z + d));
-                    aside.Add(new Vector3(u.Position.x - 6f + s * 0.5f, t.SeaLevel, u.Position.z + d));
-                }
-            var b = OnScreen(rt, behind);
-            var a = OnScreen(rt, aside);
-            var shot = Shot(Cam, rt);
+            for (int k = 0; k < shots; k++)
+            {
+                for (int i = 0; i < 10 && k > 0; i++) yield return null;
+                u = UnitOf(boat);
+                var behind = new List<Vector3>();
+                var aside = new List<Vector3>();
+                for (float d = 2.8f; d <= 5.5f; d += 0.25f)
+                    for (float s = -1.6f; s <= 1.6f; s += 0.2f)
+                    {
+                        behind.Add(new Vector3(u.Position.x + s, t.SeaLevel, u.Position.z + d));
+                        aside.Add(new Vector3(u.Position.x + 6f + s * 0.5f, t.SeaLevel, u.Position.z + d));
+                        aside.Add(new Vector3(u.Position.x - 6f + s * 0.5f, t.SeaLevel, u.Position.z + d));
+                    }
+                var b = OnScreen(rt, behind);
+                var a = OnScreen(rt, aside);
+                var shot = Shot(Cam, rt);
+                if (k == 0) Save(shot, "water-test-wake.png");
+                Assert.Greater(b.Count, 50);
+                Assert.Greater(a.Count, 50);
+                lb += b.Average(p => Luma(Px(shot, p))) / shots;
+                la += a.Average(p => Luma(Px(shot, p))) / shots;
+                Object.Destroy(shot);
+            }
             RenderTexture.ReleaseTemporary(rt);
-            Save(shot, "water-test-wake.png");
-            Assert.Greater(b.Count, 50);
-            Assert.Greater(a.Count, 50);
-            float lb = b.Average(p => Luma(Px(shot, p))), la = a.Average(p => Luma(Px(shot, p)));
             Debug.Log($"Wake: {lb:F1} behind the boat, {la:F1} beside its path");
-            Assert.Greater(lb, la + 10f, "foam trails behind a ship under way");
+            Assert.Greater(lb, la + 6f, "foam trails behind a ship under way");
         }
 
         // Open water has no strong single frequency (stripes) and does not
@@ -524,8 +583,86 @@ namespace OpenKingdomsUnity.Tests
             }
         }
 
+        // A frame of the world throws nothing away per unit: with many
+        // soldiers and ships it allocates no more than with a few.
+        [UnityTest]
+        public IEnumerator AFrameAllocatesNothingPerUnit()
+        {
+            var perFrame = new List<long>();
+            foreach (var (soldiers, boats) in new[] { (0, 2), (160, 40) })
+            {
+                yield return Begin("mock_bay", true, false, soldiers);
+                FogView.Disabled = true;
+                root.World.Fog.Update(true);
+                for (int k = 0; k < boats; k++) mock.SpawnBoat(mock.LocalPlayer, new Vector3(58 + (k % 8) * 2f, 0, -20 - (k / 8) * 8f));
+                yield return Look(new Vector3(66, mock.Terrain.SeaLevel, -50), 90f, 60f);
+                // Every ship seen once, so its trail and hull are known.
+                for (int i = 0; i < 10; i++) root.World.Render();
+                using (var rec = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame"))
+                {
+                    yield return null;
+                    yield return null;
+                    if (!rec.Valid) Assert.Ignore("no allocation counter here");
+                    // The counter must see a known allocation, or it proves nothing.
+                    var known = new byte[65536];
+                    yield return null;
+                    if (rec.LastValue < known.Length) Assert.Ignore("the allocation counter does not count here");
+                    // A frame of the game's own, then one that also renders the
+                    // world thirty times more: the difference is thirty renders.
+                    var quiet = new List<long>();
+                    var busy = new List<long>();
+                    const int renders = 30;
+                    for (int round = 0; round < 3; round++)
+                    {
+                        yield return null;
+                        quiet.Add(rec.LastValue);
+                        for (int i = 0; i < renders; i++) root.World.Render();
+                        yield return null;
+                        busy.Add(rec.LastValue);
+                    }
+                    quiet.Sort();
+                    busy.Sort();
+                    long bytes = System.Math.Max(0, busy[1] - quiet[1]) / renders;
+                    Debug.Log($"World.Render with {root.World.Entities.UnitCount} units: {bytes} bytes a render, frames {string.Join(",", quiet)} quiet, {string.Join(",", busy)} with renders");
+                    perFrame.Add(bytes);
+                }
+                Object.Destroy(root.gameObject);
+                root = null;
+                yield return null;
+            }
+            Assert.Less(perFrame[1], perFrame[0] + 2048, "a crowd costs no more garbage a frame than a handful");
+        }
+
+        // The sea asks the camera for copies of the scene. A dry map loaded
+        // after a sea map must not keep paying for them.
+        [UnityTest]
+        public IEnumerator ADryMapAfterASeaMapCopiesNothingForASea()
+        {
+            if (Looks.Urp == null) Assert.Ignore("the copies are URP's");
+            yield return Begin("mock_bay", true, false);
+            var data = Cam.GetUniversalAdditionalCameraData();
+            Assert.AreEqual(CameraOverrideOption.On, data.requiresColorOption, "a sea map copies the scene for the sea");
+            root.Flow.Fire(FlowEvent.Pause);
+            Assert.IsTrue(root.Flow.Fire(FlowEvent.ToMenu));
+            yield return null;
+            Assert.AreNotEqual(CameraOverrideOption.On, data.requiresColorOption, "the menu copies nothing");
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            root.Setup.MapId = "mock_frost";
+            root.Screens.StartGame();
+            float deadline = Time.realtimeSinceStartup + 30f;
+            while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.AreEqual(FlowState.Playing, root.Flow.State);
+            for (int i = 0; i < 3; i++) yield return null;
+            Assert.IsNull(root.World.Terrain.Sea, "the frost map is dry");
+            data = Cam.GetUniversalAdditionalCameraData();
+            Assert.AreNotEqual(CameraOverrideOption.On, data.requiresColorOption, "a dry map copies no scene for a sea");
+            Assert.AreNotEqual(CameraOverrideOption.On, data.requiresDepthOption);
+            Assert.AreEqual(-1000f, Shader.GetGlobalFloat("_OkuSeaLevel"), "and the ground does no underwater work");
+        }
+
         // What the sea costs a frame at 1920 by 1080 with water over most of
-        // the screen: frames drawn with it and without it, alternately.
+        // the screen: frames drawn with it and without it, alternately. The
+        // frames without it also leave out the ground's underwater work.
         [UnityTest]
         public IEnumerator TheSeaCostsLittle()
         {
@@ -541,9 +678,11 @@ namespace OpenKingdomsUnity.Tests
             var colour = data != null ? data.requiresColorOption : CameraOverrideOption.UsePipelineSettings;
             var rt = RenderTexture.GetTemporary(1920, 1080, 24);
             var probe = new Texture2D(1, 1, TextureFormat.RGB24, false);
+            float level = Shader.GetGlobalFloat("_OkuSeaLevel");
             double Batch(bool with, int frames)
             {
                 sea.SetActive(with);
+                Shader.SetGlobalFloat("_OkuSeaLevel", with ? level : -1000f);
                 if (data != null) data.requiresColorOption = with ? colour : CameraOverrideOption.Off;
                 var old = cam.targetTexture;
                 cam.targetTexture = rt;
@@ -570,17 +709,18 @@ namespace OpenKingdomsUnity.Tests
                 yield return null;
             }
             sea.SetActive(true);
+            Shader.SetGlobalFloat("_OkuSeaLevel", level);
             if (data != null) data.requiresColorOption = colour;
             RenderTexture.ReleaseTemporary(rt);
             Object.Destroy(probe);
             with.Sort();
             without.Sort();
             double w = with[with.Count / 2], wo = without[without.Count / 2];
-            string line = $"Sea cost at 1920x1080: {w:F2} ms a frame with the sea, {wo:F2} ms without, {w - wo:F2} ms for the sea ({SystemInfo.graphicsDeviceName})";
+            string line = $"Sea cost at 1920x1080: {w:F2} ms a frame with the sea, {wo:F2} ms without, {w - wo:F2} ms for the sea, {root.World.Terrain.Sea.Vertices} sea vertices ({SystemInfo.graphicsDeviceName})";
             Debug.Log(line);
             string dir = System.Environment.GetEnvironmentVariable("OKU_WATER_TEST_DIR");
             if (!string.IsNullOrEmpty(dir)) { Directory.CreateDirectory(dir); File.WriteAllText(Path.Combine(dir, "water-cost.txt"), line); }
-            Assert.Less(w - wo, 6.0, "the sea stays within a few milliseconds");
+            Assert.Less(w - wo, 2.5, "the sea stays within a couple of milliseconds on this machine");
         }
     }
 }

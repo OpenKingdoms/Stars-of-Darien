@@ -7,7 +7,9 @@
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
-half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionCS, half gloss, half rim)
+// shadowLift from 0 (the sun's shadow as cast) to 1 (none), and the
+// shadow used, for callers that light more by the sun.
+half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionCS, half gloss, half rim, half shadowLift, out half shadow)
 {
     float2 screenUV = GetNormalizedScreenSpaceUV(positionCS);
     half ao = 1;
@@ -19,6 +21,8 @@ half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionC
 #endif
     half3 viewWS = SafeNormalize(GetWorldSpaceViewDir(positionWS));
     Light sun = GetMainLight(TransformWorldToShadowCoord(positionWS));
+    sun.shadowAttenuation = lerp(sun.shadowAttenuation, 1, shadowLift);
+    shadow = sun.shadowAttenuation;
     half ndl = saturate(dot(normalWS, sun.direction));
     half3 lit = sun.color * (ndl * sun.shadowAttenuation * sun.distanceAttenuation * directAo);
     half3 h = SafeNormalize(sun.direction + viewWS);
@@ -34,6 +38,12 @@ half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionC
     half3 ambient = SampleSH(normalWS) * ao;
     half rimTerm = pow(1 - saturate(dot(normalWS, viewWS)), 3) * rim * 2;
     return albedo * (lit + ambient) + spec + albedo * ambient * rimTerm;
+}
+
+half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionCS, half gloss, half rim)
+{
+    half shadow;
+    return OkuLight(albedo, positionWS, normalWS, positionCS, gloss, rim, 0, shadow);
 }
 
 #endif
