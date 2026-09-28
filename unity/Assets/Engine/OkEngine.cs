@@ -18,6 +18,8 @@ namespace OpenKingdomsUnity.Engine
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string description;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string displayName;
         public int maxHealth, isBuilding, footprintX, footprintZ, buildCost;
+        // Floats on the sea, its hull that far under it in pixels, flies.
+        public int floater, waterline, canFly;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -217,7 +219,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 19;
+        public const int ApiVersion = 20;
         public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;
         public const int WhyOk = 0, WhyMana = 1, WhyUnsupported = 2;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
@@ -307,6 +309,8 @@ namespace OpenKingdomsUnity.Engine
         // Each unit to its own point, xy an x, z pair a unit in world pixels, as one order.
         // heading is engine radians, taken on arrival and held when face is 1.
         [DllImport(Lib)] public static extern int okx_move_formation(int[] handles, int[] xy, int n, int face, float heading, int groupPace, int queue);
+        // Studio Mode: a unit set down whole by the player's start. -1 in a match.
+        [DllImport(Lib)] public static extern int okx_place_unit(int def, int player);
 
         [DllImport(Lib)] public static extern int okx_terrain_info(out OkxTerrainInfo info);
         [DllImport(Lib)] public static extern int okx_terrain_heights([Out] float[] heights, int cap);

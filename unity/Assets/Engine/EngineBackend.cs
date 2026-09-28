@@ -657,20 +657,20 @@ namespace OpenKingdomsUnity.Engine
             return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, arg) == 0;
         }
 
-        // STUB until lane A's engine call lands: a plain move per unit to its
-        // own target, so the shape works now. Facing, group pace and queue
-        // come with the engine's MoveFormation.
+        // One order for them all, points in pixels as Command sends them and
+        // the heading in engine radians, as Heading() reads them back.
         public bool MoveFormation(int[] units, Vector2[] targets, float? heading, bool groupSpeed, bool queue)
         {
-            if (units == null || targets == null || units.Length != targets.Length) return false;
-            bool any = false;
-            for (int i = 0; i < units.Length; i++)
+            if (units == null || targets == null || units.Length != targets.Length || units.Length == 0) return false;
+            int n = units.Length;
+            var xy = new int[2 * n];
+            for (int i = 0; i < n; i++)
             {
-                var c = GameCommand.To(CommandKind.Move, units[i], new Vector3(targets[i].x, 0f, targets[i].y));
-                c.Queue = queue;
-                any |= Command(c);
+                xy[2 * i] = (int)(targets[i].x / S);
+                xy[2 * i + 1] = (int)(-targets[i].y / S);
             }
-            return any;
+            float rad = heading.HasValue ? (heading.Value - 180f) * Mathf.Deg2Rad : 0f;
+            return OkEngine.okx_move_formation(units, xy, n, heading.HasValue ? 1 : 0, rad, groupSpeed ? 1 : 0, queue ? 1 : 0) == 0;
         }
 
         public bool CanRotate(int def) => OkEngine.okx_def_can_turn(def) != 0;

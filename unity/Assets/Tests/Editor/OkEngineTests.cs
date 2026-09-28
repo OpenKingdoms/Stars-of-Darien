@@ -115,6 +115,29 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void TheStudioPlacesAUnitAndDefsSayWhatFloatsAndFlies()
+        {
+            int walker = -1, flyers = 0, floaters = 0;
+            for (int i = 0; i < OkEngine.okx_def_count(); i++)
+            {
+                Assert.AreEqual(0, OkEngine.okx_def_info(i, out var d));
+                if (d.canFly != 0) flyers++;
+                if (d.floater != 0) floaters++;
+                if (walker < 0 && d.isBuilding == 0 && d.canFly == 0 && d.floater == 0) walker = i;
+            }
+            Assert.Greater(flyers, 0);
+            Assert.Greater(floaters, 0);
+            Assert.GreaterOrEqual(walker, 0);
+            int me = OkEngine.okx_local_player();
+            int h = OkEngine.okx_place_unit(walker, me);
+            Assert.GreaterOrEqual(h, 0);
+            Assert.AreEqual(0, OkEngine.okx_unit(h, out var u));
+            Assert.AreEqual(walker, u.def);
+            Assert.AreEqual(me, u.player);
+            Assert.AreEqual(-1, OkEngine.okx_place_unit(walker, 99));
+        }
+
+        [Test]
         public void FeaturesAreModelsOrSprites()
         {
             int n = OkEngine.okx_features(null, 0);

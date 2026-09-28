@@ -443,5 +443,40 @@ namespace OpenKingdomsUnity.Tests
                 backend.Cancel();
             }
         }
+
+        // A formation move reaches the engine whole: the point in the
+        // contract's space, and the heading held on arrival.
+        [Test, Order(10)]
+        public void AFormationMoveWalksToItsPointAndHoldsItsHeading()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, pick = -1, enemy = -1;
+            for (int i = 0; i < n; i++)
+            {
+                var d = backend.UnitDefs[units[i].Def];
+                if (d.IsBuilding || (units[i].Flags & UnitFlags.Active) == 0) continue;
+                if (units[i].Player == me) { if (pick < 0) pick = i; }
+                else if (enemy < 0) enemy = units[i].Handle;
+            }
+            Assert.GreaterOrEqual(pick, 0);
+            var u = units[pick];
+            var to = new Vector2(u.Position.x - 4f, u.Position.z + 2f);
+            Assert.IsTrue(backend.MoveFormation(new[] { u.Handle }, new[] { to }, 90f, false, false));
+            Vector3 at = u.Position;
+            float heading = u.Heading;
+            for (int t = 0; t < 60 * 60; t += 30)
+            {
+                backend.Advance(30);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                    if (units[i].Handle == u.Handle) { at = units[i].Position; heading = units[i].Heading; }
+                if (Vector2.Distance(new Vector2(at.x, at.z), to) < 0.25f && Mathf.Abs(Mathf.DeltaAngle(heading, 90f)) < 3f) break;
+            }
+            Assert.AreEqual(to.x, at.x, 0.5f);
+            Assert.AreEqual(to.y, at.z, 0.5f);
+            Assert.AreEqual(0f, Mathf.DeltaAngle(heading, 90f), 3f, "it faces the heading given");
+            if (enemy >= 0)
+                Assert.IsFalse(backend.MoveFormation(new[] { enemy }, new[] { to }, null, false, false), "nobody took it");
+        }
     }
 }
