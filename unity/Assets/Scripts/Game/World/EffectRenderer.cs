@@ -128,7 +128,8 @@ namespace OpenKingdomsUnity.Game.World
             seenImpacts.IntersectWith(liveImpacts);
 
             Shots = Mathf.Min(backend.ReadProjectiles(shots), shots.Length);
-            PrepareDepth(cam, Count + Shots > 0);
+            if (Count + Shots > 0) lastShowing = Time.unscaledTime;
+            PrepareDepth(cam, Time.unscaledTime - lastShowing < DepthLinger);
             Beams = 0;
             ModelShots = 0;
             for (int i = 0; i < Shots; i++) AddShot(shots[i], eye, now);
@@ -441,8 +442,12 @@ namespace OpenKingdomsUnity.Game.World
             owned.Add(markMat);
         }
 
-        // Soft edges need the scene's depth, asked for only while effects
-        // show, so a quiet dry map pays for no copy.
+        // Soft edges need the scene's depth, asked for while effects show and
+        // a while after, so a quiet dry map pays for no copy and a fight does
+        // not turn it on and off.
+        public const float DepthLinger = 8f;
+        float lastShowing = float.NegativeInfinity;
+
         void PrepareDepth(Camera cam, bool showing)
         {
             bool have = false;
