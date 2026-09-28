@@ -84,13 +84,13 @@ float2 OkuRotate(float2 p, float a)
 // The finer waves: three layers of the baked wave texture at unrelated
 // sizes, each turned its own way from the wind and drifting at its own
 // speed, the whole bent by slow noise, so no tiling, lattice or single
-// wave shows. Returns the slope; crest is the height, about -0.5 to 0.5.
+// wave shows. Returns the slope, and crest the height, about -0.5 to 0.5.
 float2 OkuDetailSlope(float2 xz, out float crest)
 {
     float wa = atan2(_OkuWaterWind.y, _OkuWaterWind.x);
     float t = _OkuWaterTime;
     float2 w = _OkuWaterWind.xy;
-    // Slow noise bends the two larger layers; the smallest, which would
+    // Slow noise bends the two larger layers. The smallest, which would
     // repeat soonest, is bent again on a scale near its own.
     float2 warp = float2(tex2D(_OkuWaterNoise, xz / 29.0).r, tex2D(_OkuWaterNoise, xz / 29.0 + 0.5).r) - 0.5;
     float2 fine = float2(tex2D(_OkuWaterNoise, xz / 7.3 + 0.25).r, tex2D(_OkuWaterNoise, xz / 7.3 + 0.75).r) - 0.5;

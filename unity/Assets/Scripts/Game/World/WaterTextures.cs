@@ -1,7 +1,7 @@
 // WaterTextures.cs - the sea's textures, made in code once a session from
 // fixed seeds: wave slopes from a wind-driven spectrum of lattice waves,
-// foam lace, caustic nets and slow noise, each tiling seamlessly; and per
-// map the sea's depth and shore distance, baked from the height grid.
+// foam lace, caustic nets and slow noise, each tiling seamlessly. Per map,
+// the sea's depth and shore distance, baked from the height grid.
 using System;
 using UnityEngine;
 
