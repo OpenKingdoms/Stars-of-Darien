@@ -1,8 +1,11 @@
 """ZONMANA, the Zhon divine lodestone: a pedestal of twisted root strands
-rising to one rounded head of root, its strands carried up over it, that
-holds a glowing blue glass orb half sunk in a socket under a domed brow, with vines curling round (an arch over
-the orb with a leafy sprig, a spiral on the left and a vine wound round the
-neck in a groove that hangs in a curl on the right).
+rising to one smooth rounded knob of root (its strands carried up over it as
+relief only), that holds a polished deep navy glass orb with a star glint and a
+faint blue glow inside, a quarter bigger than the picture's and half sunk in
+a socket under a domed brow, over a mouth-like slit and a jaw ledge. Two-toned
+vines curl round it (an arch over the orb with a leafy sprig, a spiral on the
+left and a vine wound round the neck in a groove that hangs in a curl on the
+right). Everything is modelled or painted from noise, no pixels of the picture.
 
     blender -b --factory-startup --python ZONMANA.py
 """
@@ -67,15 +70,18 @@ class Blob:
         return (self.inside(P) - 1.0) * float(np.prod(self.r)) ** (1 / 3)
 
 
-KNOT = Blob((0.3, 0.02, 5.5), (1.0, 0.74, 0.8), math.radians(24))
-CHEEK = Blob((0.8, -0.05, 5.1), (0.38, 0.5, 0.4), -0.2)
+KNOT = Blob((0.28, -0.05, 5.45), (0.96, 0.62, 0.8), math.radians(24))
+CHEEK = Blob((0.72, -0.05, 5.1), (0.38, 0.5, 0.4), -0.2)
 BLOBS = [KNOT, CHEEK]
 
 # ---- the orb and its socket --------------------------------------------------
 
-ORB_R = 0.47
+ORB_R0 = 0.47             # the orb as the picture draws it
+ORB_R = 0.58              # a quarter bigger, as on ZONLODE
+K = ORB_R / ORB_R0
 ORB_AT = (28.0, 33.5)     # the orb's centre in the picture
 RS = ORB_R + 0.025        # socket radius
+SINK = 0.1                # the bigger orb sits a little deeper along the classic view
 
 
 def ray_hit(px, row, ped=False):
@@ -108,7 +114,7 @@ def seat_orb():
                     -n[0] * math.sin(KNOT.tilt) + n[2] * math.cos(KNOT.tilt))).normalized()
         lowleft = (-Vector((1, 0, 0)) - zk.SCREEN_UP).normalized()
         ax = (n * 0.45 + (-VIEW) * 0.55 + lowleft * 0.3).normalized()
-        c = s + ax * 0.03
+        c = s + ax * 0.03 + VIEW * SINK
         sx, sy = screen(c)
         tx += ORB_AT[0] - sx
         ty += ORB_AT[1] - sy
@@ -128,15 +134,9 @@ def hood_blob():
     return Blob(tuple(c), (0.44, 0.42, 0.42), 0.3)
 
 
-def chin_blob():
-    """A fold of root below the slit: the picture's lower lip."""
-    q = ray_hit(22.5, 47.8, ped=True)
-    return Blob(tuple(q - AX * 0.24 + Vector((0, 0, 0.06))), (0.5, 0.3, 0.28), math.radians(-8))
-
-
 HOOD = hood_blob()
 BLOBS.append(HOOD)
-SLIT = RS + 0.24          # the dark slit under the orb
+SLIT = RS + 0.2           # the dark slit under the orb
 
 
 def socket_frame():
@@ -189,7 +189,7 @@ def pcx(z):
 def strands(a, z):
     """Twisted root strands: rounded ridges with shallow grooves between."""
     g = 0.5 + 0.5 * np.cos(5 * a + TWIST * z + SPH)
-    return g, 0.17 * (g ** 0.6 - 0.62) + 0.025 * np.sin(11 * a - 1.4 * z + 1.0)
+    return g, 0.12 * (g ** 0.6 - 0.62) + 0.025 * np.sin(11 * a - 1.4 * z + 1.0)
 
 
 def foot_scale(deg):
@@ -257,9 +257,6 @@ def pedestal(mat):
     return zk.smooth(zk.make("pedestal", bm, [mat]), 80)
 
 
-CHIN = chin_blob()
-BLOBS.append(CHIN)
-
 # ---- the head: one blended form ------------------------------------------------
 
 N3 = zk.Noise(23)
@@ -324,18 +321,26 @@ def head_fibres(P, ang):
     return 0.5 + 0.5 * np.sin(14 * ang + 2.4 * P[..., 2] + 1.3 * N3.fbm(P[..., 0] * 2, P[..., 1] * 2, P[..., 2], 2))
 
 
-def head_sdf(P, parts=False):
-    k = [KNOT.sdf(P), CHEEK.sdf(P), HOOD.sdf(P), CHIN.sdf(P), neck_sdf(P), lip_sdf(P)]
-    d = zk.smin(k[0], k[1], 0.34)
-    d = zk.smin(d, k[2], 0.42)
-    d = zk.smin(d, k[3], 0.36)
+def strand_relief(z):
+    """How much the strands shape the surface: full on the neck, none over
+    the knot, whose outline stays one smooth rounded form."""
+    return 1 - smoothstep(4.7, 5.3, z)
+
+
+def head_sdf(P, parts=False, jaw=True):
+    k = [KNOT.sdf(P), CHEEK.sdf(P), HOOD.sdf(P), jaw_sdf(P) if jaw else np.full(P.shape[:-1], 9.0),
+         neck_sdf(P), lip_sdf(P), JAW_FILL.sdf(P)]
+    d = zk.smin(k[0], k[1], 0.55)
+    d = zk.smin(d, k[2], 0.85)
     d = zk.smin(d, k[4], 0.3)
-    d = zk.smin(d, k[5], 0.1)
-    # broad, gentle swells so it reads as grown root rather than blended balls
-    d = d + 0.035 * (N3.fbm(P[..., 0] * 1.8, P[..., 1] * 1.8, P[..., 2] * 1.8, 3) - 0.5)
+    d = zk.smin(d, k[6], 0.3)
+    # a very gentle swell so it reads as grown root rather than blended balls
+    d = d + 0.02 * (N3.fbm(P[..., 0] * 1.5, P[..., 1] * 1.5, P[..., 2] * 1.5, 3) - 0.5)
     g, sa, w = head_strands(P)
     fb = head_fibres(P, sa)
-    d = d - (0.09 * (g ** 0.6 - 0.62) + 0.022 * (fb ** 0.7 - 0.6)) * w
+    d = d - (0.09 * (g ** 0.6 - 0.62) + 0.022 * (fb ** 0.7 - 0.6)) * w * strand_relief(P[..., 2])
+    d = zk.smin(d, k[3], 0.06)
+    d = zk.smin(d, k[5], 0.1)
     h, rho, ang = socket_coords(P)
     # the slit under the orb
     low = np.maximum(0.0, np.cos(np.radians(ang - 265.0))) ** 1.5
@@ -348,6 +353,68 @@ def head_sdf(P, parts=False):
     if parts:
         return d, k
     return d
+
+
+JAW_R = 0.095
+# the jaw ledge's centre line: (picture px, row, height), from the head's lower left
+# corner, where it turns down and back, to under the orb where it sinks into the neck
+JAW_KEYS = [(13.3, 48.6, 4.44), (14.3, 48.1, 4.54), (16.0, 47.9, 4.61), (18.5, 47.9, 4.66), (21.0, 47.8, 4.73),
+            (23.2, 47.6, 4.8), (25.0, 47.2, 4.84)]
+# the mass of root behind the ledge that fills the head's lower left corner
+JAW_FILL = Blob((-0.27, -0.2, 4.82), (0.42, 0.3, 0.42), math.radians(-6))
+
+
+def ped_sdf(P):
+    """Roughly the distance to the pedestal (negative inside)."""
+    z = np.clip(P[..., 2], 0.0, 5.2)
+    x = P[..., 0] - pcx(z)
+    t = np.hypot(x, P[..., 1]) - ped_r(np.arctan2(P[..., 1], x), z, grooved=False)
+    return np.where((P[..., 2] > 0) & (P[..., 2] < 5.2), t, 9.0)
+
+
+def first_hit(px, row):
+    """Where the camera ray through a picture pixel first meets the head
+    (without its jaw) or the pedestal, or None."""
+    t = np.arange(0.0, 7.0, 0.003)
+    P = np.array(at(px, row, -3.0)) + t[:, None] * np.array(VIEW)
+    d = np.minimum(head_sdf(P, jaw=False), ped_sdf(P))
+    i = int(np.argmax(d < 0))
+    return Vector(P[i]) if d[i] < 0 else None
+
+
+def jaw_path():
+    """The ledge of root under the orb, the picture's lit lower lip: a rod
+    placed through the picture pixels at the heights given."""
+    pts = []
+    for px, row, z in JAW_KEYS:
+        u = HOT[1] - row
+        pts.append(at(px, row, (u - zk.SZ * z) / zk.SY))
+    return np.array([np.array(p) for p in zk.resample(zk.spline(pts, 6), 0.05)])
+
+
+JAW_P = jaw_path()
+_JL = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(JAW_P, axis=0), axis=1))])
+JAW_S = _JL / _JL[-1]
+# thickest in the middle, a little thinner where it rounds the corner and where it sinks in under the orb
+JAW_RAD = JAW_R * (0.8 + 0.2 * np.sin(np.pi * JAW_S)) * (1 - 0.45 * JAW_S ** 3) * (0.55 + 0.45 * smoothstep(0.0, 0.12, JAW_S))
+
+
+def jaw_sdf(P, near=False):
+    """Distance to the jaw ledge; with near, also the offset from its
+    closest point on the centre line (for painting)."""
+    d = np.full(P.shape[:-1], 9.0)
+    off = np.zeros(P.shape)
+    for i in range(len(JAW_P) - 1):
+        a, b = JAW_P[i], JAW_P[i + 1]
+        ab = b - a
+        t = np.clip(((P - a) @ ab) / (ab @ ab), 0, 1)
+        q = a + t[..., None] * ab
+        r = JAW_RAD[i] * (1 - t) + JAW_RAD[i + 1] * t
+        di = np.linalg.norm(P - q, axis=-1) - r
+        if near:
+            off = np.where((di < d)[..., None], P - q, off)
+        d = np.minimum(d, di)
+    return (d, off) if near else d
 
 
 def head(mats):
@@ -364,7 +431,8 @@ def head(mats):
 
 N1, N2, N4 = zk.Noise(21), zk.Noise(22), zk.Noise(24)
 C_DARK, C_MID, C_LIGHT = rgb((48, 41, 21)), rgb((100, 85, 50)), rgb((138, 120, 76))
-RUSTC = rgb((126, 74, 46))
+RUSTC = rgb((146, 88, 60))
+RUSTF = rgb((142, 80, 54))   # the brighter orange-red flecks
 TEX_W, TEX_H = 1024, 512
 
 
@@ -401,33 +469,35 @@ def paint_pedestal(W, H):
     g, _ = strands(a, z)
     along = a + TWIST * z / 5  # constant along a strand
     c, m, f, cr = bark(P, along)
-    # grooves between the strands a little darker, the ridge tops catch the light
-    c = c * (0.72 + 0.34 * smoothstep(0.0, 0.3, g))[..., None]
-    c = mix(c, C_LIGHT, smoothstep(0.78, 1.0, g) * 0.25 * smoothstep(0.4, 0.6, f))
-    # long rust streaks down the worn strands of the trunk's front
-    front = smoothstep(-0.2, 0.6, -np.sin(a + 0.25))
-    zone = smoothstep(1.0, 1.6, z) * (1 - smoothstep(3.5, 4.0, z))
-    st = N2.fbm(np.cos(along) * 7, np.sin(along) * 7, z * 0.45 + 17, 3)
-    patch = smoothstep(0.35, 0.6, N4.fbm(np.cos(along) * 5, np.sin(along) * 5, z * 1.4 + 3, 3))
-    rust = smoothstep(0.47, 0.62, st) * front * zone * (0.45 + 0.55 * smoothstep(0.3, 0.8, g)) * patch
-    rust = np.maximum(rust, smoothstep(0.5, 0.64, st) * smoothstep(0.3, 0.85, np.cos(a + 1.95)) * zone * 0.8)
-    c = mix(c, RUSTC * (0.8 + 0.4 * f)[..., None], rust * 0.85)
-    # a little on the back and the upper trunk too
-    c = mix(c, RUSTC * 0.8, smoothstep(0.62, 0.72, st) * (1 - front) * zone * 0.4)
-    # and rusty blotches scattered over the worn front left
-    blot = N4.fbm(P[..., 0] * 3.2 + 7, P[..., 1] * 3.2, P[..., 2] * 2.4, 3)
-    fz = smoothstep(0.6, 1.2, z) * (1 - smoothstep(3.7, 4.2, z))
-    c = mix(c, rgb((142, 82, 56)) * (0.85 + 0.3 * f)[..., None],
-            smoothstep(0.56, 0.66, blot) * smoothstep(-0.1, 0.7, np.cos(a + 1.85)) * fz * 0.85)
+    # the weathered strands of the front left, where the picture's light falls
+    fl = smoothstep(-0.6, 0.4, np.cos(a + 2.4)) * smoothstep(0.3, 1.0, z) * (1 - smoothstep(4.0, 4.6, z))
+    # grooves between the strands a little darker (less so on the worn front left), the ridge tops catch the light
+    c = c * (0.72 + 0.26 * fl + (0.34 - 0.26 * fl) * smoothstep(0.0, 0.3, g))[..., None]
+    c = mix(c, C_LIGHT, smoothstep(0.78, 1.0, g) * 0.25 * smoothstep(0.4, 0.6, f) * (1 - 0.7 * fl))
     # the trunk's bark leans olive, as in the picture
     c = c * np.array((0.96, 1.02, 1.06))
+    # and the worn front left is a paler olive
+    lum = (c @ np.array((0.3, 0.59, 0.11)))[..., None]
+    c = mix(c, lum * np.array((1.02, 1.0, 0.78)), 0.35 * fl)
+    c = c * (1 + 1.0 * fl)[..., None]
+    # rust in blotches over the trunk's front left, thickest under the neck
+    front = smoothstep(-0.2, 0.5, np.cos(a + 2.3))
+    zone = smoothstep(0.5, 1.0, z) * (1 - smoothstep(3.7, 4.0, z))
+    st = N2.fbm(np.cos(along) * 3, np.sin(along) * 3, z * 5.0 + 17, 3)
+    thr = 0.58 - 0.06 * smoothstep(2.4, 3.0, z)
+    rust = smoothstep(thr, thr + 0.08, st) * front * zone
+    c = mix(c, RUSTC * (0.85 + 0.3 * f)[..., None] * (1 + 0.5 * fl)[..., None], rust * 0.85)
+    # a little on the back and the right too
+    c = mix(c, RUSTC * 0.8, smoothstep(0.64, 0.72, st) * (1 - front) * zone * 0.4)
+    # and small orange-red flecks, drawn out along the grain, over the worn front left
+    fk = N4.fbm(np.cos(along) * 18 + 7, np.sin(along) * 18, z * 11.0, 3)
+    fz = smoothstep(0.6, 1.2, z) * (1 - smoothstep(3.7, 4.2, z))
+    fleck = smoothstep(0.575, 0.625, fk) * smoothstep(-0.3, 0.5, np.cos(a + 2.1)) * fz
+    c = mix(c, RUSTF * (0.9 + 0.2 * f)[..., None] * (1 + 0.4 * fl)[..., None], fleck * 0.88)
     # damp, dark foot, and the damp side away from the picture's light
     c = c * (0.62 + 0.38 * smoothstep(0.0, 0.9, z))[..., None]
-    damp = smoothstep(-0.05, 0.3, np.cos(a + 0.35)) * (1 - smoothstep(4.3, 5.0, z))
-    c = c * (1 - 0.6 * damp)[..., None]
-    # the weathered, paler strand on the front left, where the picture's light falls
-    fl = smoothstep(0.1, 0.8, np.cos(a + 1.85)) * smoothstep(0.3, 1.0, z) * (1 - smoothstep(4.0, 4.6, z))
-    c = c * (1 + 0.6 * fl)[..., None]
+    damp = smoothstep(-0.05, 0.3, np.cos(a + 0.18)) * (1 - smoothstep(4.3, 5.0, z))
+    c = c * (1 - 0.65 * damp)[..., None]
     # the vine's groove shaded
     c = c * (1 - 3.0 * groove(a, z))[..., None]
     # the soft shade of the hollow behind the hanging curl, on the trunk's front right
@@ -435,6 +505,7 @@ def paint_pedestal(W, H):
     c = c * (1 - 0.65 * np.exp(-(da / 0.4) ** 2 - ((z - 2.8) / 0.6) ** 2))[..., None]
     # up into the head's older, darker root, gradually
     top = smoothstep(3.9, 4.7, z)
+    c = c * (1 - 0.68 * smoothstep(3.95, 4.35, z))[..., None]
     c = c * (1 + top[..., None] * (rgb((205, 196, 180)) * 0.85 - 1))
     h = 0.012 * g ** 0.6 + 0.004 * f + 0.003 * m - 0.004 * cr
     return c, h
@@ -468,7 +539,7 @@ def paint_head(ob, W, H):
     c = mix(c, C_LIGHT, smoothstep(0.75, 1.0, g) * 0.3 * smoothstep(0.35, 0.6, f) * w)
     d, k = head_sdf(P, parts=True)
     # dark where the parts grow out of one another
-    crease = np.clip((np.min(np.stack(k[:5]), axis=0) - d) / 0.08, 0, 1)
+    crease = np.clip((np.min(np.stack(k[:5] + k[6:]), axis=0) - d) / 0.08, 0, 1)
     c = c * (1 - 0.3 * crease)[..., None]
     # ambient shade from the head's own folds, the orb and the trunk
     occ = np.zeros(len(P))
@@ -476,24 +547,46 @@ def paint_head(ob, W, H):
         occ += np.maximum(0.0, dl - occluders(P + Nn * dl)) / dl * 0.5 ** i
     c = c * np.clip(1 - 0.4 * occ, 0.45, 1.0)[..., None]
     c = c * (0.86 + 0.2 * np.clip(Nn[..., 2], 0, 1))[..., None]
-    # a soft hint of the picture's light from the upper left, never below 70 per cent
-    lp = np.array((-0.6, -0.3, 0.74)) / np.linalg.norm((-0.6, -0.3, 0.74))
-    c = c * (0.7 + 0.42 * smoothstep(-0.35, 0.45, Nn @ lp))[..., None]
+    # the picture's light from the left and front: its lit side paler, the crown, right and back in shade
+    lp = np.array((-0.75, -0.55, 0.18)) / np.linalg.norm((-0.75, -0.55, 0.18))
+    c = c * (0.42 + 0.95 * smoothstep(-0.3, 0.7, Nn @ lp))[..., None]
+    # the crown's upper right, turned furthest from that light, in deep shade
+    c = c * (1 - 0.3 * smoothstep(0.0, 0.7, Nn @ np.array((0.72, 0.25, 0.65))))[..., None]
     h, rho, ang = socket_coords(P)
     dist = np.linalg.norm(P - _Cn, axis=-1)
     # the bowl behind the orb goes dark
     bowl = smoothstep(RS + 0.06, RS + 0.01, dist) * smoothstep(0.1, -0.05, h)
-    c = c * (1 - 0.8 * bowl)[..., None]
-    # the lit rim round the orb's lower left
-    lowleft = np.maximum(0.0, np.cos(np.radians(ang - 215.0))) ** 1.2
-    rim = np.exp(-((rho - RS - 0.07) / 0.075) ** 2) * lowleft * smoothstep(-0.2, 0.0, h)
-    c = mix(c, rgb((178, 148, 98)) * (0.85 + 0.3 * f)[..., None], rim * 0.85)
+    c = c * (1 - 0.5 * bowl)[..., None]
+    # the lit rim round the orb's lower left, a worn olive grey running down toward the slit
+    lowleft = np.maximum(0.0, np.cos(np.radians(ang - 240.0))) ** 2.5
+    rim = smoothstep(RS - 0.01, RS + 0.05, rho) * smoothstep(SLIT - 0.01, RS + 0.16, rho)
+    rim = rim * lowleft * smoothstep(-0.3, -0.05, h)
+    c = mix(c, rgb((180, 174, 130)) * (0.85 + 0.3 * f)[..., None] * (1 + 0.5 * smoothstep(RS + 0.08, RS + 0.18, rho))[..., None], rim * 0.9)
+    # the rest of the raised rim, up the orb's left side, stays dark old root
+    upleft = smoothstep(200.0, 150.0, ang) * smoothstep(80.0, 110.0, ang)
+    c = c * (1 - 0.35 * upleft * np.exp(-((rho - RS - 0.06) / 0.08) ** 2))[..., None]
     slit = np.exp(-((rho - SLIT) / 0.05) ** 2) * np.maximum(0.0, np.cos(np.radians(ang - 262.0))) ** 2
     c = c * (1 - 0.8 * slit * smoothstep(-0.35, -0.1, h))[..., None]
     # the underside of the brow where it overhangs the orb
     brow = brow_weight(ang) * smoothstep(RS + 0.35, RS + 0.08, dist) * smoothstep(0.35, -0.25, Nn[..., 2])
     c = c * (1 - 0.55 * brow)[..., None]
-    hh = 0.004 * f + 0.004 * m - 0.004 * cr + (0.014 * g ** 0.6 + 0.006 * fb) * w
+    # the jaw ledge: its lit top a worn rusty brown, a dark slit in the crease above it
+    jd, joff = jaw_sdf(P, near=True)
+    jup = joff @ np.array(zk.SCREEN_UP) / np.maximum(np.linalg.norm(joff, axis=-1), 1e-6)
+    on = smoothstep(0.03, 0.0, jd)
+    ledge = on * smoothstep(-0.25, 0.35, jup)
+    toright = smoothstep(-0.45, 0.0, P[..., 0])  # the half under the head's shade, a little paler
+    lipc = rgb((162, 124, 94)) * (0.85 + 0.3 * f)[..., None] * (1 + 0.7 * toright)[..., None]
+    c = mix(c, lipc, ledge * 0.8)
+    c = c * (1 - 0.55 * on * smoothstep(-0.2, -0.6, jup))[..., None]
+    crease_up = np.exp(-((jd - 0.05) / 0.045) ** 2) * smoothstep(0.3, 0.8, jup)
+    c = c * (1 - 0.6 * crease_up)[..., None]
+    # the mouth: the hollow above the ledge, in the shade of the rim
+    mouth = smoothstep(0.012, 0.03, jd) * smoothstep(0.17, 0.07, jd) * smoothstep(0.1, 0.4, jup)
+    c = c * (1 - 0.5 * mouth)[..., None]
+    # the grain is carried by the relief where the knot's outline was smoothed
+    ks = 1 + 1.2 * (1 - strand_relief(P[..., 2]))
+    hh = 0.004 * f + 0.004 * m - 0.004 * cr + (0.014 * g ** 0.6 + 0.006 * fb) * w * ks
     col = np.zeros((H, W, 3))
     hgt = np.zeros((H, W))
     mask = np.zeros((H, W), dtype=bool)
@@ -527,18 +620,22 @@ def root_material(head_ob):
     nimg = zk.image("zm_root_nrm", nrm, noncolor=True)
     m = zk.tex_mat("zm_root", img, rough=0.9, nimg=nimg, nstrength=1.0)
     # dry root barely shines: a low specular keeps its dark sides warm rather than sky grey
-    m.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.15
+    m.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.1
     return m
 
 
 # ---- the orb -------------------------------------------------------------------
 
-# the hot spot sits a little left of centre and toward the camera, as in the picture
-GLOW_OFF = Vector((-1, 0, 0)) * 0.2 - zk.SCREEN_UP * 0.03 + (-VIEW) * 0.1
-
-
+# the star glint sits a little left of centre, and a smaller spot toward the lower left rim
+# (screen offsets from the orb's centre, in cells, screen up positive)
+GLINT = (-0.16 * K, -0.03 * K)
+GLINT2 = (-0.28 * K, -0.26 * K)
 GLOW_STRENGTH = 3.3
-BODY_GLOW = 0.25
+RIM_GLOW = 0.05
+HALO = (0.28, 16.0)   # the glow round the glint: strength and width in degrees
+SHEEN = 0.06
+INNER = 0.13          # the light gathered inside the glass, low on the right
+GLASS_ROUGH, GLASS_SPEC = 0.04, 0.5
 
 
 def uvsphere(name, r, c, mat, u=32, v=16, uvs=False):
@@ -551,82 +648,151 @@ def uvsphere(name, r, c, mat, u=32, v=16, uvs=False):
     return zk.smooth(zk.make(name, bm, [mat]), 89)
 
 
-def glass_textures(W=256, H=128):
-    """Body colour and glow for the glass, painted on the sphere's own UVs:
-    lighter blue on the lit upper left, navy toward the rim, a soft glow
-    round the point where the hot core shows through and a faint blue glow
-    over the side out of the socket."""
+def sphere_dir(dx, dup):
+    """The direction from the orb's centre to the point the classic camera
+    sees at a screen offset (dx, dup) in cells from it."""
+    toward = np.array(-VIEW)
+    side = np.array(Vector((1, 0, 0)) * dx + zk.SCREEN_UP * dup)
+    g = side / ORB_R + toward * math.sqrt(max(0.0, 1 - (side @ side) / ORB_R ** 2))
+    return g / np.linalg.norm(g)
+
+
+def glass_textures(W=512, H=256):
+    """Body colour and glow for the polished glass, painted on the sphere's
+    own UVs: a deep navy gem, a little lighter and greener on its right, with
+    a hard-edged star glint, a second small spot toward the lower left rim and
+    a faint blue light gathered inside it low on the right. The sky's rim comes
+    from the glass itself, not from the glow, so it moves with the view."""
     u = (np.arange(W) + 0.5) / W
     v = (np.arange(H) + 0.5) / H
     U, V = np.meshgrid(u, v)
     lon, lat = 2 * math.pi * (U - 0.5), math.pi * (V - 0.5)  # Blender's sphere UVs
     n = np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=-1)
     toward = np.array(-VIEW)
-    lit = n @ np.array((Vector((-0.6, 0, 0)) + zk.SCREEN_UP * 0.5 - VIEW * 0.6).normalized())
     facing = np.clip(n @ toward, 0, 1)
-    off = np.array(GLOW_OFF)
-    side = off - toward * (off @ toward)
-    g = side / ORB_R + toward * math.sqrt(max(0.0, 1 - (side @ side) / ORB_R ** 2))
-    g /= np.linalg.norm(g)
-    th = np.degrees(np.arccos(np.clip(n @ g, -1, 1)))
-    body = mix(rgb((9, 14, 36)), rgb((28, 44, 88)), smoothstep(-0.3, 0.9, lit))
-    body = body * (0.8 + 0.2 * smoothstep(0.0, 0.7, facing))[..., None]
-    keys = [(0, (252, 252, 253)), (10, (242, 243, 246)), (20, (124, 126, 134)), (31, (58, 62, 76)),
-            (44, (16, 22, 42)), (60, (5, 8, 20)), (85, (0, 0, 0))]
-    glow = np.zeros(th.shape + (3,))
-    for (t0, c0), (t1, c1) in zip(keys[:-1], keys[1:]):
-        w = np.clip((th - t0) / (t1 - t0), 0, 1)
-        seg_ = (th >= t0) & (th < t1)
-        glow[seg_] = mix(rgb(c0), rgb(c1), smoothstep(0, 1, w))[seg_]
-    glow[th >= keys[-1][0]] = 0.0
-    # the body's own faint blue light, the same from every side
-    out = smoothstep(-0.1, 0.5, n @ np.array(AX))  # only the side out of the socket
-    glow = glow + body * (BODY_GLOW / GLOW_STRENGTH) * out[..., None]
+    sx, sy = n[..., 0], n @ np.array(zk.SCREEN_UP)   # screen right and up, in orb radii
+    right = n @ np.array((Vector((1, 0, 0)) - VIEW * 0.3).normalized())
+    body = mix(rgb((8, 13, 34)), rgb((13, 32, 50)), smoothstep(-0.2, 0.8, right))
+    body = body * (0.75 + 0.25 * smoothstep(0.0, 0.8, facing))[..., None]
+    # the star glint: a hard white core, four fine rays and a small grey halo
+    g1 = sphere_dir(*GLINT)
+    th = np.degrees(np.arccos(np.clip(n @ g1, -1, 1)))
+    # the core drawn out a little up and down the screen
+    tha = np.degrees(np.arccos(np.clip(n @ sphere_dir(GLINT[0], GLINT[1] + 0.03 * K), -1, 1)))
+    thb = np.degrees(np.arccos(np.clip(n @ sphere_dir(GLINT[0], GLINT[1] - 0.03 * K), -1, 1)))
+    e1 = np.array(Vector((1, 0, 0)))
+    e1 = e1 - g1 * (e1 @ g1)
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(g1, e1)
+    a = np.arctan2(n @ e2, n @ e1)
+    ray = np.abs(np.cos(2 * a)) ** 48 * np.exp(-(th / 15.0) ** 2)
+    core = 1 - smoothstep(8.0, 10.5, np.minimum(tha, thb))
+    halo = HALO[0] * np.exp(-(th / HALO[1]) ** 2) + 0.04 * np.exp(-(th / 26.0) ** 2)
+    # the second spot, smaller
+    g2 = sphere_dir(*GLINT2)
+    th2 = np.degrees(np.arccos(np.clip(n @ g2, -1, 1)))
+    core2 = (1 - smoothstep(5.0, 7.5, th2)) + 0.05 * np.exp(-(th2 / 13.0) ** 2)
+    # a faint trail of light between the two
+    tr = np.full(th.shape, 180.0)
+    for t in np.linspace(0.15, 0.85, 8):
+        q = g1 * (1 - t) + g2 * t
+        tr = np.minimum(tr, np.degrees(np.arccos(np.clip(n @ (q / np.linalg.norm(q)), -1, 1))))
+    trail = 0.18 * np.exp(-(tr / 6.0) ** 2)
+    # a dim grey sheen of sky over the glass's upper half
+    sheen = SHEEN * smoothstep(-0.1, 0.5, sy) * smoothstep(0.2, 0.7, facing)
+    glow = (np.clip(core + 0.35 * ray + halo + core2 + trail + sheen, 0, 1))[..., None] \
+        * rgb((250, 248, 244))
+    # a faint blue rim, only where the side out of the socket turns away from the camera
+    out = smoothstep(-0.1, 0.5, n @ np.array(AX))
+    rim = smoothstep(0.55, 0.15, facing) * out
+    glow = glow + rgb((40, 90, 170)) * (RIM_GLOW * rim)[..., None]
+    # light from the upper left gathered inside the glass, a soft crescent low on the right
+    lr = (0.6 * sx - 0.8 * sy) / np.maximum(np.hypot(sx, sy), 1e-6)
+    crescent = smoothstep(0.2, 0.9, lr) * smoothstep(0.2, 0.45, facing) * (1 - smoothstep(0.7, 0.92, facing))
+    inner = INNER * (crescent + 0.1 * smoothstep(0.3, 1.0, facing) ** 2)
+    glow = glow + rgb((40, 120, 230)) * inner[..., None]
     return body, glow
 
 
 def orb_parts():
     body, gl = glass_textures()
-    glass = zk.tex_mat("zm_orb_glass", zk.image("zm_orb_body", body), rough=0.28)
+    glass = zk.tex_mat("zm_orb_glass", zk.image("zm_orb_body", body), rough=GLASS_ROUGH)
     nt = glass.node_tree
     b = nt.nodes["Principled BSDF"]
+    b.inputs["Specular IOR Level"].default_value = GLASS_SPEC
     uvn = [q for q in nt.nodes if q.type == "UVMAP"][0]
     te = nt.nodes.new("ShaderNodeTexImage")
     te.image = zk.image("zm_orb_glow", gl)
     nt.links.new(uvn.outputs["UV"], te.inputs["Vector"])
     nt.links.new(te.outputs["Color"], b.inputs["Emission Color"])
     b.inputs["Emission Strength"].default_value = GLOW_STRENGTH
-    b.inputs["Alpha"].default_value = 0.8
     b.inputs["IOR"].default_value = 1.5
-    glass.surface_render_method = "BLENDED"
-    glass.use_backface_culling = True
-    return [uvsphere("orb", ORB_R, ORB_C, glass, 40, 20, uvs=True)]
+    return [uvsphere("orb", ORB_R, ORB_C, glass, 48, 24, uvs=True)]
 
 
 # ---- vines --------------------------------------------------------------------
 
-LIT_SIDE = (Vector((0, 0, 1)) - VIEW * 0.8).normalized()  # the side of a vine that faces the light
+# the vines' lit ridge sits RIDGE_TILT round from the side facing the classic
+# camera toward the screen's upper left, where the picture's light comes from
+UPLEFT = (Vector((-0.6, 0, 0)) + zk.SCREEN_UP * 0.8).normalized()
+RIDGE_TILT = math.radians(18)
+VINE_ULEN = 1.5  # cells of vine per repeat of its texture
+
+
+def frames_lit(pts):
+    """Sweep frames whose first normal (the texture's lit ridge) leans from
+    the camera-facing side of the tube toward the screen's upper left."""
+    T = []
+    for i in range(len(pts)):
+        T.append((pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized())
+    N, prev_e, prev = [], None, None
+    for t in T:
+        c = -VIEW - t * (-VIEW).dot(t)
+        if c.length < 0.1 and prev is not None:  # the tube runs toward the camera
+            c = prev - t * prev.dot(t)
+        c = c.normalized()
+        e = t.cross(c).normalized()
+        k = e.dot(UPLEFT)
+        if abs(k) < 0.15 and prev_e is not None:
+            k = e.dot(prev_e)
+        e = e if k >= 0 else -e
+        n = (c * math.cos(RIDGE_TILT) + e * math.sin(RIDGE_TILT)).normalized()
+        if prev is not None and n.dot(prev) < 0.2:
+            n = (prev - t * prev.dot(t)).normalized().lerp(n, 0.3).normalized()
+        N.append(n)
+        prev, prev_e = n, e
+    B = [T[i].cross(N[i]) for i in range(len(pts))]
+    return T, N, B
 
 
 def vine_material():
-    """Dry vine: a light top ridge, a darker underside and faint fibres
-    running along it (u along, v round from the top)."""
-    W, H = 64, 64
+    """Dry vine, two-toned: a salmon, pinkish tan body with dark flanks, a
+    narrow yellow-cream highlight only along the lit ridge, faint fibres and
+    worn patches along it (u along, v round from the ridge)."""
+    W, H = 192, 64
     u = (np.arange(W) + 0.5) / W
     v = (np.arange(H) + 0.5) / H
     U, V = np.meshgrid(u, v)
-    n = zk.Noise(41)
+    n, n2 = zk.Noise(41), zk.Noise(42)
     au, av = 2 * math.pi * U, 2 * math.pi * V
-    fib = n.fbm(np.cos(av) * 7 + np.cos(au) * 0.9, np.sin(av) * 7 + np.sin(au) * 0.9, 0.3, 3)
+    fib = n.fbm(np.cos(av) * 7 + np.cos(au) * 2.7, np.sin(av) * 7 + np.sin(au) * 2.7, 0.3, 3)
+    blot = n2.fbm(np.cos(au) * 3.0 + np.cos(av) * 0.8, np.sin(au) * 3.0 + np.sin(av) * 0.8, 2.1, 3)
     ridge = np.cos(av)
-    c = mix(rgb((62, 46, 26)), rgb((156, 124, 76)), smoothstep(-0.8, 0.55, ridge))
-    c = mix(c, rgb((246, 220, 142)), smoothstep(0.7, 0.99, ridge))
+    c = mix(rgb((30, 19, 13)), rgb((106, 68, 51)), smoothstep(-0.05, 0.55, ridge))
+    # the body salmon, going khaki in places along the vine
+    body = mix(rgb((144, 98, 77)), rgb((134, 114, 72)), smoothstep(0.58, 0.72, blot))
+    c = mix(c, body, smoothstep(0.42, 0.78, ridge))
+    # the highlight wanders a little along the vine, yellow cream to pinkish cream
+    hl = smoothstep(0.9 + 0.04 * (blot - 0.5), 0.98, ridge)
+    c = mix(c, mix(rgb((255, 230, 108)), rgb((255, 214, 128)), smoothstep(0.45, 0.7, blot)), hl)
+    # worn, rustier patches along the body
+    c = mix(c, c * np.array((0.92, 0.72, 0.62)), smoothstep(0.55, 0.7, blot) * (1 - hl) * 0.8)
     c = c * (0.88 + 0.24 * fib)[..., None]
     img = zk.image("zm_vine_col", c)
-    nimg = zk.image("zm_vine_nrm", zk.normals_from_height(0.0025 * fib, 0.5 / W, 2 * math.pi * 0.06 / H),
+    nimg = zk.image("zm_vine_nrm", zk.normals_from_height(0.0025 * fib, VINE_ULEN / W, 2 * math.pi * 0.06 / H),
                     noncolor=True)
-    m = zk.tex_mat("zm_vine", img, rough=0.4, metal=0.0, nimg=nimg, nstrength=0.8)
-    m.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.45
+    m = zk.tex_mat("zm_vine", img, rough=0.55, metal=0.0, nimg=nimg, nstrength=0.8)
+    m.node_tree.nodes["Principled BSDF"].inputs["Specular IOR Level"].default_value = 0.12
     return m
 
 
@@ -646,7 +812,7 @@ def gentle(seed, count=4):
 def vine(ctrl, radius, name="vine", seed=1, step=0.04, seg=8, n=10):
     pts = zk.resample(zk.spline(ctrl, n), step)
     bm = bmesh.new()
-    zk.sweep(bm, pts, radius, seg=seg, bumps=gentle(seed), ulen=0.5, frames_=zk.frames_facing(pts, LIT_SIDE))
+    zk.sweep(bm, pts, radius, seg=seg, bumps=gentle(seed), ulen=VINE_ULEN, frames_=frames_lit(pts))
     return zk.smooth(zk.make(name, bm, [VINE]), 70)
 
 
@@ -664,10 +830,16 @@ def taper(r0, r1, tip=0.04, root=0.0):
 def arch():
     """The handle over the orb: out of the head low on the left, up its
     left side, over the top and down into the head behind."""
-    ctrl = [at(18.5, 49.0, 0.05), at(15.6, 47.6, -0.12), at(14, 45.5, -0.25), at(12.3, 40, -0.25),
-            at(12.4, 34, -0.15), at(13.4, 29, -0.1), at(15.5, 24.6, 0.0), at(18.5, 21.2, 0.15),
-            at(22.5, 18.6, 0.3), at(27, 17.3, 0.45), at(31, 17.5, 0.6), at(33.4, 19.9, 0.72), at(33.5, 23, 0.7)]
-    return vine(ctrl, taper(0.09, 0.065, 0.02, root=0.06), name="arch", seed=3)
+    hit = first_hit(14.0, 42.6) or Vector(at(14.0, 42.6, float(JAW_P[0][1])))
+    e = 0.01
+    grad = Vector([float(head_sdf(np.array([hit + Vector(d) * e]))[0] - head_sdf(np.array([hit - Vector(d) * e]))[0])
+                   for d in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]).normalized()
+    root = hit - grad * 0.3  # the vine grows out from inside the head
+    print("ARCH ROOT", tuple(round(v, 3) for v in root))
+    ctrl = [root, hit + grad * 0.03 + Vector((0, 0, 0.1)), at(12.8, 39.0, -0.25),
+            at(13.1, 34, -0.15), at(14.2, 29, -0.1), at(16.2, 25.0, 0.0), at(19.1, 21.8, 0.15),
+            at(23.0, 19.3, 0.3), at(27, 18.1, 0.45), at(31, 18.1, 0.56), at(33.4, 20.4, 0.5), at(33.5, 23, 0.38), at(33.6, 25.5, 0.3)]
+    return vine(ctrl, taper(0.09, 0.065, 0.02), name="arch", seed=3)
 
 
 def leaf(bm, base, goal, lift, width, cup=0.3, bend=0.25, seed=0):
@@ -708,7 +880,7 @@ def leaf(bm, base, goal, lift, width, cup=0.3, bend=0.25, seed=0):
 
 def sprig():
     """A twig off the arch with a spray of olive leaves, top left."""
-    base = at(19.5, 21.5, 0.14)
+    base = at(19.9, 22.1, 0.14)
     tip = at(13.8, 18.4, 0.24)
     mid = (base + tip) / 2 + Vector((0.0, 0, 0.06))
     parts = [vine([base, mid, tip], taper(0.045, 0.022), name="twig", seed=4, step=0.02, seg=6)]
@@ -737,7 +909,8 @@ def spiral():
     c = at(c0[0], c0[1], -0.3)
     path = [(8.2, 34.4), (4.9, 33.3), (2.2, 34.2), (1.2, 37.0), (1.4, 40.0), (2.9, 42.5), (5.3, 43.4),
             (7.1, 42.0), (7.3, 40.0), (6.2, 39.0), (5.2, 39.9)]
-    ctrl = [at(14.5, 38.5, 0.05), at(12.5, 38, -0.15), at(10.5, 35.8, -0.25)]
+    # it branches off the arch's left side, growing from inside it
+    ctrl = [at(12.7, 37.4, -0.2), at(11.5, 36.4, -0.24), at(10.4, 35.6, -0.27)]
     ctrl += [on_plane(c, px - c0[0], c0[1] - row) for px, row in path]
     return vine(ctrl, taper(0.085, 0.045, 0.03, root=0.04), name="spiral", seed=5, step=0.028)
 
@@ -799,6 +972,9 @@ if CHECK:
                  ("frontlow", -100, 5)])
     zk.closeups(CHECK, NAME + "_body", (0.3, 0.0, 3.6), 7.8, [("front", -90, 15), ("left", -150, 15),
                                                            ("right", -20, 15)], res=448)
+    jc = JAW_P[len(JAW_P) // 2]
+    zk.closeups(CHECK, NAME + "_jaw", (float(jc[0]), float(jc[1]) + 0.2, float(jc[2]) + 0.15), 1.6,
+                [("classic", -90, 63.4), ("front", -90, 10), ("left", -150, 15), ("low", -110, -10)])
     zk.closeups(CHECK, NAME + "_neck", (0.25, 0.0, 3.85), 1.8, [("front", -90, 10), ("left", -160, 15)])
     zk.closeups(CHECK, NAME + "_foot", (0.3, -0.2, 0.6), 2.8, [("frontleft", -120, 12), ("classic", -90, 63.4)])
     zk.closeups(CHECK, NAME + "_leaves", tuple(at(15.0, 17.5, 0.3)), 1.1, [("classic", -90, 63.4),
