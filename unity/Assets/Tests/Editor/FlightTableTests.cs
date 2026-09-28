@@ -36,6 +36,8 @@ namespace OpenKingdomsUnity.Tests
 
         public static FlightTable Table() => FlightTable.Parse(Json);
 
+        public static FlightTable Committed() => FlightTable.Parse(File.ReadAllText(FlightTable.PathIn(OverrideLoader.ProjectDir)));
+
         static FlightPiece Piece(FlightType t, string name) => t.Pieces.First(p => p.Name == name);
 
         [Test]
@@ -138,10 +140,11 @@ namespace OpenKingdomsUnity.Tests
                   ""noperiod"": { ""class"": ""c"", ""period"": 0, ""downstroke"": 0.5 },
                   ""stroke"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 1.0 },
                   ""band"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 0.5, ""lower"": 0.4, ""upper"": 0.4 },
+                  ""jitter"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 0.5, ""jitter"": 1.0 },
                   ""pose"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 0.5, ""pieces"": [ { ""piece"": ""p"", ""down"": [0, 0, 0] } ] } } }");
             Assert.AreEqual(1, t.Count);
             Assert.IsNotNull(t.Find("good", null));
-            Assert.AreEqual(5, t.Warnings.Count, string.Join("\n", t.Warnings));
+            Assert.AreEqual(6, t.Warnings.Count, string.Join("\n", t.Warnings));
         }
 
         [Test]
@@ -161,7 +164,21 @@ namespace OpenKingdomsUnity.Tests
                 Assert.Greater(f.Sink, 0f, f.Name);
                 Assert.That(f.Downstroke, Is.GreaterThan(0f).And.LessThan(1f), f.Name);
                 Assert.IsNotEmpty(f.Pieces, f.Name);
+                Assert.That(f.Jitter, Is.GreaterThanOrEqualTo(0f).And.LessThan(1f), f.Name);
             }
+            Assert.IsFalse(t.Find("tarang", null).Glides, "the fallen angel's script never glides");
+            Assert.IsFalse(t.Find("lifbird", null).Glides, "nor the bird's");
+            Assert.IsTrue(t.Find("zonharp", null).Glides);
+        }
+
+        [Test]
+        public void GlidesAndClipsAreRead()
+        {
+            var t = FlightTable.Parse(@"{ ""classes"": { ""c"": { ""climb"": 0.2, ""sink"": 0.2, ""lower"": -0.4, ""upper"": 0.4 } },
+                ""units"": { ""u"": { ""class"": ""c"", ""glides"": false, ""period"": 1, ""downstroke"": 0.5, ""clips"": { ""flap"": ""fly_wings"" }, ""pieces"": [] } } }").Find("u", null);
+            Assert.IsFalse(t.Glides);
+            Assert.AreEqual("fly_wings", t.Clip("flap", "fly"));
+            Assert.AreEqual("soar", t.Clip("glide", "soar"), "a state with no clip named takes the usual function");
         }
     }
 }

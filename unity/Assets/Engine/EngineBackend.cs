@@ -330,6 +330,7 @@ namespace OpenKingdomsUnity.Engine
             modelCache.Clear();
             modelSource.Clear();
             flights.Clear();
+            nextFlightSweep = 0;
             terrain = null;
             players.Clear();
             status = GameStatus.Idle;
@@ -368,12 +369,14 @@ namespace OpenKingdomsUnity.Engine
 
         // The engine does not report a flyer's altitude, speed or flying
         // state yet, so they are worked out here from where it stands, tick
-        // to tick. A flyer losing height has begun to land.
+        // to tick. A flyer losing height has begun to land. Its type's
+        // cruise height and top speed are the most any of them has shown.
         struct Flight { public uint Tick; public float X, Z, Alt, Speed; public bool Down; }
         readonly Dictionary<uint, Flight> flights = new Dictionary<uint, Flight>();
         readonly List<uint> gone = new List<uint>();
+        uint nextFlightSweep;
 
-        void TrackFlight(in OkxUnit u, ref UnitState s, uint tick, int tps)
+        void TrackFlight(in OkxUnit u, ref UnitState s, UnitDef def, uint tick, int tps)
         {
             float alt = Mathf.Max(0f, u.y - OkEngine.okx_ground_height(u.x, u.z));
             if (flights.TryGetValue(u.stableId, out var f))
@@ -393,7 +396,13 @@ namespace OpenKingdomsUnity.Engine
             flights[u.stableId] = f;
             s.Altitude = alt * S;
             s.Speed = f.Speed;
-            if (s.Altitude > 0.02f && !f.Down && s.Flags == UnitFlags.Active) s.Flags |= UnitFlags.Airborne;
+            if (s.Altitude > 0.02f && !f.Down && s.Flags == UnitFlags.Active)
+            {
+                s.Flags |= UnitFlags.Airborne;
+                def.CruiseAltitude = Mathf.Max(def.CruiseAltitude, s.Altitude);
+                def.MaxSpeed = Mathf.Max(def.MaxSpeed, s.Speed);
+            }
+            if (OkEngine.okx_unit_anim(u.handle, null, 0) == OkEngine.AnimAttacking) s.Flags |= UnitFlags.Attacking;
         }
 
         public int ReadUnits(UnitState[] into)
@@ -425,11 +434,13 @@ namespace OpenKingdomsUnity.Engine
                     into[i].MaxMana = Mathf.RoundToInt(maxMana);
                 }
                 if (u.model >= 0 && !modelSource.ContainsKey(u.model)) modelSource[u.model] = (u.def, u.color);
-                if (u.def >= 0 && u.def < unitDefs.Count && unitDefs[u.def].CanFly) TrackFlight(u, ref into[i], tick, tps);
+                if (u.def >= 0 && u.def < unitDefs.Count && unitDefs[u.def].CanFly) TrackFlight(u, ref into[i], unitDefs[u.def], tick, tps);
             }
-            // Flyers not read for ten seconds of game time are forgotten.
-            if (flights.Count > 0 && tick % 300 == 0)
+            // Flyers not read for ten seconds of game time are forgotten,
+            // looked for every five seconds whatever the game's speed.
+            if (flights.Count > 0 && tick >= nextFlightSweep)
             {
+                nextFlightSweep = tick + (uint)(tps * 5);
                 gone.Clear();
                 foreach (var kv in flights) if (tick - kv.Value.Tick > (uint)(tps * 10)) gone.Add(kv.Key);
                 foreach (var id in gone) flights.Remove(id);

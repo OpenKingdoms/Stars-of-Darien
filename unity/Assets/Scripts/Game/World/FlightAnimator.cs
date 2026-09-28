@@ -3,7 +3,8 @@
 // band. Flapping lifts it at the type's climb rate to the top of the band,
 // then the wings settle and it sinks at the type's sink rate, its wing
 // loading, to the bottom, and flaps again. Takeoff, climbing over rising
-// ground, hovering and slow flight force flapping. Presentation only: the
+// ground, hovering and slow flight force flapping, and an attack, a landing
+// or a death hands the pieces back to the script. Presentation only: the
 // engine's position and air state are read, never written.
 using UnityEngine;
 
@@ -17,6 +18,7 @@ namespace OpenKingdomsUnity.Game.World
         public float TopSpeed;   // 0 when unknown
         public float WorldY;     // for the climb over rising ground
         public bool Airborne, Hovers, Dying;
+        public bool Attacking;   // an attack function of the script is posing it
 
         public static FlightInput Of(in UnitState u, UnitDef d) => new FlightInput
         {
@@ -26,13 +28,14 @@ namespace OpenKingdomsUnity.Game.World
         };
     }
 
-    public enum FlightMode { Ground, Flap, Glide, Land }
+    public enum FlightMode { Ground, Flap, Glide, Land, Attack }
 
     public struct Flyer
     {
         public FlightMode Mode;
         public float Offset;        // world units, inside [Lower, Upper]
         public float Phase;         // 0 to 1 through a beat, 0 at the top of the stroke
+        public float GlidePhase;    // 0 to 1 through the glide clip
         public float Glide;         // 0 the flap pose to 1 the glide pose
         public float Weight;        // 0 the script's pose to 1 the animator's
         public float Lift;          // how much of the offset shows, eased on and off
@@ -42,6 +45,7 @@ namespace OpenKingdomsUnity.Game.World
         public float PeriodScale;   // 1 give or take the jitter, fixed per unit
         public float Seed;          // wobble phase, fixed per unit
         public bool Forced;
+        public float Force;         // Forced, eased from 0 to 1
     }
 
     public static class FlightAnimator
@@ -52,7 +56,7 @@ namespace OpenKingdomsUnity.Game.World
         // A flyer seen for the first time. The phase, place in the band,
         // mode and beat come from its StableId, so a flock is out of step
         // and the same unit always starts the same way.
-        public static Flyer Start(uint stableId, FlightType t, in FlightInput i)
+        public static Flyer Start(uint stableId, FlightType t, in FlightInput i, FlightRig rig = null)
         {
             uint x = stableId * 2654435761u + 0x9E3779B9u;
             float R()
@@ -60,13 +64,14 @@ namespace OpenKingdomsUnity.Game.World
                 x ^= x << 13; x ^= x >> 17; x ^= x << 5;
                 return (x & 0xFFFFFF) / 16777216f;
             }
-            float phase = R(), band = R(), mode = R(), jitter = R(), seed = R();
+            float phase = R(), band = R(), mode = R(), jitter = R(), seed = R(), glide = R();
             bool aloft = i.Hovers || i.Airborne;
             var f = new Flyer
             {
                 Phase = phase,
+                GlidePhase = glide,
                 Offset = Mathf.Lerp(t.Lower, t.Upper, band),
-                Mode = !aloft ? FlightMode.Ground : mode < t.Sink / (t.Climb + t.Sink) ? FlightMode.Flap : FlightMode.Glide,
+                Mode = !aloft ? FlightMode.Ground : !Glides(t, rig) || mode < t.Sink / (t.Climb + t.Sink) ? FlightMode.Flap : FlightMode.Glide,
                 PeriodScale = 1f + t.Jitter * (2f * jitter - 1f),
                 Seed = seed * 2f * Mathf.PI,
                 LastY = i.WorldY,
@@ -77,7 +82,10 @@ namespace OpenKingdomsUnity.Game.World
             return f;
         }
 
-        public static void Step(ref Flyer f, in FlightInput i, FlightType t, float dt)
+        // A type glides unless its table entry says not, or its rig has no glide clip.
+        public static bool Glides(FlightType t, FlightRig rig) => t.Glides && (rig == null || rig.Glide != null);
+
+        public static void Step(ref Flyer f, in FlightInput i, FlightType t, float dt, FlightRig rig = null)
         {
             if (!(dt > 0f)) return;                        // paused: nothing moves
             dt = Mathf.Min(dt, 0.1f);                      // a unit back from the fog does not jump
@@ -93,31 +101,40 @@ namespace OpenKingdomsUnity.Game.World
             float top = i.TopSpeed > 0f ? i.TopSpeed : f.TopSeen;
             float stall = Mathf.Max(t.Stall * top, HoverSpeed);
             f.Forced = takeoff || i.Speed < stall || f.ClimbRate > t.ClimbForce;
+            f.Force = Mathf.MoveTowards(f.Force, f.Forced ? 1f : 0f, dt / Mathf.Max(1e-4f, t.Ease));
+            float down = rig != null ? rig.Downstroke : t.Downstroke;
 
             float target = 1f;
-            if (ground) { f.Mode = FlightMode.Ground; target = 0f; if (i.Dying) f.Weight = 0f; }
+            if (ground) { f.Mode = FlightMode.Ground; target = 0f; }
             else if (landing) { f.Mode = FlightMode.Land; target = 0f; }
             else
             {
-                if (f.Mode == FlightMode.Ground || f.Mode == FlightMode.Land) f.Mode = FlightMode.Flap;
                 float prev = f.Phase;
-                float period = t.Period * f.PeriodScale * (f.Forced ? t.ForcedPeriod : 1f);
+                float period = t.Period * f.PeriodScale * Mathf.Lerp(1f, t.ForcedPeriod, f.Force);
                 f.Phase = Mathf.Repeat(f.Phase + dt / period, 1f);
-                if (f.Mode == FlightMode.Flap)
-                {
-                    f.Offset = Mathf.Min(f.Offset + t.Climb * dt, t.Upper);
-                    // Settle into the glide only as the wings pass level on a downstroke.
-                    if (!f.Forced && f.Offset >= t.Upper && Crossed(prev, f.Phase, t.Downstroke * 0.5f))
-                        f.Mode = FlightMode.Glide;
-                }
+                if (rig != null && rig.GlideSeconds > 0f) f.GlidePhase = Mathf.Repeat(f.GlidePhase + dt / (rig.GlideSeconds * f.PeriodScale), 1f);
+                if (i.Attacking) { f.Mode = FlightMode.Attack; target = 0f; }
                 else
                 {
-                    float k = Mathf.Clamp01((i.Speed - stall) / Mathf.Max(1e-3f, top - stall));
-                    f.Offset = Mathf.Max(f.Offset - t.Sink * Mathf.Lerp(t.SinkSlow, 1f, k) * dt, t.Lower);
-                    if (f.Forced || f.Offset <= t.Lower)
+                    if (f.Mode != FlightMode.Flap && f.Mode != FlightMode.Glide) f.Mode = FlightMode.Flap;
+                    if (f.Mode == FlightMode.Flap)
                     {
-                        f.Mode = FlightMode.Flap;
-                        f.Phase = (1f + t.Downstroke) * 0.5f;   // mid upstroke, wings near level
+                        f.Offset = Mathf.Min(f.Offset + t.Climb * dt, t.Upper);
+                        // Settle into the glide only as the wings pass level on a downstroke.
+                        if (!f.Forced && Glides(t, rig) && f.Offset >= t.Upper && Crossed(prev, f.Phase, down * 0.5f))
+                            f.Mode = FlightMode.Glide;
+                    }
+                    else
+                    {
+                        float k = Mathf.Clamp01((i.Speed - stall) / Mathf.Max(1e-3f, top - stall));
+                        f.Offset = Mathf.Max(f.Offset - t.Sink * Mathf.Lerp(t.SinkSlow, 1f, k) * dt, t.Lower);
+                        if (f.Forced || f.Offset <= t.Lower)
+                        {
+                            f.Mode = FlightMode.Flap;
+                            // From a settled glide the beat starts mid upstroke, wings near
+                            // level. A glide cut short keeps the beat still showing.
+                            if (f.Glide >= 1f) f.Phase = (1f + down) * 0.5f;
+                        }
                     }
                 }
             }

@@ -38,9 +38,13 @@ namespace OpenKingdomsUnity.Game.World
         readonly Dictionary<int, float> lifts = new Dictionary<int, float>();
         readonly List<uint> stale = new List<uint>();
         FlightType[] flightTypes;
-        bool[] flightKnown;
+        FlightRig[] flightRigs;
+        bool[] flightKnown, rigKnown;
         int flightVersion = -1;
         float nextSweep;
+        // The camera's view, so a flyer out of it is stepped but not posed.
+        readonly Plane[] frustum = new Plane[6];
+        bool haveFrustum;
         // The simulation's clock in seconds, set before each Render so wings
         // stop when the game pauses and follow its speed. NaN falls back to
         // the tick count.
@@ -51,6 +55,9 @@ namespace OpenKingdomsUnity.Game.World
         public int Watch = -1;
         public readonly Matrix4x4[] Watched = new Matrix4x4[MaxPieces];
         public int WatchedCount { get; private set; }
+        public Vector3 WatchedRing { get; private set; }
+        // Flyers posed by the animator this frame.
+        public int FlyersPosed { get; private set; }
 
         public float VisualLift(int handle) => lifts.TryGetValue(handle, out var v) ? v : 0f;
 
@@ -124,7 +131,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             if (Selected.Count == 0 || Selected.Count > 60) return;
             positions.Clear();
-            for (int i = 0; i < UnitCount; i++) positions[Units[i].Handle] = Units[i].Position;
+            for (int i = 0; i < UnitCount; i++) positions[Units[i].Handle] = Units[i].Position + Vector3.up * VisualLift(Units[i].Handle);
             foreach (int h in Selected)
             {
                 if (!positions.TryGetValue(h, out var from)) continue;
@@ -323,6 +330,9 @@ namespace OpenKingdomsUnity.Game.World
             lastSim = now;
             simNow = (float)now;
             lifts.Clear();
+            FlyersPosed = 0;
+            haveFrustum = cam != null;
+            if (haveFrustum) GeometryUtility.CalculateFrustumPlanes(cam, frustum);
 
             UnitCount = backend.ReadUnits(Units);
             DrawnSize.Clear();
@@ -397,7 +407,8 @@ namespace OpenKingdomsUnity.Game.World
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;
             bool selected = Selected.Contains(u.Handle);
-            var ground = u.Position + Vector3.up * 0.05f;
+            var ground = u.Position + Vector3.up * (0.05f + air);
+            if (u.Handle == Watch) WatchedRing = ground;
             if (selected)
                 overlay.Add(ring, 0, ringMat, Matrix4x4.TRS(ground, Quaternion.identity, new Vector3(radius, 1, radius)));
             if (selected || u.Health < u.MaxHealth)
@@ -430,7 +441,7 @@ namespace OpenKingdomsUnity.Game.World
             // A building on a site with a plinth stands on the plinth.
             var lift = def != null && def.IsBuilding ? Matrix4x4.Translate(Vector3.up * SiteLift(u.Position)) : Matrix4x4.identity;
             for (int p = 0; p < n; p++) posed[p] = lift * poses[p].Matrix * model.Unscale;
-            air = Fly(u, def, model.Data, n);
+            air = Fly(u, def, model, n);
             // Nudges from the animation editor, for every animation and
             // for the script function driving the unit now.
             var nudges = def != null ? AnimOverride.Load(def.ObjectName) : null;
@@ -462,21 +473,38 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
-        // Steps a winged flyer's animator and poses its wings in posed[].
+        // Steps a winged flyer's animator and, in view, poses it in posed[].
         // Returns how far the flyer is drawn above its engine position.
-        float Fly(in UnitState u, UnitDef def, ModelData data, int n)
+        float Fly(in UnitState u, UnitDef def, PresentedModel model, int n)
         {
             var type = FlightTypeOf(u.Def, def);
             if (type == null) return 0f;
+            var rig = RigOf(u.Def, u.Model, type, model.Data);
             var input = FlightInput.Of(u, def);
-            if (!flyers.TryGetValue(u.StableId, out var e)) e.F = FlightAnimator.Start(u.StableId, type, input);
-            FlightAnimator.Step(ref e.F, input, type, simDt);
+            // Only an attacking unit is asked which function poses it.
+            input.Attacking = (u.Flags & UnitFlags.Attacking) != 0 &&
+                              backend.UnitAnimation(u.Handle).StartsWith("attack", System.StringComparison.OrdinalIgnoreCase);
+            if (!flyers.TryGetValue(u.StableId, out var e)) e.F = FlightAnimator.Start(u.StableId, type, input, rig);
+            FlightAnimator.Step(ref e.F, input, type, simDt, rig);
             e.Seen = Time.unscaledTime;
             flyers[u.StableId] = e;
             float offset = FlightAnimator.VisualOffset(e.F, input);
-            FlightPose.Apply(e.F, type, data, posed, n, offset, simNow);
+            var b = model.RestBounds;
+            if (InView(u.Position + Vector3.up * (offset + b.center.y), b.extents.magnitude + 2f))
+            {
+                FlightPose.Apply(e.F, type, rig, model.Data, posed, n, offset, simNow);
+                FlyersPosed++;
+            }
+            else FlightPose.Lift(posed, n, offset);
             if (offset != 0f) lifts[u.Handle] = offset;
             return offset;
+        }
+
+        bool InView(Vector3 at, float reach)
+        {
+            if (!haveFrustum) return true;
+            for (int i = 0; i < frustum.Length; i++) if (frustum[i].GetDistanceToPoint(at) < -reach) return false;
+            return true;
         }
 
         // The flight table's entry for a def, looked up once per def.
@@ -486,7 +514,9 @@ namespace OpenKingdomsUnity.Game.World
             if (flightTypes == null || flightVersion != FlightTable.Version || flightTypes.Length != backend.UnitDefs.Count)
             {
                 flightTypes = new FlightType[backend.UnitDefs.Count];
+                flightRigs = new FlightRig[flightTypes.Length];
                 flightKnown = new bool[flightTypes.Length];
+                rigKnown = new bool[flightTypes.Length];
                 flightVersion = FlightTable.Version;
             }
             if (index >= flightTypes.Length) return null;
@@ -496,6 +526,37 @@ namespace OpenKingdomsUnity.Game.World
                 flightKnown[index] = true;
             }
             return flightTypes[index];
+        }
+
+        // A def's flight clips from its own script, baked the first time
+        // they are needed. Null where the table's poses stand in.
+        FlightRig RigOf(int index, int model, FlightType type, ModelData data)
+        {
+            if (rigKnown[index]) return flightRigs[index];
+            rigKnown[index] = true;
+            var def = backend.UnitDefs[index];
+            var flap = Sampler(def, model, type.Clip("flap", "fly"));
+            string why = "its script has no " + type.Clip("flap", "fly");
+            if (flap != null)
+                flightRigs[index] = FlightRig.Bake(type, data, backend.TicksPerSecond, flap, Sampler(def, model, type.Clip("glide", "soar")), out why);
+            if (flightRigs[index] == null) Debug.Log($"Flight: {def.Name} turns the table's wing poses, since {why}");
+            return flightRigs[index];
+        }
+
+        FlightRig.Sampler Sampler(UnitDef def, int model, string function)
+        {
+            string name = System.Array.Find(def.Animations, a => string.Equals(a, function, System.StringComparison.OrdinalIgnoreCase));
+            if (name == null) return null;
+            return (seconds, into) => backend.PoseModel(model, name, seconds, into);
+        }
+
+        // Bakes a flyer's clips while the loading screen is up.
+        public void WarmFlight(int def, int model)
+        {
+            if (def < 0 || def >= backend.UnitDefs.Count) return;
+            var type = FlightTypeOf(def, backend.UnitDefs[def]);
+            var data = type != null ? models.Get(model)?.Data : null;
+            if (data != null) RigOf(def, model, type, data);
         }
 
         // Forgets flyers not drawn for two seconds, checked once a second.
@@ -723,6 +784,8 @@ namespace OpenKingdomsUnity.Game.World
             owned.Clear();
             spriteMats.Clear();
             flyers.Clear();
+            flightTypes = null;
+            flightRigs = null;
             FlightPose.Forget();
         }
     }

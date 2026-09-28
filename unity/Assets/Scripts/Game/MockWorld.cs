@@ -314,6 +314,14 @@ namespace OpenKingdomsUnity.Game
                     if (piece == "wingr2") return Quaternion.Euler(0, 0, -beat * 15f);
                     break;
                 }
+                case "soar":
+                {
+                    // Wings held a little up, rocking slowly, every two seconds.
+                    float rock = Mathf.Sin(t * Mathf.PI) * 3f;
+                    if (piece == "wingl1") return Quaternion.Euler(0, 0, 8f + rock);
+                    if (piece == "wingr1") return Quaternion.Euler(0, 0, -8f + rock);
+                    break;
+                }
                 case "walk":
                 {
                     float w = Mathf.Sin(t * 2f * Mathf.PI) * 30f;
@@ -323,6 +331,9 @@ namespace OpenKingdomsUnity.Game
                     break;
                 }
                 case "attack":
+                    // A flyer hovers over its target with its wings high.
+                    if (piece == "wingl1") return Quaternion.Euler(0, 0, 55f + Mathf.Sin(t * 4f * Mathf.PI) * 10f);
+                    if (piece == "wingr1") return Quaternion.Euler(0, 0, -55f - Mathf.Sin(t * 4f * Mathf.PI) * 10f);
                     if (piece == "rarm") swing = -Mathf.Abs(Mathf.Sin(t * Mathf.PI)) * 110f;
                     else if (piece == "torso") return Quaternion.Euler(0, Mathf.Sin(t * Mathf.PI) * 15f, 0);
                     break;

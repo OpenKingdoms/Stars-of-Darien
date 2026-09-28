@@ -68,7 +68,7 @@
       ]
     },
     "lifbird": {
-      "class": "light", "period": 1.166, "downstroke": 0.51,
+      "class": "light", "glides": false, "period": 1.166, "downstroke": 0.51,
       "pieces": [
         { "piece": "WingL1", "mirror": "WingR1", "down": [0.0, 0.0, 51.1], "up": [0.0, 0.0, -68.1], "wobble": 3 },
         { "piece": "WingL2", "mirror": "Wingr2", "down": [0.0, -15.0, 5.5], "up": [0.0, -14.7, -12.2] },
@@ -76,7 +76,7 @@
       ]
     },
     "tarang": {
-      "class": "medium", "period": 1.329, "downstroke": 0.65,
+      "class": "medium", "glides": false, "period": 1.329, "downstroke": 0.65,
       "pieces": [
         { "piece": "hip", "down": [6.2, 0.0, 0.0], "up": [15.2, 0.0, 0.0], "downMove": [0.0, 3.25, 3.87], "upMove": [0.0, 0.72, 0.78] },
         { "piece": "torso", "down": [-1.9, 0.0, 0.0], "up": [-6.2, 0.0, 0.0] },
@@ -112,7 +112,7 @@
       ]
     },
     "targarg": {
-      "class": "medium", "period": 1.211, "downstroke": 0.59,
+      "class": "heavy", "period": 1.211, "downstroke": 0.59,
       "pieces": [
         { "piece": "Wingl1", "mirror": "Wingr1", "down": [-22.3, 2.8, 29.1], "up": [-17.5, -10.7, -61.2], "glide": [-11.6, -13.8, -13.1], "wobble": 3 },
         { "piece": "Wingl2", "mirror": "Wingr2", "down": [0.8, 1.4, 17.5], "up": [-7.3, 0.2, 39.1], "glide": [1.3, -4.5, 20.7], "downMove": [0.0, 0.0, 0.0], "upMove": [0.0, 0.0, 0.0], "glideMove": [0.0, 0.0, 0.0] },
@@ -139,7 +139,7 @@
       ]
     },
     "verpar": {
-      "class": "light", "period": 1.034, "downstroke": 0.68,
+      "class": "medium", "period": 1.034, "downstroke": 0.68,
       "pieces": [
         { "piece": "body", "down": [-3.2, 0.0, 0.0], "up": [-6.6, 0.0, 0.0], "glide": [-2.0, 0.0, -0.3] },
         { "piece": "wingl1", "mirror": "wingr1", "down": [2.0, -10.8, 23.2], "up": [7.4, -22.5, -60.7], "glide": [15.0, -0.5, -20.1], "wobble": 3 },
@@ -151,7 +151,7 @@
       ]
     },
     "zonbat": {
-      "class": "light", "period": 0.738, "downstroke": 0.65,
+      "class": "medium", "climb": 0.12, "sink": 0.6, "lower": -0.15, "upper": 0.15, "ease": 0.2, "period": 0.738, "downstroke": 0.65,
       "pieces": [
         { "piece": "body", "down": [5.4, 0.0, 0.0], "up": [12.2, 0.0, 0.0], "glide": [-2.0, -0.4, -0.3], "downMove": [0.0, 1.78, 0.0], "upMove": [0.0, 0.43, 0.0], "glideMove": [0.0, 3.38, 1.82] },
         { "piece": "lwingbase", "mirror": "rwingbase", "down": [-2.9, 33.1, 36.3], "up": [0.0, -20.4, -44.0], "glide": [15.0, -0.5, -20.1], "wobble": 3 },

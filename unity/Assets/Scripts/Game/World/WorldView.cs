@@ -69,8 +69,9 @@ namespace OpenKingdomsUnity.Game.World
         bool Friendly(int player) => backend.Allied(player, backend.LocalPlayer);
 
         // Builds the models of every unit on the field and of everything the
-        // players' units can build, now while the loading screen is up, so a
-        // model seen for the first time does not stall a frame.
+        // players' units can build, and the flyers' clips, now while the
+        // loading screen is up, so a unit seen for the first time does not
+        // stall a frame.
         void Warm()
         {
             var units = new UnitState[EntityRenderer.MaxUnits];
@@ -79,12 +80,15 @@ namespace OpenKingdomsUnity.Game.World
             for (int i = 0; i < n; i++)
             {
                 Models.Get(units[i].Model);
+                Entities.WarmFlight(units[i].Def, units[i].Model);
                 var def = backend.UnitDefs[units[i].Def];
                 int colour = backend.PlayerById(units[i].Player)?.Colour ?? 0;
                 foreach (int o in def.BuildOptions)
                 {
                     if (o < 0 || o >= backend.UnitDefs.Count || !seen.Add((o, colour))) continue;
-                    Models.Get(backend.LoadModel(backend.UnitDefs[o].ObjectName, colour));
+                    int model = backend.LoadModel(backend.UnitDefs[o].ObjectName, colour);
+                    Models.Get(model);
+                    Entities.WarmFlight(o, model);
                 }
             }
         }

@@ -1,7 +1,8 @@
 // FlightAnimatorTests.cs - the flap and glide band: a flyer flaps up to
 // the top of its band and glides down to the bottom at its sink rate,
-// heavy types flap far more than light ones, and takeoff, slow flight,
-// rising ground and hovering force the wings to beat.
+// heavy types flap far more than light ones, the bat barely pauses, and
+// takeoff, slow flight, rising ground and hovering force the wings to
+// beat. An attack, a landing and a death blend back to the script.
 using System.Collections.Generic;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
@@ -219,7 +220,7 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void DyingHandsBackAtOnce()
+        public void DyingBlendsBackToTheScript()
         {
             var t = Type("zonharp");
             var f = FlightAnimator.Start(8, t, Aloft());
@@ -228,7 +229,101 @@ namespace OpenKingdomsUnity.Tests
             var dying = Aloft();
             dying.Dying = true;
             FlightAnimator.Step(ref f, dying, t, Dt);
-            Assert.AreEqual(0f, f.Weight);
+            Assert.AreEqual(1f - Dt / t.Blend, f.Weight, 1e-4f, "no snap on the death frame");
+            for (float time = 0f; time < t.Blend; time += Dt) FlightAnimator.Step(ref f, dying, t, Dt);
+            Assert.AreEqual(0f, f.Weight, 1e-5f, "the death plays as the script has it");
+        }
+
+        [Test]
+        public void AnAttackHandsThePiecesToTheScript()
+        {
+            var t = Type("zonharp");
+            var f = FlightAnimator.Start(14, t, Aloft());
+            for (int s = 0; s < 60; s++) FlightAnimator.Step(ref f, Aloft(), t, Dt);
+            var hover = Aloft(0f);
+            hover.Attacking = true;
+            float offset = f.Offset;
+            for (float time = 0f; time < t.Blend + 2 * Dt; time += Dt)
+            {
+                FlightAnimator.Step(ref f, hover, t, Dt);
+                Assert.AreEqual(FlightMode.Attack, f.Mode);
+            }
+            Assert.AreEqual(0f, f.Weight, 1e-5f, "the attack's own pose shows, wings and all");
+            Assert.AreEqual(offset, f.Offset, 1e-5f, "the band holds");
+            for (float time = 0f; time < t.Blend + 2 * Dt; time += Dt) FlightAnimator.Step(ref f, Aloft(), t, Dt);
+            Assert.AreNotEqual(FlightMode.Attack, f.Mode, "it flies on after the attack");
+            Assert.AreEqual(1f, f.Weight, 1e-5f);
+        }
+
+        [Test]
+        public void AGlideCutShortKeepsTheBeat()
+        {
+            var t = Type("zonharp");
+            var f = new Flyer { Mode = FlightMode.Glide, Glide = 0.4f, Phase = 0.2f, Offset = 0f, Weight = 1f, Lift = 1f, LastY = Ground + Cruise, PeriodScale = 1f };
+            FlightAnimator.Step(ref f, Aloft(0f), t, Dt);
+            Assert.AreEqual(FlightMode.Flap, f.Mode, "slow flight forces the beat");
+            Assert.AreEqual(0.2f + Dt / (t.Period * Mathf.Lerp(1f, t.ForcedPeriod, f.Force)), f.Phase, 1e-4f, "the half shown beat runs on");
+            f = new Flyer { Mode = FlightMode.Glide, Glide = 1f, Phase = 0.2f, Offset = 0f, Weight = 1f, Lift = 1f, LastY = Ground + Cruise, PeriodScale = 1f };
+            FlightAnimator.Step(ref f, Aloft(0f), t, Dt);
+            Assert.AreEqual((1f + t.Downstroke) * 0.5f, f.Phase, 1e-5f, "from a settled glide the beat starts with level wings");
+        }
+
+        [Test]
+        public void TheForcedBeatEasesIn()
+        {
+            var t = Type("zonharp");
+            var f = FlightAnimator.Start(19, t, Aloft());
+            for (int s = 0; s < 60; s++) FlightAnimator.Step(ref f, Aloft(), t, Dt);
+            Assert.AreEqual(0f, f.Force);
+            float last = 0f;
+            for (int s = 0; s < Mathf.CeilToInt(t.Ease / Dt) + 1; s++)
+            {
+                FlightAnimator.Step(ref f, Aloft(0f), t, Dt);
+                Assert.LessOrEqual(f.Force - last, Dt / t.Ease + 1e-5f, "no jump in the stroke's size or beat");
+                last = f.Force;
+            }
+            Assert.AreEqual(1f, f.Force, 1e-5f);
+        }
+
+        [Test]
+        public void AFlapOnlyTypeNeverGlides()
+        {
+            var t = Type("quick");
+            t.Glides = false;
+            var f = FlightAnimator.Start(7, t, Aloft());
+            Assert.AreEqual(FlightMode.Flap, f.Mode);
+            Assert.AreEqual(1f, FlapShare(t, ref f, Aloft(), 60f));
+        }
+
+        // The original bat soars one beat in ten: brief pauses between beats.
+        [Test]
+        public void TheBatBarelyPauses()
+        {
+            var t = FlightTableTests.Committed().Find("zonbat", null);
+            var f = FlightAnimator.Start(17, t, Aloft());
+            float glide = 0f, longest = 0f;
+            int flap = 0, steps = Mathf.RoundToInt(120f / Dt);
+            for (int s = 0; s < steps; s++)
+            {
+                FlightAnimator.Step(ref f, Aloft(), t, Dt);
+                if (f.Mode == FlightMode.Flap) { flap++; glide = 0f; }
+                else longest = Mathf.Max(longest, glide += Dt);
+            }
+            Assert.Greater((float)flap / steps, 0.75f, "it beats most of the time");
+            Assert.Less(longest, 1f, "its glides are short");
+        }
+
+        [Test]
+        public void ARigSetsTheStrokeAndTheGlideClock()
+        {
+            var t = Type("quick");
+            var rig = new FlightRig { Downstroke = 0.3f, Glide = new FlightRig.Clip { Seconds = 2f, Times = new[] { 0f } } };
+            var f = new Flyer { Mode = FlightMode.Glide, Glide = 1f, Offset = t.Lower + 1e-4f, Weight = 1f, Lift = 1f, LastY = Ground + Cruise, PeriodScale = 1f };
+            FlightAnimator.Step(ref f, Aloft(), t, Dt, rig);
+            Assert.AreEqual(Dt / 2f, f.GlidePhase, 1e-5f, "the glide clip runs at its own length");
+            Assert.AreEqual(FlightMode.Flap, f.Mode);
+            Assert.AreEqual(0.65f, f.Phase, 1e-5f, "mid upstroke of the rig's stroke");
+            Assert.IsFalse(FlightAnimator.Glides(t, new FlightRig()), "a rig with no glide clip only beats");
         }
 
         [Test]

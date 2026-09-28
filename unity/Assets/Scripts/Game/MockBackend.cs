@@ -748,8 +748,8 @@ namespace OpenKingdomsUnity.Game
         {
             if (!byHandle.TryGetValue(handle, out var u)) return 0;
             var world = Matrix4x4.TRS(u.Pos, Quaternion.Euler(0, u.Heading, u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0), Vector3.one);
-            string anim = u.Alt > 0f ? "fly" : u.Attacking ? "attack" : u.Moving ? "walk" : "idle";
-            float t = u.Alt > 0f ? u.FlyTime : u.Attacking ? u.AttackPhase : u.WalkPhase;
+            string anim = u.Attacking ? "attack" : u.Alt > 0f ? "fly" : u.Moving ? "walk" : "idle";
+            float t = u.Attacking ? u.AttackPhase : u.Alt > 0f ? u.FlyTime : u.WalkPhase;
             int n = PoseModel(u.Model, anim, t, into);
             for (int i = 0; i < n; i++) into[i].Matrix = world * into[i].Matrix;
             return n;
@@ -873,8 +873,8 @@ namespace OpenKingdomsUnity.Game
         public string UnitAnimation(int handle)
         {
             if (!byHandle.TryGetValue(handle, out var u) || u.Dying) return "";
-            if (u.Alt > 0f) return u.Flying ? "fly" : "land";
             if (u.Attacking) return "attack";
+            if (u.Alt > 0f) return u.Flying ? "fly" : "land";
             if (u.Moving) return "walk";
             return "";
         }

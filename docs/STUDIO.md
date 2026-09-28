@@ -47,15 +47,18 @@ OpenKingdoms, then Studio Mode, opens a scene of its own (`Assets/Scenes/Studio.
 
 ## Flight
 
-Winged flyers flap and glide by a small animator rather than by the script's coin toss. The engine still decides where a flyer is, how high it flies and whether it is in the air. On top of that height the animator draws the flyer a little higher or lower, inside a band a fraction of a cell deep. While the wings beat, the flyer rises through the band at its climb rate. At the top the wings settle into a glide pose and it sinks at its sink rate, which stands for wing loading. At the bottom it beats again. Takeoff, climbing over rising ground, hovering and flying slower than a stall speed keep the wings beating, and landing hands the pieces back to the script's own landing. A heavy flyer such as the pegasus sinks fast, so it beats in a steady rhythm most of the time. A light one such as the spyhawk sinks slowly and glides most of the time. Nothing here reaches the game, so every player may see a flyer at a different point of its beat.
+Winged flyers flap and glide by a small animator rather than by the script's coin toss. The engine still decides where a flyer is, how high it flies and whether it is in the air. On top of that height the animator draws the flyer a little higher or lower, inside a band a fraction of a cell deep. While the wings beat, the flyer rises through the band at its climb rate. At the top the wings settle into a glide pose and it sinks at its sink rate, which stands for wing loading. At the bottom it beats again. Takeoff, climbing over rising ground, hovering and flying slower than a stall speed keep the wings beating. Landing, an attack from the air and a death hand the pieces back to the script, so the landing, the attack and the fall play as the original has them. A heavy flyer such as the pegasus sinks fast, so it beats in a steady rhythm most of the time. A light one such as the spyhawk sinks slowly and glides most of the time. Nothing here reaches the game, so every player may see a flyer at a different point of its beat.
+
+The wings play the unit's own flight functions. While a battle loads, or the first time a flyer type is drawn, its script's `fly` and `soar` functions are posed a tick at a time in the engine's studio, cut to one cycle, and kept as keyframes of every piece they move: wings, body, neck, head, tail and legs. The animator plays `fly` at its own beat while the wings beat and `soar` while the flyer glides, and crosses from one to the other, so everything the original's animators moved stays in step with the wings, eased between their keyframes. A piece the functions never turn about y keeps the script's own y turn, so a head still looks about. A model whose script has no `fly`, or whose `fly` never repeats, turns the table's wing pieces between their down, up and glide poses instead.
 
 The numbers live in `unity/Assets/Overrides/Units/flight.json`. An entry is found by unit name, then by model name, in any case. Values come from `defaults`, then the entry's `class` (heavy, medium or light), then the entry's own keys, so any of them can be set for one unit.
 
 | Key | Meaning |
 | --- | --- |
-| `period` | Seconds for one wingbeat at cruise |
-| `downstroke` | The share of the beat spent going down, from the top of the stroke |
-| `amplitude`, `forcedAmplitude` | Stroke size, 1 being the full sweep from the down pose to the up pose, and the size while the beat is forced |
+| `period` | Seconds for one wingbeat at cruise, which the `fly` function is played to |
+| `glides` | `false` for a flyer that never glides, such as the fallen angel and the bird, whose scripts never soar |
+| `downstroke` | For the table's poses, the share of the beat spent going down. A `fly` function has its own |
+| `amplitude`, `forcedAmplitude` | For the table's poses, the stroke size, 1 being the full sweep from the down pose to the up pose, and the size while the beat is forced |
 | `forcedPeriod` | The period's multiplier while the beat is forced, below 1 for a harder beat |
 | `climb` | Cells a second the flyer rises while beating |
 | `sink` | Cells a second it sinks while gliding at top speed |
@@ -64,10 +67,10 @@ The numbers live in `unity/Assets/Overrides/Units/flight.json`. An entry is foun
 | `stall` | Stall speed as a share of the unit's top speed |
 | `climbForce` | Cells a second of climbing over rising ground that force a beat |
 | `ease`, `blend` | Seconds to ease between the beat and the glide, and between the script and the animator |
-| `jitter` | How much each unit's beat differs, so a flock drifts apart |
+| `jitter` | How much each unit's beat differs, so a flock drifts apart, from 0 to below 1 |
 | `wobbleHz` | How often the small corrections of a glide come |
 
-Each entry lists the pieces it drives. `down`, `up` and `glide` are the piece's turns at the bottom of the stroke, the top and in a glide, in degrees, written exactly as a unit script writes `turn piece to x-axis`. A missing glide is halfway between down and up. `mirror` names the right-side piece, which takes the same poses reflected. `downMove`, `upMove` and `glideMove` move a piece in engine pixels, as a script's `move` reads in a disassembly. `lag` is the share of a beat a piece trails the stroke, which gives the outer wing its fold, and `wobble` is how many degrees the piece rocks while gliding. Pieces not listed keep the script's pose, and the children of a listed piece follow it, so a drop-in model whose nodes are named after the wing pieces flaps with them. An entry may also name `clips`, the flap, glide and land clips of a skinned model, which will play by the same states once the model loader reads skins.
+Each entry lists its wing pieces. The first with a `wobble` marks the top and bottom of a `fly` function's stroke, where it is nearest its up and its down pose, and for a model with no `fly` the pieces are what the animator turns. `down`, `up` and `glide` are the piece's turns at the bottom of the stroke, the top and in a glide, in degrees, written exactly as a unit script writes `turn piece to x-axis`. A missing glide is halfway between down and up. `mirror` names the right-side piece, which takes the same poses reflected. `downMove`, `upMove` and `glideMove` move a piece in engine pixels, as a script's `move` reads in a disassembly. `lag` is the share of a beat a piece trails the stroke, which gives the outer wing its fold, and `wobble` is how many degrees the piece rocks while gliding. Pieces not listed keep the script's pose, and the children of a listed piece follow it. A drop-in model whose nodes are named after the pieces follows them either way. `clips` names the functions that play `flap` and `glide`, `fly` and `soar` unless set, and later the clips of a skinned model, which will play by the same states once the model loader reads skins.
 
 To tune, edit the file and pick OpenKingdoms, then Studio, then Reload Flight Table. It works during Play.
 

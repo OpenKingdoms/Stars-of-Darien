@@ -1,8 +1,9 @@
 // FlightTable.cs - the numbers behind winged flight, from
 // Overrides/Units/flight.json: how fast each flyer beats its wings, climbs
-// and sinks, the band round the engine's height it moves in, and its wing
-// pieces with their down, up and glide poses. Values merge from the
-// defaults, then the unit's class, then the unit's own keys.
+// and sinks, the band round the engine's height it moves in, the script
+// functions it flaps and glides by, and its wing pieces with their down,
+// up and glide poses for a model with no such functions. Values merge from
+// the defaults, then the unit's class, then the unit's own keys.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -29,9 +30,12 @@ namespace OpenKingdomsUnity.Game.World
         public float Period, Downstroke, Amplitude, ForcedAmplitude, ForcedPeriod;
         public float Climb, Sink, SinkSlow, Lower, Upper, Stall, ClimbForce;
         public float Ease, Blend, Jitter, WobbleHz;
+        public bool Glides = true;                                  // false beats the wings all the time
         public FlightPiece[] Pieces = Array.Empty<FlightPiece>();   // mirrors included
-        // For skinned models later: state name ("flap", "glide", "land") to clip name.
+        // State name ("flap", "glide") to the script function or clip that plays it.
         public readonly Dictionary<string, string> Clips = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        public string Clip(string state, string fallback) => Clips.TryGetValue(state, out var c) ? c : fallback;
     }
 
     public sealed class FlightTable
@@ -115,11 +119,14 @@ namespace OpenKingdomsUnity.Game.World
                 Lower = N("lower", 0f), Upper = N("upper", 0f), Stall = N("stall", 0f), ClimbForce = N("climbForce", 0.3f),
                 Ease = N("ease", 0.35f), Blend = N("blend", 0.3f), Jitter = N("jitter", 0f), WobbleHz = N("wobbleHz", 0.4f),
             };
+            if (unit.TryGetValue("glides", out var gv) && gv is bool gb) t.Glides = gb;
+            else if (clsKeys != null && clsKeys.TryGetValue("glides", out gv) && gv is bool gc) t.Glides = gc;
             if (!(t.Period > 0f)) why = "period must be above 0";
             else if (!(t.Downstroke > 0f && t.Downstroke < 1f)) why = "downstroke must be between 0 and 1";
             else if (!(t.Lower < t.Upper)) why = "lower must be below upper";
             else if (!(t.Climb > 0f && t.Sink > 0f)) why = "climb and sink must be above 0";
             else if (!(t.ForcedPeriod > 0f)) why = "forcedPeriod must be above 0";
+            else if (!(t.Jitter >= 0f && t.Jitter < 1f)) why = "jitter must be from 0 to below 1";
             if (why != null) return null;
 
             float lag = N("lag", 0f);
