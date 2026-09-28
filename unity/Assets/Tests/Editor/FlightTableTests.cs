@@ -1,7 +1,8 @@
 // FlightTableTests.cs - the flight table reads its numbers and poses the
 // way the scripts write them: turns compose as the engine's do, the right
 // wing mirrors the left, merges run defaults, class, unit, and bad entries
-// are skipped with a warning.
+// are skipped with a warning. The committed table moves the whole body
+// on the beat, each piece through its own stroke.
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
@@ -169,6 +170,73 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsFalse(t.Find("tarang", null).Glides, "the fallen angel's script never glides");
             Assert.IsFalse(t.Find("lifbird", null).Glides, "nor the bird's");
             Assert.IsTrue(t.Find("zonharp", null).Glides);
+        }
+
+        [Test]
+        public void HalfwayPosesAndKeepYAreReadAndMirrored()
+        {
+            var t = FlightTable.Parse(@"{ ""classes"": { ""c"": { ""climb"": 0.2, ""sink"": 0.2, ""lower"": -0.4, ""upper"": 0.4 } },
+                ""units"": { ""u"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 0.5, ""pieces"": [
+                  { ""piece"": ""l"", ""mirror"": ""r"", ""down"": [0, 0, 0], ""up"": [0, 0, 0], ""mid"": [10, 20, 30], ""midDown"": [1, 2, 3],
+                    ""downMove"": [0, 0, 0], ""midMove"": [4, 5, 6], ""keepY"": true },
+                  { ""piece"": ""p"", ""down"": [10, 0, 0], ""up"": [30, 0, 0] } ] } } }").Find("u", null);
+            var l = Piece(t, "l");
+            var r = Piece(t, "r");
+            var p = Piece(t, "p");
+            Assert.IsTrue(l.HasMid && l.HasMidDown && l.KeepY && r.KeepY);
+            AssertTurn(FlightTable.Cob(new Vector3(10, 20, 30)), l.Mid);
+            AssertTurn(FlightTable.Cob(new Vector3(10, -20, -30)), r.Mid);
+            AssertTurn(FlightTable.Cob(new Vector3(1, -2, -3)), r.MidDown);
+            Assert.AreEqual(FlightTable.MoveToLocal(new Vector3(-4, 5, 6)), r.MidMove);
+            Assert.IsFalse(p.HasMid || p.HasMidDown || p.KeepY, "all three are optional");
+        }
+
+        // What the original's fly moves besides the wings follows the
+        // animator's beat: legs, hooves, necks, heads, tails and arms.
+        [Test]
+        public void TheWholeBodyBeatsWithTheWings()
+        {
+            var t = Committed();
+            var want = new (string unit, string[] pieces)[]
+            {
+                ("arafly", new[] { "LegFUL", "LegFUR", "HoofFL", "HoofBR", "Neck1", "Tail1" }),
+                ("zonharp", new[] { "harneck1", "head", "hartail1", "harlegl1", "harlegr1" }),
+                ("tardrag", new[] { "blkneck1", "blkneck2", "blkhead", "blktail1" }),
+                ("zonroc", new[] { "neck1", "head", "toea1", "toerb1", "legl1" }),
+                ("targarg", new[] { "Arml1", "ArmR1", "Neck" }),
+                ("zongod", new[] { "neck", "tail1", "tail2" }),
+                ("zonbat", new[] { "lleg", "rleg" }),
+            };
+            var missing = new System.Collections.Generic.List<string>();
+            foreach (var (unit, pieces) in want)
+            {
+                var f = t.Find(unit, null);
+                foreach (var name in pieces)
+                    if (!f.Pieces.Any(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase))) missing.Add(unit + "/" + name);
+            }
+            Assert.IsEmpty(missing, string.Join(", ", missing));
+        }
+
+        // Each piece swings through its own stroke, not the share of it it
+        // had when the wing's root reached its ends. The spans are the fly
+        // scripts' own.
+        [Test]
+        public void EachPieceSweepsMostOfItsOwnStroke()
+        {
+            var t = Committed();
+            var spans = new (string unit, string piece, float span)[]
+            {
+                ("zonroc", "wingl3", 108f), ("zonroc", "wingl3c", 38f), ("zonroc", "wingl3a", 97f),
+                ("zonharp", "harwingl3", 84f), ("tarbeak", "lwing2", 149f), ("zongryp", "grywingl3", 99f),
+                ("zondrake", "L_wing3", 77f), ("aradrag", "wingl2", 80f), ("zonhunt", "wing1_L", 98f),
+            };
+            var flat = new System.Collections.Generic.List<string>();
+            foreach (var (unit, piece, span) in spans)
+            {
+                var p = t.Find(unit, null).Pieces.First(x => string.Equals(x.Name, piece, System.StringComparison.OrdinalIgnoreCase));
+                if (p.Sweep < 0.7f * span) flat.Add($"{unit}/{piece} sweeps {p.Sweep:0} of {span:0}");
+            }
+            Assert.IsEmpty(flat, string.Join(", ", flat));
         }
 
         [Test]

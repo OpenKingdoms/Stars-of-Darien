@@ -1,7 +1,8 @@
 // FlightPoseTests.cs - the animator's wing poses land on the drawn piece
 // matrices: a driven piece takes the table's turn at its rest offset,
 // children ride it, the right wing mirrors the left, moves land where the
-// engine puts them, and nothing changes at weight 0. On a sixty-piece
+// engine puts them, a stroke passes its halfway poses, a head turner's
+// turn stays, and nothing changes at weight 0. On a sixty-piece
 // model the pose matches the plain way of computing it at well under its cost.
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -102,6 +103,39 @@ namespace OpenKingdomsUnity.Tests
             FlightPose.Apply(Flapping(0.2f), Type(@", ""downMove"": [1, 2, 3], ""upMove"": [1, 2, 3]"), null, d, m, m.Length, 0f, 0f);
             var at = (Vector3)Local(m, d, 2).GetColumn(3);
             Assert.Less(Vector3.Distance(new Vector3(0.5f, 0, 0) * Scale + new Vector3(-1, 2, -3) / 16f, at), 1e-5f, at.ToString("F4"));
+        }
+
+        [Test]
+        public void AHalfwayPoseBendsTheStroke()
+        {
+            var t = Type(@", ""mid"": [0, 40, 0], ""midDown"": [0, -40, 0], ""downMove"": [0, 0, 0], ""upMove"": [0, 2, 0], ""midMove"": [4, 1, 0]");
+            var wing = t.Pieces[0];
+            void At(float phase, Quaternion want, string what)
+            {
+                FlightPose.Target(Flapping(phase), t, wing, Vector3.zero, 0f, out var q, out _);
+                Assert.Less(Quaternion.Angle(want, q), 0.05f, what);
+            }
+            At(0f, wing.Up, "the top of the stroke");
+            At(0.4f, wing.Down, "the bottom");
+            At(0.2f, FlightTable.Cob(new Vector3(0, -40, 0)), "halfway down");
+            At(0.7f, FlightTable.Cob(new Vector3(0, 40, 0)), "halfway up");
+            FlightPose.Target(Flapping(0.7f), t, wing, Vector3.zero, 0f, out _, out var at);
+            Assert.Less(Vector3.Distance(FlightTable.MoveToLocal(new Vector3(4, 1, 0)), at), 1e-5f, "the move passes its midpoint too");
+        }
+
+        [Test]
+        public void ATablePieceCanKeepTheScriptsTurnAboutY()
+        {
+            var d = Model();
+            var t = FlightTable.Parse(@"{ ""classes"": { ""c"": { ""climb"": 0.2, ""sink"": 0.2, ""lower"": -0.4, ""upper"": 0.4 } },
+                ""units"": { ""u"": { ""class"": ""c"", ""period"": 1, ""downstroke"": 0.4, ""pieces"": [
+                  { ""piece"": ""body"", ""down"": [8, 0, 0], ""up"": [-6, 0, 3], ""keepY"": true } ] } } }").Find("u", null);
+            var m = ScriptPose(d);
+            // A head turner has the body looking 40 degrees aside.
+            m[1] = m[0] * Matrix4x4.TRS(d.Pieces[1].Offset * d.Scale, Quaternion.AngleAxis(40f, Vector3.up) * Quaternion.Euler(10, 0, 0), Vector3.one);
+            FlightPose.Apply(Flapping(0f), t, null, d, m, m.Length, 0f, 0f);
+            var want = Quaternion.AngleAxis(40f, Vector3.up) * FlightTable.Cob(new Vector3(-6, 0, 3));
+            Assert.Less(Quaternion.Angle(want, Local(m, d, 1).rotation), 0.05f);
         }
 
         [Test]
@@ -209,6 +243,8 @@ namespace OpenKingdomsUnity.Tests
                     else
                     {
                         FlightPose.Target(f, t, t.Pieces[drive[p]], d.Pieces[p].Offset * d.Scale, seconds, out var q, out var at);
+                        if (t.Pieces[drive[p]].KeepY)
+                            q = Quaternion.AngleAxis(Mathf.Atan2(script.m02, script.m22) * Mathf.Rad2Deg, Vector3.up) * q;
                         local = Matrix4x4.TRS(at, q, Vector3.one);
                         if (f.Weight < 1f)
                             local = Matrix4x4.TRS(Vector3.Lerp(script.GetColumn(3), local.GetColumn(3), f.Weight),

@@ -3,8 +3,9 @@
 // piece the rig's clips move takes the clip's pose at the animator's
 // phase, blended with the script's by the flyer's weight, and the whole
 // model rises by the visual offset. A model with no rig turns the table's
-// wing pieces between their down, up and glide poses instead. Pieces
-// neither moves keep the script's pose under their moved parent.
+// pieces between their down, up and glide poses instead, on the
+// animator's beat. Pieces neither moves keep the script's pose under their
+// moved parent.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -48,18 +49,47 @@ namespace OpenKingdomsUnity.Game.World
         // A table piece's turn and offset from its parent, in world units.
         public static void Target(in Flyer f, FlightType t, FlightPiece piece, Vector3 rest, float seconds, out Quaternion rotation, out Vector3 at)
         {
-            float a = Wave(Mathf.Repeat(f.Phase - piece.Lag, 1f), t.Downstroke);
+            float x = Mathf.Repeat(f.Phase - piece.Lag, 1f);
+            float a = Wave(x, t.Downstroke);
             a = 0.5f + (a - 0.5f) * Mathf.Lerp(t.Amplitude, t.ForcedAmplitude, f.Force);
-            var flap = Quaternion.SlerpUnclamped(piece.Down, piece.Up, a);
-            var glide = piece.Glide;
-            if (piece.Wobble != 0f)
-            {
-                float wob = piece.Wobble * Mathf.Sin(2f * Mathf.PI * t.WobbleHz * piece.Side * seconds + f.Seed + piece.Side * 2f);
-                glide = Quaternion.AngleAxis(wob, piece.Hinge) * glide;
-            }
+            Stroke(piece, a, x < t.Downstroke, out rotation, out var move);
             float g = Mathf.SmoothStep(0f, 1f, f.Glide);
-            rotation = Quaternion.Slerp(flap, glide, g);
-            at = rest + (piece.HasMove ? Vector3.Lerp(Vector3.LerpUnclamped(piece.DownMove, piece.UpMove, a), piece.GlideMove, g) : Vector3.zero);
+            if (g > 0f)
+            {
+                var glide = piece.Glide;
+                if (piece.Wobble != 0f)
+                {
+                    float wob = piece.Wobble * Mathf.Sin(2f * Mathf.PI * t.WobbleHz * piece.Side * seconds + f.Seed + piece.Side * 2f);
+                    glide = Quaternion.AngleAxis(wob, piece.Hinge) * glide;
+                }
+                rotation = Quaternion.Slerp(rotation, glide, g);
+                move = Vector3.Lerp(move, piece.GlideMove, g);
+            }
+            at = rest + (piece.HasMove ? move : Vector3.zero);
+        }
+
+        // From down (a = 0) to up (a = 1), through the half stroke's
+        // midpoint when the table gives one.
+        static void Stroke(FlightPiece p, float a, bool downstroke, out Quaternion q, out Vector3 m)
+        {
+            if (downstroke ? !p.HasMidDown : !p.HasMid)
+            {
+                q = Quaternion.SlerpUnclamped(p.Down, p.Up, a);
+                m = Vector3.LerpUnclamped(p.DownMove, p.UpMove, a);
+                return;
+            }
+            var mid = downstroke ? p.MidDown : p.Mid;
+            var midMove = downstroke ? p.MidDownMove : p.MidMove;
+            if (a < 0.5f)
+            {
+                q = Quaternion.SlerpUnclamped(p.Down, mid, 2f * a);
+                m = Vector3.LerpUnclamped(p.DownMove, midMove, 2f * a);
+            }
+            else
+            {
+                q = Quaternion.SlerpUnclamped(mid, p.Up, 2f * a - 1f);
+                m = Vector3.LerpUnclamped(midMove, p.UpMove, 2f * a - 1f);
+            }
         }
 
         // posed[p] is piece space to world with no scale in it, parents
@@ -106,7 +136,7 @@ namespace OpenKingdomsUnity.Game.World
                     if (rig != null) rig.Sample(k, fa, fb, fw, ga, gb, gw, g, out q, out at);
                     else Target(f, t, t.Pieces[k], d.Pieces[p].Offset * d.Scale, seconds, out q, out at);
                     orig[p] = posed[p];
-                    bool keepY = rig != null && rig.KeepY[k];
+                    bool keepY = rig != null ? rig.KeepY[k] : t.Pieces[k].KeepY;
                     if (keepY || f.Weight < 1f)
                     {
                         ref var above = ref (moved[parent] ? ref orig[parent] : ref posed[parent]);

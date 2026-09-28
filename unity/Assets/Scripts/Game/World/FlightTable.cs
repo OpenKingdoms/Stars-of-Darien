@@ -1,8 +1,9 @@
 // FlightTable.cs - the numbers behind winged flight, from
 // Overrides/Units/flight.json: how fast each flyer beats its wings, climbs
 // and sinks, the band round the engine's height it moves in, the script
-// functions it flaps and glides by, and its wing pieces with their down,
-// up and glide poses for a model with no such functions. Values merge from
+// functions it flaps and glides by, and the pieces its flight moves with
+// their down, up, halfway and glide poses for a model with no such
+// functions. Values merge from
 // the defaults, then the unit's class, then the unit's own keys.
 using System;
 using System.Collections.Generic;
@@ -17,6 +18,12 @@ namespace OpenKingdomsUnity.Game.World
         public Quaternion Down, Up, Glide;        // local turns in the model's authored frame
         public Vector3 DownMove, UpMove, GlideMove; // world units from the rest offset
         public bool HasMove;
+        // Where the upstroke and the downstroke pass halfway, for a stroke
+        // that folds or loops rather than swinging on one hinge.
+        public Quaternion Mid, MidDown;
+        public Vector3 MidMove, MidDownMove;
+        public bool HasMid, HasMidDown;
+        public bool KeepY;                        // keeps the script's own turn about y, as a head turner sets it
         public Vector3 Hinge;                     // the axis Down turns about to reach Up
         public float Sweep;                       // and how far, in degrees
         public float Lag;                         // share of a beat this piece trails the stroke
@@ -146,12 +153,24 @@ namespace OpenKingdomsUnity.Game.World
                 var u = um ?? d;
                 if (dm == null) d = u;
                 var gm = Vec(p, "glideMove") ?? (d + u) * 0.5f;
+                var mid = Vec(p, "mid");
+                var midDown = Vec(p, "midDown");
+                var mm = Vec(p, "midMove") ?? (d + u) * 0.5f;
+                var mdm = Vec(p, "midDownMove") ?? (d + u) * 0.5f;
                 float pieceLag = (float)MiniJson.Num(p, "lag", lag), wobble = (float)MiniJson.Num(p, "wobble", 0);
-                pieces.Add(Piece(piece, down.Value, up.Value, glide, moves, d, u, gm, pieceLag, wobble, 1f));
+                bool keepY = p.TryGetValue("keepY", out var ky) && ky is bool kb && kb;
+                var left = Piece(piece, down.Value, up.Value, glide, moves, d, u, gm, pieceLag, wobble, 1f);
+                Mids(left, mid, midDown, mm, mdm, keepY);
+                pieces.Add(left);
                 string mirror = MiniJson.Text(p, "mirror", "");
                 if (mirror.Length > 0)
-                    pieces.Add(Piece(mirror, MirrorTurn(down.Value), MirrorTurn(up.Value), MirrorTurn(glide), moves,
-                        MirrorMove(d), MirrorMove(u), MirrorMove(gm), pieceLag, wobble, 1.13f));
+                {
+                    var right = Piece(mirror, MirrorTurn(down.Value), MirrorTurn(up.Value), MirrorTurn(glide), moves,
+                        MirrorMove(d), MirrorMove(u), MirrorMove(gm), pieceLag, wobble, 1.13f);
+                    Mids(right, mid.HasValue ? MirrorTurn(mid.Value) : (Vector3?)null, midDown.HasValue ? MirrorTurn(midDown.Value) : (Vector3?)null,
+                        MirrorMove(mm), MirrorMove(mdm), keepY);
+                    pieces.Add(right);
+                }
             }
             t.Pieces = pieces.ToArray();
             var clips = MiniJson.Obj(unit, "clips");
@@ -170,6 +189,17 @@ namespace OpenKingdomsUnity.Game.World
             };
             HingeOf(p.Down, p.Up, out p.Hinge, out p.Sweep);
             return p;
+        }
+
+        static void Mids(FlightPiece p, Vector3? mid, Vector3? midDown, Vector3 midMove, Vector3 midDownMove, bool keepY)
+        {
+            p.HasMid = mid.HasValue;
+            p.HasMidDown = midDown.HasValue;
+            p.Mid = mid.HasValue ? Cob(mid.Value) : Quaternion.Slerp(p.Down, p.Up, 0.5f);
+            p.MidDown = midDown.HasValue ? Cob(midDown.Value) : Quaternion.Slerp(p.Down, p.Up, 0.5f);
+            p.MidMove = MoveToLocal(midMove);
+            p.MidDownMove = MoveToLocal(midDownMove);
+            p.KeepY = keepY;
         }
 
         static Vector3? Vec(Dictionary<string, object> o, string key)

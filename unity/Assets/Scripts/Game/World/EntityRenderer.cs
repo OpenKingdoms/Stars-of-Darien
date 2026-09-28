@@ -539,7 +539,7 @@ namespace OpenKingdomsUnity.Game.World
             string why = "its script has no " + type.Clip("flap", "fly");
             if (flap != null)
                 flightRigs[index] = FlightRig.Bake(type, data, backend.TicksPerSecond, flap, Sampler(def, model, type.Clip("glide", "soar")), out why);
-            if (flightRigs[index] == null) Debug.Log($"Flight: {def.Name} turns the table's wing poses, since {why}");
+            if (flightRigs[index] == null) Debug.Log($"Flight: {def.Name} takes the table's poses, since {why}");
             return flightRigs[index];
         }
 
