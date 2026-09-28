@@ -101,7 +101,7 @@ namespace OpenKingdomsUnity.Studio
                 bool classic = g.View.Classic;
                 if (GUILayout.Toggle(classic, "Classic view", EditorStyles.toolbarButton) && !classic) g.SetClassic(true);
                 if (GUILayout.Toggle(!classic, "Free view", EditorStyles.toolbarButton) && classic) g.SetClassic(false);
-                if (!classic) g.Turning = GUILayout.Toggle(g.Turning, "Turn", EditorStyles.toolbarButton);
+                g.Turning = GUILayout.Toggle(g.Turning, new GUIContent("Turn", "Turns the chosen model on its plinth."), EditorStyles.toolbarButton);
                 GUILayout.Space(8);
                 if (GUILayout.Button("Overview", EditorStyles.toolbarButton)) g.Overview();
                 if (GUILayout.Button("< Previous", EditorStyles.toolbarButton)) g.Step(-1);
@@ -126,7 +126,7 @@ namespace OpenKingdomsUnity.Studio
             foreach (var (label, path) in StudioGallery.QuickFolders)
             {
                 string p = path;
-                bool on = string.Equals(Path.GetFullPath(StudioModel.Absolute(p)), g.Folder, System.StringComparison.OrdinalIgnoreCase);
+                bool on = string.Equals(StudioGallery.Normalise(p), g.Folder, System.StringComparison.OrdinalIgnoreCase);
                 menu.AddItem(new GUIContent(label), on, () => UseFolder(p));
             }
             menu.AddSeparator("");

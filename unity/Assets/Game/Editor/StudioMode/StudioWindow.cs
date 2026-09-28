@@ -326,12 +326,12 @@ namespace OpenKingdomsUnity.Studio
                 if (GUILayout.Button("Screenshot, classic")) StudioSession.Screenshot(true);
                 if (GUILayout.Button("Screenshot, free")) StudioSession.Screenshot(false);
             }
-            if (GUILayout.Button("Open the Captures folder"))
+            if (GUILayout.Button("Open the capture folder"))
             {
                 Directory.CreateDirectory(StudioSession.CapturesDir);
                 EditorUtility.RevealInFinder(StudioSession.CapturesDir);
             }
-            GUILayout.Label("F9 in the Studio View or the Gallery saves what it shows into " + OpenKingdomsUnity.Game.Capture.CaptureFiles.Dir + ", and Shift+F9 records a five second clip there.", EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Label("The screenshots, and F9 in the Studio View or the Gallery, save into " + StudioSession.CapturesDir + ". Shift+F9 records a five second clip there.", EditorStyles.wordWrappedMiniLabel);
             if (GUILayout.Button("Frame it in the Scene view") && SceneView.lastActiveSceneView != null)
             {
                 SceneView.lastActiveSceneView.LookAt(s.Spot + Vector3.up * s.ModelBounds.center.y, Quaternion.Euler(30f, 200f, 0), Mathf.Max(3f, s.ModelBounds.extents.magnitude * 2.5f));

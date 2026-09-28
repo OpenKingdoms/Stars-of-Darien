@@ -59,10 +59,29 @@ namespace OpenKingdomsUnity.Studio
 
         // The one the gallery window shows.
         public static StudioGallery Current { get; private set; }
+        // Kept from the project when it is in the project, so it follows the
+        // project to another clone, and in full otherwise.
         public static string LastFolder
         {
             get => EditorPrefs.GetString(FolderKey, DefaultFolder);
-            set => EditorPrefs.SetString(FolderKey, value ?? DefaultFolder);
+            set => EditorPrefs.SetString(FolderKey, Remembered(Normalise(value)));
+        }
+
+        // A folder as the gallery holds it: in full, with backslashes on
+        // Windows, and without a separator at the end, so a folder picked in
+        // the panel and the same one typed are one.
+        public static string Normalise(string folder)
+        {
+            string full = Path.GetFullPath(StudioModel.Absolute(string.IsNullOrEmpty(folder) ? DefaultFolder : folder))
+                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            string root = Path.GetPathRoot(full) ?? "";
+            return full.Length > root.Length ? full.TrimEnd(Path.DirectorySeparatorChar) : full;
+        }
+
+        static string Remembered(string full)
+        {
+            string project = Normalise(StudioModel.ProjectDir) + Path.DirectorySeparatorChar;
+            return full.StartsWith(project, StringComparison.OrdinalIgnoreCase) ? full.Substring(project.Length).Replace('\\', '/') : full;
         }
 
         public sealed class Entry
@@ -88,6 +107,9 @@ namespace OpenKingdomsUnity.Studio
             internal Task<byte[]> Reading;
             internal long Bytes;
             internal bool Queued;
+            // Changed on disk and waiting to be measured again.
+            internal bool Stale;
+            internal MeshRenderer LabelRenderer;
 
             public bool Loaded => Model != null;
             public bool Failed => Error != null;
@@ -124,14 +146,26 @@ namespace OpenKingdomsUnity.Studio
         public int LoadedCount => Entries.Count(e => e.Loaded);
         // The longest editor frame the gallery has taken, in seconds.
         public double LongestTick { get; private set; }
-        // Nothing left to read, set out, find or load.
-        public bool Idle => scan == null && buildQueue.Count == 0 && (!Compare || resolveQueue.Count == 0) && waiting == 0;
+        // Nothing left to read, set out, find, change or load.
+        public bool Idle => scan == null && poll == null && changes.Count == 0 && buildQueue.Count == 0 && (!Compare || resolveQueue.Count == 0) && waiting == 0;
         public event Action Changed;
 
         readonly List<Entry> shown = new List<Entry>();
         readonly Queue<Entry> buildQueue = new Queue<Entry>();
         readonly Queue<Entry> resolveQueue = new Queue<Entry>();
         readonly List<Object> owned = new List<Object>();
+        // A file found new, changed or gone: Fresh is its new measure, Old
+        // the entry it changes, and a gone file has no Fresh.
+        sealed class Change
+        {
+            public Entry Fresh, Old;
+        }
+        readonly Queue<Change> changes = new Queue<Change>();
+        Task<List<Change>> poll;
+        CancellationTokenSource cancel;
+        int reloaded;
+        string reloadedName;
+        bool reshaped, added, counted;
         Task<List<Entry>> scan;
         int scanned, scanTotal, resolved, resolveTotal, waiting;
         GameObject monarch, monarchNode, monarchLabel, ground;
@@ -164,10 +198,10 @@ namespace OpenKingdomsUnity.Studio
         // The gallery on folder, opened when it is not already.
         public static StudioGallery Show(string folder)
         {
-            string full = StudioModel.Absolute(string.IsNullOrEmpty(folder) ? DefaultFolder : folder);
+            string full = Normalise(folder);
             if (Current != null && !Current.disposed && string.Equals(Current.Folder, full, StringComparison.OrdinalIgnoreCase)) return Current;
             Close();
-            LastFolder = folder;
+            LastFolder = full;
             Current = new StudioGallery();
             Current.Open(full);
             return Current;
@@ -185,7 +219,9 @@ namespace OpenKingdomsUnity.Studio
         {
             ClearWorld();
             disposed = false;
-            Folder = Path.GetFullPath(folder);
+            Folder = Normalise(folder);
+            cancel = new CancellationTokenSource();
+            var token = cancel.Token;
             RemoveStray();
             Root = new GameObject(RootName) { hideFlags = HideFlags.DontSave };
             Root.transform.position = Vector3.zero;
@@ -220,6 +256,7 @@ namespace OpenKingdomsUnity.Studio
                 var list = new List<Entry>(files.Count);
                 foreach (var f in files)
                 {
+                    if (token.IsCancellationRequested) break;
                     list.Add(Measure(f));
                     Interlocked.Increment(ref scanned);
                 }
@@ -270,6 +307,8 @@ namespace OpenKingdomsUnity.Studio
                 moved = true;
             }
             double end = TickBudget;
+            if (poll != null && poll.IsCompleted) TakePoll();
+            moved |= ApplySome(clock, end);
             moved |= BuildSome(clock, end);
             if (flyStart >= 0)
             {
@@ -278,7 +317,7 @@ namespace OpenKingdomsUnity.Studio
                 if (t >= 1f) flyStart = -1;
                 moved = true;
             }
-            if (Turning && !View.Classic && Selected != null && Selected.Loaded)
+            if (Turning && Selected != null && Selected.Loaded)
             {
                 spinYaw = (spinYaw + dt * TurnSpeed) % 360f;
                 moved = true;
@@ -288,7 +327,7 @@ namespace OpenKingdomsUnity.Studio
             if (now - lastPoll > 1.0)
             {
                 lastPoll = now;
-                moved |= Poll();
+                StartPoll();
             }
             UpdateProgress();
             LongestTick = Math.Max(LongestTick, clock.Elapsed.TotalSeconds);
@@ -308,7 +347,7 @@ namespace OpenKingdomsUnity.Studio
                 t += 0.02;
                 Tick(t);
                 if (Idle && flyStart < 0) return true;
-                if (scan != null && !scan.IsCompleted) Thread.Sleep(2);
+                if ((scan != null && !scan.IsCompleted) || (poll != null && !poll.IsCompleted)) Thread.Sleep(2);
             }
             return Idle;
         }
@@ -321,7 +360,7 @@ namespace OpenKingdomsUnity.Studio
             Entries.Clear();
             Entries.AddRange(list);
             Relayout();
-            View = OverviewView(true);
+            View = OverviewView(View.Classic);
             Status = Entries.Count == 0 ? "No .glb files in " + Folder + " yet." : $"{Entries.Count} models in {Shorten(Folder)}.";
         }
 
@@ -441,6 +480,7 @@ namespace OpenKingdomsUnity.Studio
             lr.sharedMaterial = labelFont.material;
             lr.shadowCastingMode = ShadowCastingMode.Off;
             lr.receiveShadows = false;
+            e.LabelRenderer = lr;
             if (e.Original != null) e.Original.transform.SetParent(e.Node.transform, false);
         }
 
@@ -454,8 +494,10 @@ namespace OpenKingdomsUnity.Studio
             var m = e.ModelSize;
             float modelX = -size.x * 0.5f + m.x * 0.5f;
             var b = e.Bounds;
-            e.Spin.transform.localPosition = new Vector3(modelX - b.center.x, PlinthHeight, -b.center.z);
-            e.Placeholder.transform.localPosition = b.center;
+            // The model turns about the middle of its footprint.
+            e.Spin.transform.localPosition = new Vector3(modelX, PlinthHeight, 0f);
+            if (e.Model != null) e.Model.transform.localPosition = ModelOffset(e);
+            e.Placeholder.transform.localPosition = new Vector3(0f, b.center.y, 0f);
             e.Placeholder.transform.localScale = Vector3.Max(b.size, Vector3.one * 0.05f);
             e.Placeholder.SetActive(!e.Loaded);
             e.Placeholder.GetComponent<MeshRenderer>().sharedMaterial = e.Failed ? failedMat : placeholderMat;
@@ -474,6 +516,8 @@ namespace OpenKingdomsUnity.Studio
             e.Label.transform.localPosition = new Vector3(0f, PlinthHeight + Mathf.Max(0.3f, top) + 0.35f, 0f);
             e.Label.GetComponent<TextMesh>().text = LabelText(e);
         }
+
+        static Vector3 ModelOffset(Entry e) => new Vector3(-e.Bounds.center.x, 0f, -e.Bounds.center.z);
 
         string LabelText(Entry e)
         {
@@ -611,7 +655,7 @@ namespace OpenKingdomsUnity.Studio
             waiting = 0;
             List<Entry> todo = null;
             foreach (var e in shown)
-                if (e.Node != null && !e.Loaded && !e.Failed) (todo ??= new List<Entry>()).Add(e);
+                if (e.Node != null && !e.Loaded && !e.Failed && !e.Stale) (todo ??= new List<Entry>()).Add(e);
             if (todo == null) return false;
             waiting = todo.Count;
             var focus = View.Focus;
@@ -661,13 +705,14 @@ namespace OpenKingdomsUnity.Studio
             catch (Exception x) { error = x.Message; }
             if (go == null) { Fail(e, error ?? "it did not read"); return; }
             go.transform.SetParent(e.Spin.transform, false);
-            go.transform.localPosition = Vector3.zero;
+            go.transform.localPosition = ModelOffset(e);
             go.transform.localRotation = Quaternion.identity;
             go.SetActive(true);
             e.Model = go;
             e.Error = null;
             e.Bytes = Weigh(go);
             loadedBytes += e.Bytes;
+            blocked = false;
             e.Placeholder.SetActive(false);
             e.Label.GetComponent<TextMesh>().text = LabelText(e);
         }
@@ -722,75 +767,126 @@ namespace OpenKingdomsUnity.Studio
 
         // ---- Hot reload ----
 
-        // Looks for new, changed and removed files now, as it does every
-        // second. True when something changed.
-        public bool CheckFolder() => Poll();
-
-        // New, changed and removed files, once each has stopped changing.
-        bool Poll()
+        // Looks for new, changed and removed files now rather than within
+        // the second. The files are read on a worker and the changes made
+        // over the next frames. False when a look is already under way.
+        public bool CheckFolder()
         {
-            if (scan != null) return false;
-            FileInfo[] files;
-            try { files = Directory.Exists(Folder) ? new DirectoryInfo(Folder).GetFiles("*.glb") : new FileInfo[0]; }
-            catch (IOException) { return false; }
-            var byPath = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
-            foreach (var e in Entries) byPath[e.Path] = e;
-            var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            bool relayout = false, changed = false;
-            foreach (var f in files)
-            {
-                present.Add(f.FullName);
-                bool settled = (DateTime.UtcNow - f.LastWriteTimeUtc).TotalSeconds > 0.3;
-                if (!byPath.TryGetValue(f.FullName, out var e))
-                {
-                    if (!settled) continue;
-                    var fresh = Measure(f);
-                    int at = Entries.FindIndex(x => GalleryLayout.NaturalCompare(x.Name, fresh.Name) > 0);
-                    Entries.Insert(at < 0 ? Entries.Count : at, fresh);
-                    if (Compare) { resolveQueue.Enqueue(fresh); resolveTotal++; }
-                    relayout = true;
-                    continue;
-                }
-                if (f.LastWriteTimeUtc == e.Time && f.Length == e.Size) continue;
-                if (!settled) continue;
-                relayout |= Refresh(e, f);
-                changed = true;
-            }
-            foreach (var e in Entries.Where(x => !present.Contains(x.Path)).ToList())
-            {
-                Remove(e);
-                relayout = true;
-            }
-            if (relayout)
-            {
-                Relayout();
-                Status = $"{Entries.Count} models in {Shorten(Folder)}.";
-            }
-            return relayout || changed;
+            lastPoll = EditorApplication.timeSinceStartup;
+            return StartPoll();
         }
 
-        // A changed file measured and reloaded in place. True when its size
-        // changed, so the grid moves.
-        bool Refresh(Entry e, FileInfo f)
+        // Starts a look through the folder on a worker, unless one is under
+        // way or the last one's changes are still being made.
+        bool StartPoll()
+        {
+            if (disposed || Root == null || scan != null || poll != null || changes.Count > 0 || cancel == null) return false;
+            var known = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+            var stamps = new Dictionary<string, (DateTime time, long size)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in Entries) { known[e.Path] = e; stamps[e.Path] = (e.Time, e.Size); }
+            string folder = Folder;
+            var token = cancel.Token;
+            poll = Task.Run(() => Look(folder, known, stamps, token));
+            return true;
+        }
+
+        // New, changed and removed files, each measured once it has stopped
+        // changing. On a worker, so it touches nothing of Unity's.
+        static List<Change> Look(string folder, Dictionary<string, Entry> known, Dictionary<string, (DateTime time, long size)> stamps, CancellationToken token)
+        {
+            var list = new List<Change>();
+            FileInfo[] files;
+            try { files = Directory.Exists(folder) ? new DirectoryInfo(folder).GetFiles("*.glb") : new FileInfo[0]; }
+            catch (Exception x) when (x is IOException || x is UnauthorizedAccessException) { return list; }
+            var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var f in files)
+            {
+                if (token.IsCancellationRequested) return new List<Change>();
+                present.Add(f.FullName);
+                bool isKnown = stamps.TryGetValue(f.FullName, out var s);
+                if (isKnown && f.LastWriteTimeUtc == s.time && f.Length == s.size) continue;
+                if ((DateTime.UtcNow - f.LastWriteTimeUtc).TotalSeconds <= 0.3) continue;
+                list.Add(new Change { Fresh = Measure(f), Old = isKnown ? known[f.FullName] : null });
+            }
+            foreach (var kv in known)
+                if (!present.Contains(kv.Key)) list.Add(new Change { Old = kv.Value });
+            return list;
+        }
+
+        void TakePoll()
+        {
+            var t = poll;
+            poll = null;
+            if (t.Status != TaskStatus.RanToCompletion)
+            {
+                if (t.Exception != null) Debug.LogWarning("Gallery: " + t.Exception.GetBaseException().Message);
+                return;
+            }
+            foreach (var c in t.Result)
+            {
+                if (c.Old != null && c.Fresh != null) c.Old.Stale = true;
+                changes.Enqueue(c);
+            }
+        }
+
+        // Makes the changes found within the frame's budget, and sets the
+        // grid out again once when they are all made.
+        bool ApplySome(Stopwatch clock, double end)
+        {
+            if (changes.Count == 0) return false;
+            while (changes.Count > 0 && clock.Elapsed.TotalSeconds < end)
+            {
+                var c = changes.Dequeue();
+                if (c.Old == null)
+                {
+                    Entries.Add(c.Fresh);
+                    if (Compare) { resolveQueue.Enqueue(c.Fresh); resolveTotal++; }
+                    added = counted = reshaped = true;
+                }
+                else if (!Entries.Contains(c.Old)) continue;
+                else if (c.Fresh == null) { Remove(c.Old); counted = reshaped = true; }
+                else
+                {
+                    reshaped |= Refresh(c.Old, c.Fresh);
+                    reloaded++;
+                    reloadedName = c.Old.Name;
+                }
+            }
+            if (changes.Count > 0) return true;
+            if (added)
+            {
+                var sorted = Entries.OrderBy(x => x.Name, Comparer<string>.Create(GalleryLayout.NaturalCompare)).ToList();
+                Entries.Clear();
+                Entries.AddRange(sorted);
+            }
+            if (reshaped) Relayout();
+            string what = reloaded == 1 ? "Reloaded " + reloadedName + "." : reloaded > 1 ? $"Reloaded {reloaded} models." : "";
+            Status = counted ? ($"{Entries.Count} models in {Shorten(Folder)}. " + what).Trim() : what;
+            reloaded = 0;
+            reshaped = added = counted = false;
+            return true;
+        }
+
+        // A changed file's new measure. The old model goes and the
+        // placeholder stands in until LoadSome loads the new one, nearest
+        // first and within the budgets. True when its size changed, so the
+        // grid moves.
+        bool Refresh(Entry e, Entry m)
         {
             var old = SizeOf(e);
-            e.Time = f.LastWriteTimeUtc;
-            e.Size = f.Length;
-            var m = Measure(f);
+            e.Time = m.Time;
+            e.Size = m.Size;
             e.Bounds = m.Bounds;
             e.Measured = m.Measured;
-            bool wasLoaded = e.Loaded;
-            if (e.Reading != null) e.Reading = null;
+            e.Stale = false;
+            e.Reading = null;
             Unload(e);
             e.Error = m.Error;
-            if (e.Node != null && e.Error == null && (wasLoaded || e.Shown))
+            if (e.Node != null)
             {
-                try { LoadNow(e, File.ReadAllBytes(e.Path)); }
-                catch (IOException x) { Fail(e, x.Message); }
+                if (e.Failed) Fail(e, e.Error);
+                if (e.Shown) Place(e);
             }
-            else if (e.Error != null) Fail(e, e.Error);
-            if (e.Node != null && e.Shown) Place(e);
-            Status = "Reloaded " + e.Name + ".";
             return SizeOf(e) != old;
         }
 
@@ -800,7 +896,9 @@ namespace OpenKingdomsUnity.Studio
             DropOriginal(e);
             if (e.Node != null) Object.DestroyImmediate(e.Node);
             e.Node = null;
+            e.Shown = false;
             Entries.Remove(e);
+            shown.Remove(e);
             if (Selected == e) Selected = null;
             if (spun == e) spun = null;
         }
@@ -1053,7 +1151,7 @@ namespace OpenKingdomsUnity.Studio
             Camera.farClipPlane = Mathf.Max(1500f, v.Distance * 3f);
             if (spun != null && spun != Selected && spun.Spin != null) spun.Spin.transform.localRotation = Quaternion.identity;
             spun = Selected;
-            if (Selected?.Spin != null) Selected.Spin.transform.localRotation = !v.Classic && Turning ? Quaternion.Euler(0f, spinYaw, 0f) : Quaternion.identity;
+            if (Selected?.Spin != null) Selected.Spin.transform.localRotation = Turning ? Quaternion.Euler(0f, spinYaw, 0f) : Quaternion.identity;
             var rot = Camera.transform.rotation;
             foreach (var e in shown)
             {
@@ -1064,9 +1162,13 @@ namespace OpenKingdomsUnity.Studio
                     if (e.Label.activeSelf != near) e.Label.SetActive(near);
                     if (near)
                     {
-                        // Names keep a readable size a little way out.
+                        // Names keep a readable size a little way out, but
+                        // grow no wider than their plinth and the gap, so
+                        // neighbours' names stay apart.
                         e.Label.transform.rotation = rot;
-                        e.Label.transform.localScale = Vector3.one * LabelScale(d);
+                        float s = LabelScale(d), wide = e.LabelRenderer != null ? e.LabelRenderer.localBounds.size.x : 0f;
+                        if (wide > 0f) s = Mathf.Min(s, Mathf.Max(1f, (e.Slot.Size.x + GalleryLayout.Gap) / wide));
+                        e.Label.transform.localScale = Vector3.one * s;
                     }
                 }
                 if (e.Card != null && e.Original != null && e.Original.activeInHierarchy)
@@ -1185,7 +1287,13 @@ namespace OpenKingdomsUnity.Studio
         // Everything made, gone. The folder and settings stay.
         public void ClearWorld()
         {
+            cancel?.Cancel();
+            cancel = null;
             scan = null;
+            poll = null;
+            changes.Clear();
+            reloaded = 0;
+            reshaped = added = counted = false;
             buildQueue.Clear();
             resolveQueue.Clear();
             foreach (var e in Entries)

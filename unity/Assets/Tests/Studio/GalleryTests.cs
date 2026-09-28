@@ -87,6 +87,9 @@ namespace OpenKingdomsUnity.Tests
         TimeOfDay time;
         StudioGallery gallery;
         long budget;
+        // The owner's editor shares EditorPrefs with the tests.
+        string savedFolder;
+        bool hadFolder;
 
         [SetUp]
         public void Folders()
@@ -96,6 +99,8 @@ namespace OpenKingdomsUnity.Tests
             Directory.CreateDirectory(models);
             StudioCapture.DirOverride = shots;
             budget = StudioGallery.MemoryBudget;
+            hadFolder = EditorPrefs.HasKey(StudioGallery.FolderKey);
+            savedFolder = EditorPrefs.GetString(StudioGallery.FolderKey, "");
             StudioSession.Reset();
             mapChoice = StudioSession.MapChoice;
             weather = StudioSession.Weather;
@@ -113,6 +118,9 @@ namespace OpenKingdomsUnity.Tests
             StudioGallery.MemoryBudget = budget;
             gallery?.Dispose();
             gallery = null;
+            StudioGallery.Close();
+            if (hadFolder) EditorPrefs.SetString(StudioGallery.FolderKey, savedFolder);
+            else EditorPrefs.DeleteKey(StudioGallery.FolderKey);
             StudioMode.Close(false);
             StudioSession.Reset();
             StudioSession.MapChoice = mapChoice;
@@ -291,9 +299,15 @@ namespace OpenKingdomsUnity.Tests
             AssertNoOverlaps(g);
 
             // A file still being written waits until it settles.
-            File.WriteAllBytes(Path.Combine(models, "Well08.glb"), Well());
-            g.CheckFolder();
+            string eight = Path.Combine(models, "Well08.glb");
+            File.WriteAllBytes(eight, Well());
+            Assert.IsTrue(g.CheckFolder());
+            g.Pump(5);
             Assert.IsFalse(g.Entries.Any(e => e.Name == "Well08"));
+            File.SetLastWriteTimeUtc(eight, DateTime.UtcNow.AddSeconds(-5));
+            Assert.IsTrue(g.CheckFolder());
+            Assert.IsTrue(g.Pump(30));
+            Assert.IsTrue(g.Entries.Any(e => e.Name == "Well08" && e.Loaded), "then comes in");
         }
 
         [Test]
@@ -317,7 +331,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(rock.Slot.Size.x, widths["mock_rock"], "the plinth takes both");
             Assert.AreEqual(widths["zz_not_in_the_game"], none.Slot.Size.x, 1e-4f);
             foreach (var e in new[] { rock, knight })
-                Assert.Greater(e.Original.transform.position.x + e.OriginalCentre.x, e.Spin.transform.position.x + e.Bounds.center.x, e.Name + ": the original to the east");
+                Assert.Greater(e.Original.transform.position.x + e.OriginalCentre.x, e.Spin.transform.position.x, e.Name + ": the original to the east");
             AssertNoOverlaps(g);
 
             g.SetCompare(false);
@@ -375,6 +389,154 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(seen.Contains("Setting out the plinths") || seen.Contains("Reading the files"), string.Join(", ", seen));
             Assert.IsTrue(seen.Any(s => s.StartsWith("Loading the models")), string.Join(", ", seen));
             AssertNoOverlaps(gallery);
+        }
+
+        // The folder panel hands back forward slashes, and the window asks
+        // for its gallery on every event.
+        [Test]
+        public void APickedFolderKeepsItsGallery()
+        {
+            for (int i = 1; i <= 3; i++) Put($"Well{i}", Well());
+            Assert.IsTrue(StudioMode.Open(false), StudioSession.Status);
+            string picked = models.Replace('\\', '/');
+            var g = StudioGallery.Show(picked);
+            Assert.AreSame(g, StudioGallery.Show(picked), "the same folder picked again");
+            Assert.AreSame(g, StudioGallery.Show(models), "written with backslashes");
+            Assert.AreSame(g, StudioGallery.Show(models + "/"), "with a slash at the end");
+            Assert.AreSame(g, StudioGallery.Show(StudioGallery.LastFolder), "as remembered");
+            Assert.AreEqual(Path.GetFullPath(models), g.Folder);
+            Assert.AreEqual(g.Folder, StudioGallery.LastFolder, "a folder outside the project is kept in full");
+            Assert.IsTrue(g.Pump(30), g.Progress?.What);
+            Assert.AreEqual(3, g.LoadedCount);
+
+            // One in the project is kept from the project, as the quick picks give it.
+            StudioGallery.LastFolder = Path.Combine(StudioModel.ProjectDir, "Assets", "Overrides", "Generated", "Units").Replace('\\', '/') + "/";
+            Assert.AreEqual(StudioGallery.DefaultFolder, StudioGallery.LastFolder);
+        }
+
+        // Far off, names grow to stay readable, but no wider than their
+        // column, so long names on small models don't run into each other.
+        [Test]
+        public void NamesStayWithinTheirColumns()
+        {
+            foreach (var name in new[] { "a_long_name_for_a_small_well", "b_middling_name", "c1", "d2" }) Put(name, Well(0.4f));
+            var g = Open();
+            var v = g.OverviewView(true);
+            v.Distance = 70f;
+            g.View = v;
+            var rt = new RenderTexture(640, 360, 24);
+            try
+            {
+                Assert.IsTrue(g.Render(rt));
+                foreach (var e in g.Shown)
+                {
+                    Assert.IsTrue(e.Label.activeSelf, e.Name + " shows its name");
+                    float wide = e.Label.GetComponent<Renderer>().bounds.size.x;
+                    Assert.Greater(e.Label.transform.localScale.x, 0.99f, "never smaller than its own size");
+                    if (e.Label.transform.localScale.x > 1.01f)
+                        Assert.LessOrEqual(wide, e.Slot.Size.x + GalleryLayout.Gap + 1e-3f, e.Name + " no wider than its column");
+                }
+                var row = g.Shown.Where(e => Mathf.Abs(e.Centre.z - g.Shown[0].Centre.z) < 1e-3f).OrderBy(e => e.Centre.x).ToList();
+                Assert.Greater(row.Count, 1);
+                for (int i = 1; i < row.Count; i++)
+                {
+                    var a = row[i - 1].Label.GetComponent<Renderer>().bounds;
+                    var b = row[i].Label.GetComponent<Renderer>().bounds;
+                    if (row[i - 1].Label.transform.localScale.x > 1.01f && row[i].Label.transform.localScale.x > 1.01f)
+                        Assert.LessOrEqual(a.max.x, b.min.x + 1e-3f, "neighbours' names apart");
+                }
+                Assert.Less(g.Shown[0].Label.transform.localScale.x, StudioGallery.LabelScale(70f), "held back from its full size");
+            }
+            finally
+            {
+                rt.Release();
+                UnityEngine.Object.DestroyImmediate(rt);
+            }
+        }
+
+        // Turning in either view, about the middle of the model's footprint
+        // wherever its own origin is.
+        [Test]
+        public void TheChosenModelTurnsOnTheSpotInEitherView()
+        {
+            Put("Offset", Well(1f, 0, new Vector3(3f, 0f, -2f)));
+            Put("Plain", Well());
+            var g = Open();
+            var e = g.Entries.Single(x => x.Name == "Offset");
+            Assert.Greater(new Vector2(e.Bounds.center.x, e.Bounds.center.z).magnitude, 1f, "its origin is off its middle");
+            var rt = new RenderTexture(320, 180, 24);
+            try
+            {
+                foreach (bool classic in new[] { true, false })
+                {
+                    g.SetClassic(classic);
+                    g.Select(e);
+                    g.Pump(3);
+                    g.Render(rt);
+                    Vector3 Middle() => e.Model.transform.TransformPoint(e.Bounds.center);
+                    var before = Middle();
+                    double t = UnityEditor.EditorApplication.timeSinceStartup + 100;
+                    for (int i = 0; i < 8; i++) g.Tick(t += 0.2);
+                    g.Render(rt);
+                    float turned = Quaternion.Angle(Quaternion.identity, e.Spin.transform.localRotation);
+                    Assert.Greater(turned, 10f, classic ? "turns in the classic view" : "turns in the free view");
+                    var after = Middle();
+                    Assert.AreEqual(before.x, after.x, 1e-3f, "on the spot");
+                    Assert.AreEqual(before.z, after.z, 1e-3f);
+                    Assert.AreEqual(e.Spin.transform.position.x, after.x, 1e-3f, "over the plinth's middle");
+                }
+            }
+            finally
+            {
+                rt.Release();
+                UnityEngine.Object.DestroyImmediate(rt);
+            }
+        }
+
+        [Test]
+        public void RewritingEveryModelAtOnceNeverStalls()
+        {
+            var glb = Well(0.7f);
+            for (int i = 1; i <= 800; i++) Put($"Model{i:000}", glb);
+            var g = Open(600);
+            Assert.AreEqual(800, g.LoadedCount);
+            var old = g.Entries[400].Model;
+            var taller = Well(0.9f);
+            for (int i = 1; i <= 800; i++) Put($"Model{i:000}", taller);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Assert.IsTrue(g.CheckFolder());
+            double look = clock.Elapsed.TotalSeconds;
+            Assert.IsTrue(g.Pump(600), "settled: " + g.Progress?.What);
+            Debug.Log($"Gallery: 800 rewritten, looking {look * 1000:0} ms, all back in {clock.Elapsed.TotalSeconds:0.0} s, longest frame {g.LongestTick * 1000:0} ms");
+            Assert.Less(look, 0.5, "looking hands the reading to a worker");
+            Assert.Less(g.LongestTick, 1.0, "no editor frame over a second");
+            Assert.AreEqual(800, g.LoadedCount, "all loaded again");
+            Assert.IsTrue(old == null, "the old model is gone");
+            Assert.IsTrue(g.Entries.All(e => Mathf.Abs(e.Bounds.size.y - 0.9f * 2f) < 0.01f), "all measured again");
+            AssertNoOverlaps(g);
+        }
+
+        [Test]
+        public void ARewriteKeepsToTheMemoryBudget()
+        {
+            for (int i = 1; i <= 36; i++) Put($"Well{i:00}", Well());
+            Assert.IsTrue(StudioMode.Open(false), StudioSession.Status);
+            gallery = new StudioGallery();
+            StudioGallery.MemoryBudget = 250_000;
+            gallery.Open(models);
+            gallery.Pump(3);
+            var g = gallery;
+            Assert.That(g.LoadedCount, Is.InRange(1, 12), "only what fits");
+            for (int i = 1; i <= 36; i++) Put($"Well{i:00}", Well(1.1f));
+            g.CheckFolder();
+            g.Pump(3);
+            Assert.LessOrEqual(g.LoadedBytes, StudioGallery.MemoryBudget, $"{g.LoadedCount} loaded");
+            Assert.That(g.LoadedCount, Is.InRange(1, 12));
+            Assert.IsTrue(g.Entries.All(e => Mathf.Abs(e.Bounds.size.y - 1.1f * 2f) < 0.01f), "all measured again");
+            var focus = g.View.Focus;
+            float farthestLoaded = g.Entries.Where(e => e.Loaded).Max(e => (e.Centre - focus).sqrMagnitude);
+            float nearestWaiting = g.Entries.Where(e => !e.Loaded).Min(e => (e.Centre - focus).sqrMagnitude);
+            Assert.LessOrEqual(farthestLoaded, nearestWaiting + 1e-3f, "nearest first");
         }
 
         // The gallery on a real folder, such as the player's own generated

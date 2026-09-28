@@ -26,6 +26,14 @@ namespace OpenKingdomsUnity.Game.Capture
         public string LastPath { get; private set; }
         // Why the last capture failed, or null.
         public string LastError { get; private set; }
+        // How the last picture was taken: Screen, read from what the screen
+        // shows, or Cameras, drawn again in batch mode where no frame
+        // reaches a screen.
+        public string LastRoute { get; private set; }
+        public const string ScreenRoute = "Screen", CamerasRoute = "Cameras";
+        // Whether the screen comes back upside down here, once a capture has
+        // found out: 1 or 0, and -1 before.
+        public static int FoundFlipped => flipped;
         public event Action<string> Saved;
         public bool Recording => clip != null;
         public string Toast => Time.unscaledTime < toastUntil ? toast : null;
@@ -61,17 +69,22 @@ namespace OpenKingdomsUnity.Game.Capture
 
         static string Dir => string.IsNullOrEmpty(DirOverride) ? CaptureFiles.Dir : DirOverride;
 
-        // Shift+F9 records, F9 alone takes a picture.
-        public static bool ClipKeyDown() => Input.GetKeyDown(Key) && (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift));
-        public static bool ShotKeyDown() => Input.GetKeyDown(Key) && !Input.GetKey(KeyCode.LeftShift) && !Input.GetKey(KeyCode.RightShift);
-
         void Update()
         {
             hideToast = false;
             CaptureWriter.Pump();
-            if (ClipKeyDown()) StartClip();
-            else if (ShotKeyDown()) Shot();
+            Handle(Input.GetKeyDown(Key), Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift));
             if (clip != null) TickClip();
+        }
+
+        // F9 pressed this frame takes a picture, and with Shift records a
+        // clip. Returns what it started: "shot", "clip" or null.
+        public string Handle(bool keyDown, bool shift)
+        {
+            if (!keyDown) return null;
+            if (shift) { StartClip(); return "clip"; }
+            Shot();
+            return "shot";
         }
 
         // ---- A picture ----
@@ -110,7 +123,8 @@ namespace OpenKingdomsUnity.Game.Capture
         // without waiting on the GPU. failed runs when it can't be.
         void Grab(Action<byte[], int, int, bool> got, Action failed)
         {
-            if (Application.isBatchMode) { GrabCameras(got, failed); return; }
+            if (Application.isBatchMode) { LastRoute = CamerasRoute; GrabCameras(got, failed); return; }
+            LastRoute = ScreenRoute;
             int w = Screen.width, h = Screen.height;
             if (w <= 0 || h <= 0) { Fail("the screen has no size", failed); return; }
             var rt = new RenderTexture(w, h, 0) { name = "owner capture" };
@@ -233,7 +247,11 @@ namespace OpenKingdomsUnity.Game.Capture
             hideToast = true;
             var writer = clip.Writer;
             AfterThisFrame(() => Grab((px, w, h, flip) => writer.Add(index, px, w, h, flip, at), () => writer.Skip(index)));
-            if (clip.Taken >= writer.Frames) clip = null;
+            if (clip.Taken >= writer.Frames)
+            {
+                clip = null;
+                Say("Writing the clip...", 30f);
+            }
         }
 
         // ---- What happened ----
@@ -253,9 +271,10 @@ namespace OpenKingdomsUnity.Game.Capture
             toastUntil = Time.unscaledTime + seconds;
         }
 
+        // No note while a clip records, so none of its frames has it.
         void OnGUI()
         {
-            if (hideToast || Event.current.type != EventType.Repaint) return;
+            if (hideToast || clip != null || Event.current.type != EventType.Repaint) return;
             string text = Toast;
             if (text == null) return;
             if (toastStyle == null)
@@ -272,10 +291,24 @@ namespace OpenKingdomsUnity.Game.Capture
             GUI.Box(new Rect(12, 12, width, height), text, toastStyle);
         }
 
-        void OnApplicationQuit() => CaptureWriter.WaitIdle(10000);
+        // A clip cut short by leaving Play still gets its sheet, from the
+        // frames it has.
+        void EndClip()
+        {
+            if (clip == null) return;
+            clip.Writer.Finish();
+            clip = null;
+        }
+
+        void OnApplicationQuit()
+        {
+            EndClip();
+            CaptureWriter.WaitIdle(10000);
+        }
 
         void OnDestroy()
         {
+            EndClip();
             if (Instance == this) Instance = null;
             if (toastBack != null) Destroy(toastBack);
         }

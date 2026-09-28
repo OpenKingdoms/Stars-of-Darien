@@ -455,7 +455,8 @@ namespace OpenKingdomsUnity.Studio
 
         // ---- Screenshots ----
 
-        public static string CapturesDir => Path.Combine(Path.GetDirectoryName(StudioModel.ProjectDir), "Captures");
+        // The one capture folder, the same as F9's.
+        public static string CapturesDir => StudioCapture.Dir;
 
         public static string Screenshot(bool classic, string dir = null)
         {
@@ -465,6 +466,7 @@ namespace OpenKingdomsUnity.Studio
             string name = (Model?.Name ?? "studio") + (classic ? "-classic-" : "-free-") + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png";
             string path = Path.Combine(dir, name);
             File.WriteAllBytes(path, Stage.Screenshot(classic ? View : Free, 1920, 1080));
+            OpenKingdomsUnity.Game.Capture.CaptureFiles.WriteLatest(dir, path);
             Status = "Saved " + path;
             Notify();
             return path;

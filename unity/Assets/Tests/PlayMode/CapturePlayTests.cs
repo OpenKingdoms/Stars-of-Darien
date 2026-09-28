@@ -1,7 +1,9 @@
 // CapturePlayTests.cs - the owner's captures in Play: F9's picture is the
-// whole screen at its size the right way up, Shift+F9's clip is sixty
-// frames and a contact sheet, LATEST.txt names the newest, and F9 is free
-// in the game.
+// whole screen at its size the right way up without the note, Shift+F9's
+// clip is sixty frames and a contact sheet, LATEST.txt names the newest,
+// and F9 is free in the game. In batch mode the cameras are drawn again,
+// and run with a window the screen itself is read, which is how the owner
+// takes them.
 using System;
 using System.Collections;
 using System.IO;
@@ -66,6 +68,19 @@ namespace OpenKingdomsUnity.Tests
             while (!done() && Time.realtimeSinceStartup < end) yield return null;
         }
 
+        // Where the note's dark box is, clear of its words: x across, y down
+        // from the top of the screen.
+        const int NoteX = 40, NoteY = 15;
+
+        static Color NoteSpot(Texture2D t) => t.GetPixel(NoteX, t.height - 1 - NoteY);
+
+        static void AssertRoute(OwnerCapture cap)
+        {
+            Debug.Log($"Capture test: route {cap.LastRoute}, screen {Screen.width}x{Screen.height} on {SystemInfo.graphicsDeviceType}, batch {Application.isBatchMode}, " +
+                $"upside down {OwnerCapture.FoundFlipped}, uv starts at top {SystemInfo.graphicsUVStartsAtTop}");
+            Assert.AreEqual(Application.isBatchMode ? OwnerCapture.CamerasRoute : OwnerCapture.ScreenRoute, cap.LastRoute, "the screen is read whenever there is one");
+        }
+
         [UnityTest]
         public IEnumerator F9SavesTheWholeScreenTheRightWayUp()
         {
@@ -82,6 +97,8 @@ namespace OpenKingdomsUnity.Tests
             string path = cap.LastPath;
             Debug.Log($"Capture test: screen {Screen.width}x{Screen.height} on {SystemInfo.graphicsDeviceType}, batch {Application.isBatchMode}, error {cap.LastError}");
             Assert.IsNotNull(path, "a picture was saved: " + cap.LastError);
+            AssertRoute(cap);
+            if (!Application.isBatchMode) Assert.GreaterOrEqual(OwnerCapture.FoundFlipped, 0, "the first picture found which way up the screen comes back");
             StringAssert.StartsWith(Path.Combine(dir, "shot-"), path);
             StringAssert.EndsWith(".png", path);
             var t = new Texture2D(2, 2);
@@ -97,6 +114,31 @@ namespace OpenKingdomsUnity.Tests
             UnityEngine.Object.Destroy(t);
             Assert.AreEqual(path, File.ReadAllText(Path.Combine(dir, CaptureFiles.LatestFile)).Trim());
             StringAssert.Contains(path, cap.Toast ?? "", "the note says where it went");
+
+            // A second picture while that note is up leaves the note out.
+            yield return null;
+            if (!Application.isBatchMode)
+            {
+                yield return new WaitForEndOfFrame();
+                var seen = ScreenCapture.CaptureScreenshotAsTexture();
+                var dark = NoteSpot(seen);
+                UnityEngine.Object.Destroy(seen);
+                Assert.Less(dark.r, 0.6f, $"the note is on the screen itself, {dark}");
+            }
+            Assert.IsNotNull(cap.Toast);
+            yield return new WaitForSecondsRealtime(1.1f);
+            string first = path;
+            cap.Shot();
+            yield return Until(() => cap.LastPath != first, 20f);
+            Assert.AreNotEqual(first, cap.LastPath, cap.LastError);
+            var t2 = new Texture2D(2, 2);
+            Assert.IsTrue(t2.LoadImage(File.ReadAllBytes(cap.LastPath)));
+            Assert.AreEqual(new Vector2Int(w, h), new Vector2Int(t2.width, t2.height));
+            var spot = NoteSpot(t2);
+            UnityEngine.Object.Destroy(t2);
+            Assert.Greater(spot.r, 0.8f, $"the red band where the note was, {spot}");
+            Assert.Less(spot.g, 0.2f, $"{spot}");
+            AssertRoute(cap);
         }
 
         [UnityTest]
@@ -122,9 +164,16 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(60, frames.Length, "twelve a second for five seconds");
             Assert.AreEqual("frame-001.png", frames[0]);
             Assert.AreEqual("frame-060.png", frames[59]);
+            AssertRoute(cap);
             var f = new Texture2D(2, 2);
-            Assert.IsTrue(f.LoadImage(File.ReadAllBytes(Path.Combine(folder, frames[30]))));
-            Assert.AreEqual(new Vector2Int(w, h), new Vector2Int(f.width, f.height));
+            foreach (int i in new[] { 0, 30 })
+            {
+                Assert.IsTrue(f.LoadImage(File.ReadAllBytes(Path.Combine(folder, frames[i]))));
+                Assert.AreEqual(new Vector2Int(w, h), new Vector2Int(f.width, f.height));
+                var spot = NoteSpot(f);
+                Assert.Greater(spot.r, 0.8f, $"{frames[i]} has no note in it, {spot}");
+                Assert.Greater(f.GetPixel(w / 2, 3).b, 0.8f, $"{frames[i]} the right way up");
+            }
             UnityEngine.Object.Destroy(f);
             var s = new Texture2D(2, 2);
             Assert.IsTrue(s.LoadImage(File.ReadAllBytes(sheet)));
@@ -163,6 +212,56 @@ namespace OpenKingdomsUnity.Tests
             // The game hears of it on its next frame.
             yield return Until(() => cap.LastPath == second, 5f);
             Assert.AreEqual(second, cap.LastPath);
+        }
+
+        // The keys as Update hears them: F9 alone, Shift+F9, and a second
+        // Shift+F9 while one is recording.
+        [UnityTest]
+        public IEnumerator F9TakesAPictureAndShiftF9AClip()
+        {
+            Scene();
+            var cap = OwnerCapture.Ensure();
+            yield return null;
+            Assert.IsNull(cap.Handle(false, false));
+            Assert.IsNull(cap.Handle(false, true));
+            Assert.IsFalse(cap.Recording);
+            string before = cap.LastPath;
+            Assert.AreEqual("shot", cap.Handle(true, false));
+            yield return Until(() => cap.LastPath != before, 20f);
+            StringAssert.StartsWith(Path.Combine(dir, "shot-"), cap.LastPath, cap.LastError);
+            Assert.AreEqual("clip", cap.Handle(true, true));
+            Assert.IsTrue(cap.Recording);
+            yield return null;
+            cap.Handle(true, true);
+            Assert.AreEqual("Already recording a clip.", cap.Toast);
+            yield return Until(() => !cap.Recording, 30f);
+            yield return Until(() => cap.LastPath != null && cap.LastPath.Contains("clip-"), 60f);
+            StringAssert.Contains(Path.Combine(dir, "clip-"), cap.LastPath, cap.LastError);
+            Assert.AreEqual(1, Directory.GetDirectories(dir, "clip-*").Length, "one clip");
+        }
+
+        // Leaving Play mid-clip still writes the sheet from the frames taken.
+        [UnityTest]
+        public IEnumerator AClipCutShortStillGetsItsSheet()
+        {
+            Scene();
+            var cap = OwnerCapture.Ensure();
+            yield return null;
+            cap.StartClip();
+            yield return new WaitForSecondsRealtime(1f);
+            Assert.IsTrue(cap.Recording);
+            UnityEngine.Object.Destroy(cap.gameObject);
+            yield return null;
+            Assert.IsTrue(OwnerCapture.Instance == null);
+            Assert.IsTrue(CaptureWriter.WaitIdle(20000));
+            string sheet = CaptureFiles.ReadLatest(dir);
+            Assert.IsNotNull(sheet, "LATEST.txt names the sheet");
+            StringAssert.Contains(Path.Combine(dir, "clip-"), sheet);
+            Assert.IsTrue(File.Exists(sheet));
+            string folder = sheet.Substring(0, sheet.Length - ".png".Length);
+            int n = Directory.GetFiles(folder, "frame-*.png").Length;
+            Assert.That(n, Is.InRange(5, 20), "about a second of frames");
+            OwnerCapture.Ensure();
         }
 
         // The screen read back top first or bottom first, told apart against
