@@ -130,11 +130,11 @@ Shader "OpenKingdoms/Presentation/Water"
                 // of wet sand just under the surface. Bands rolling in to the
                 // shore, from the baked distance to it. Whitecaps in a storm.
                 float lace = OkuFoamLace(p.xz, 1);
-                float edge = (1 - smoothstep(0.0, 0.08, under)) * max(saturate(depthBelow / 0.4), saturate(1.5 - shore / 0.8)) * 0.8;
+                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(depthBelow / 0.4), saturate(1.5 - shore / 0.8)) * 0.9;
                 float nearShore = saturate(1 - shore / 0.9) * step(0, shore + 0.5);
                 float wash = pow(saturate(sin(6.2831853 * shore / 1.4 - _OkuWaterTime * 1.2 + w.macro * 5)), 4) * exp(-max(shore, 0) / 0.9);
                 float caps = saturate((w.crest - 0.25) * 4) * _OkuWaterWaves.z * lerp(0.6, 1.2, w.macro);
-                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.25 + wash * 0.55 + caps) * 0.95) * 0.92;
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3 + wash * 0.55 + caps) * 0.95) * 0.92;
                 foam *= saturate(thick / 0.01);
                 float3 foamLight = sun.color * (saturate(dot(n, sun.direction)) * shadow) + ambient;
                 water = lerp(water, foamLight * 0.85, foam);
@@ -229,9 +229,9 @@ Shader "OpenKingdoms/Presentation/Water"
                 float glint = (min(OkuGlint(n, v, l, rough), 4) + min(OkuGlint(n, v, l, 0.35), 1) * 0.3) * _OkuWaterScatter.a;
                 water += _LightColor0.rgb * glint;
                 float lace = OkuFoamLace(p.xz, 1);
-                float edge = (1 - smoothstep(0.0, 0.08, under)) * max(saturate(sea.x / 0.4), saturate(1.5 - sea.y / 0.8)) * 0.8;
+                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(sea.x / 0.4), saturate(1.5 - sea.y / 0.8)) * 0.9;
                 float nearShore = saturate(1 - sea.y / 0.9) * step(0, sea.y + 0.5);
-                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.25) * 0.95) * 0.92;
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3) * 0.95) * 0.92;
                 water = lerp(water, lightIn * 0.85, foam);
                 alpha = saturate(max(alpha, foam) + glint * 0.2) * saturate(thick / 0.05);
                 if (_OkuMapSize.x > 0)
