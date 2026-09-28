@@ -333,8 +333,14 @@ namespace OpenKingdomsUnity.Game.World
 
             UnitCount = backend.ReadUnits(Units);
             DrawnSize.Clear();
+            rising.Clear();
+            blocksUsed = 0;
+            buildSeen.Clear();
             for (int i = 0; i < UnitCount; i++) AddUnit(ref Units[i], cam);
             SweepFlyers();
+            risingBlock = -1;
+            if (buildShown.Count > buildSeen.Count)
+                foreach (var h in new List<int>(buildShown.Keys)) if (!buildSeen.Contains(h)) buildShown.Remove(h);
 
             AddFeatures(cam);
 
@@ -352,6 +358,7 @@ namespace OpenKingdomsUnity.Game.World
             AddOrderLines();
             AddBrush();
             solid.Draw();
+            DrawRising();
             billboards.Draw();
             overlay.Draw();
         }
@@ -362,14 +369,105 @@ namespace OpenKingdomsUnity.Game.World
 
         public bool IsDrawn(int handle) => DrawnSize.ContainsKey(handle);
 
+        // ---- Frames under construction ----
+        // The original draws nothing of a frame under half built. Here a
+        // frame rises from the ground with its build, from nothing: solid
+        // up to a cut that follows the build smoothly, a glowing edge at
+        // the cut and a faint ghost of the rest in team colour.
+        public static float GhostShows = 1f;
+        public const float BuildEase = 0.25f;     // seconds to catch up with a read
+        readonly Dictionary<int, float> buildShown = new Dictionary<int, float>();
+        readonly HashSet<int> buildSeen = new HashSet<int>();
+        readonly List<(Mesh mesh, int sub, Material mat, Matrix4x4 m, int block)> rising = new List<(Mesh, int, Material, Matrix4x4, int)>();
+        readonly List<MaterialPropertyBlock> blocks = new List<MaterialPropertyBlock>();
+        readonly Dictionary<Material, Material> buildMats = new Dictionary<Material, Material>();
+        int blocksUsed;
+        int risingBlock = -1;
+        static readonly int BuildCutId = Shader.PropertyToID("_BuildCut");
+        static readonly int BuildBandId = Shader.PropertyToID("_BuildBand");
+        static readonly int BuildTintId = Shader.PropertyToID("_BuildTint");
+        static readonly int BuildGlowId = Shader.PropertyToID("_BuildGlow");
+
+        // How built a frame shows now, 0 to 1, or 1 for one not being built.
+        public float BuildShown(int handle) => buildShown.TryGetValue(handle, out var f) ? f : 1f;
+
+        // Where the next parts go: the instanced batch, or, for a frame
+        // being built, its own draws with its cut.
+        void Put(Mesh mesh, int sub, Material mat, in Matrix4x4 m)
+        {
+            if (risingBlock < 0) { solid.Add(mesh, sub, mat, m); return; }
+            var mm = m;
+            if (mm.determinant < 0) { mesh = InstancedDraws.Mirrored(mesh); mm = m * Matrix4x4.Scale(new Vector3(-1, 1, 1)); }
+            rising.Add((mesh, sub, BuildMaterial(mat), mm, risingBlock));
+        }
+
+        Material BuildMaterial(Material m)
+        {
+            if (m == null) return null;
+            if (buildMats.TryGetValue(m, out var b)) return b;
+            b = new Material(m) { name = m.name + " (rising)", hideFlags = HideFlags.DontSave };
+            b.EnableKeyword("_OKU_BUILD");
+            b.enableInstancing = false;
+            owned.Add(b);
+            return buildMats[m] = b;
+        }
+
+        // Starts a frame's draws with a cut at world height cut.
+        void BeginRising(float cut, float band, Color tint, float glow)
+        {
+            if (blocksUsed == blocks.Count) blocks.Add(new MaterialPropertyBlock());
+            var block = blocks[blocksUsed];
+            block.Clear();
+            block.SetFloat(BuildCutId, cut);
+            block.SetFloat(BuildBandId, band);
+            block.SetColor(BuildTintId, tint);
+            block.SetFloat(BuildGlowId, glow);
+            risingBlock = blocksUsed++;
+        }
+
+        void DrawRising()
+        {
+            Shader.SetGlobalFloat("_OkuBuildGhost", GhostShows);
+            foreach (var r in rising)
+            {
+                if (r.mat == null) continue;
+                var rp = new RenderParams(r.mat)
+                {
+                    matProps = blocks[r.block], shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On, receiveShadows = true,
+                    worldBounds = new Bounds(r.m.GetColumn(3), Vector3.one * 50f),
+                };
+                Graphics.RenderMesh(rp, r.mesh, r.sub, r.m);
+            }
+        }
+
+        // The build shown for a frame, easing toward the latest read.
+        float EaseBuild(int handle, float read)
+        {
+            buildSeen.Add(handle);
+            if (!buildShown.TryGetValue(handle, out var shown)) shown = read;
+            shown += (read - shown) * (1f - Mathf.Exp(-Time.unscaledDeltaTime / BuildEase));
+            buildShown[handle] = shown;
+            return shown;
+        }
+
         void AddUnit(ref UnitState u, Camera cam)
         {
             if (Hidden != null && Hidden(u)) return;
-            // A frame under half built is not drawn, as in the original:
-            // only its construction sparkles mark the site.
-            if ((u.Flags & UnitFlags.Building) != 0 && u.MaxHealth > 0 && u.Health * 2 < u.MaxHealth) return;
+            risingBlock = -1;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def != null ? new[] { def.Name, def.ObjectName } : null);
+            if (model != null && (u.Flags & UnitFlags.Building) != 0 && (u.Flags & UnitFlags.Dying) == 0)
+            {
+                float shown = EaseBuild(u.Handle, Mathf.Clamp01(u.BuildProgress));
+                var rb = model.RestBounds;
+                float lift = def != null && def.IsBuilding ? SiteLift(u.Position) : 0f;
+                float bottom = u.Position.y + lift + Mathf.Min(0f, rb.min.y), top = u.Position.y + lift + rb.max.y;
+                var owner = backend.PlayerById(u.Player);
+                Color tint = owner != null ? (Color)owner.Tint : new Color(0.8f, 0.8f, 0.8f);
+                // The glow grows in over the first few percent, so a site
+                // just begun is only its ghost.
+                BeginRising(Mathf.Lerp(bottom, top, shown), 0.1f + 0.05f * (top - bottom), tint, Mathf.SmoothStep(0f, 1f, shown / 0.06f));
+            }
             float height = 1.5f, radius = 0.6f, air = 0f;
             if (model != null && model.Override != null)
             {
@@ -386,7 +484,7 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     var at = Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f),
                         Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
-                    foreach (var part in card.Model.Parts) solid.Add(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
+                    foreach (var part in card.Model.Parts) Put(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
                 }
                 for (int p = 0; p < n; p++)
                 {
@@ -394,13 +492,14 @@ namespace OpenKingdomsUnity.Game.World
                     if (mesh == null || poses[p].Hidden) continue;
                     if (card != null && card.Hides(model.Data.Pieces[p].Name)) continue;
                     var mats = model.Materials[p];
-                    for (int s = 0; s < mats.Length; s++) solid.Add(mesh, s, mats[s], posed[p]);
+                    for (int s = 0; s < mats.Length; s++) Put(mesh, s, mats[s], posed[p]);
                 }
                 var b = model.RestBounds;
                 height = Mathf.Max(Mathf.Abs(b.max.y), Mathf.Abs(b.min.y)) + 0.4f;
                 radius = Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.z) * 0.9f, 0.4f, 6f);
             }
             DrawnSize[u.Handle] = new Vector2(height, radius);
+            risingBlock = -1;
 
             if ((u.Flags & UnitFlags.Dying) != 0) return;
             bool selected = Selected.Contains(u.Handle);
@@ -466,7 +565,7 @@ namespace OpenKingdomsUnity.Game.World
                     m = posed[part.Piece] * model.RestInverse[part.Piece] * part.NodeToRoot;
                 }
                 else m = basis * part.NodeToRoot;
-                solid.Add(part.Mesh, part.Submesh, part.Material, m);
+                Put(part.Mesh, part.Submesh, part.Material, m);
             }
         }
 

@@ -317,6 +317,23 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
+        // How long a frame takes to build itself, 0 to hold every build.
+        public float BuildSeconds = 4f;
+
+        // A frame of the local player's, so far built. For tests.
+        public int SpawnFrame(int def, Vector3 at, float built)
+        {
+            var u = Spawn(def, 0, new Vector2(at.x, at.z), Mathf.Clamp(built, 0.001f, 1f));
+            return u.Handle;
+        }
+
+        public void SetBuilt(int handle, float built)
+        {
+            if (!byHandle.TryGetValue(handle, out var u)) return;
+            u.Built = Mathf.Clamp(built, 0.001f, 1f);
+            u.Health = Mathf.Max(1, (int)(u.MaxHealth * u.Built));
+        }
+
         Unit Spawn(int def, int player, Vector2 at, float built = 1f, int facing = 0)
         {
             var d = unitDefs[def];
@@ -367,7 +384,12 @@ namespace OpenKingdomsUnity.Game
                     continue;
                 }
                 if (aboard.Contains(u.Handle)) continue;
-                if (u.Built < 1f) { u.Built = Mathf.Min(1f, u.Built + dt / 4f); u.Health = Mathf.Max(u.Health, (int)(u.MaxHealth * u.Built)); continue; }
+                if (u.Built < 1f)
+                {
+                    if (BuildSeconds > 0) u.Built = Mathf.Min(1f, u.Built + dt / BuildSeconds);
+                    u.Health = Mathf.Max(u.Health, (int)(u.MaxHealth * u.Built));
+                    continue;
+                }
                 Think(u, dt);
             }
 
