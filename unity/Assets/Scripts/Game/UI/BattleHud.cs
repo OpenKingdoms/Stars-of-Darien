@@ -517,7 +517,7 @@ namespace OpenKingdomsUnity.Game.UI
             var orders = root.Orders;
             if (hoverHelp != null) lines = hoverHelp.Value;
             else if (orders != null && orders.Armed == CommandKind.Build && orders.ArmedDef >= 0)
-                lines = root.Backend.CanRotate(orders.ArmedDef) ? ("R turns it", "Shift R turns it back") : ("Placing", "It cannot be turned");
+                lines = root.Backend.CanRotate(orders.ArmedDef) ? ("R or ] turns it", "Shift R or [ turns it back") : ("Placing", "It cannot be turned");
             else lines = PoolLines();
             if (help1.text != lines.Item1) help1.text = lines.Item1;
             if (help2.text != lines.Item2) help2.text = lines.Item2;
