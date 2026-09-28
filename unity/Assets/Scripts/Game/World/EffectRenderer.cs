@@ -108,7 +108,6 @@ namespace OpenKingdomsUnity.Game.World
             if (cam == null) return;
             var eye = cam.transform;
             float now = backend.Tick / (float)Mathf.Max(1, backend.TicksPerSecond);
-            PrepareDepth(cam);
             EnsureMaterials();
             foreach (var b in batches.Values) b.Clear();
             glow.Clear(); smoke.Clear(); ground.Clear(); groundGlow.Clear();
@@ -129,6 +128,7 @@ namespace OpenKingdomsUnity.Game.World
             seenImpacts.IntersectWith(liveImpacts);
 
             Shots = Mathf.Min(backend.ReadProjectiles(shots), shots.Length);
+            PrepareDepth(cam, Count + Shots > 0);
             Beams = 0;
             ModelShots = 0;
             for (int i = 0; i < Shots; i++) AddShot(shots[i], eye, now);
@@ -441,12 +441,12 @@ namespace OpenKingdomsUnity.Game.World
             owned.Add(markMat);
         }
 
-        // Soft edges need the scene's depth. The built-in pipeline makes it
-        // when the camera asks, and URP when the camera says so.
-        void PrepareDepth(Camera cam)
+        // Soft edges need the scene's depth, asked for only while effects
+        // show, so a quiet dry map pays for no copy.
+        void PrepareDepth(Camera cam, bool showing)
         {
             bool have = false;
-            if (Soft)
+            if (Soft && showing)
             {
                 if (Looks.Urp != null)
                 {
