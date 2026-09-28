@@ -60,12 +60,15 @@ Shader "OpenKingdoms/Presentation/Model"
                 o.fog = ComputeFogFactor(o.positionCS.z);
                 return o;
             }
-            half4 frag(Varyings i) : SV_Target
+            half4 frag(Varyings i, bool front : SV_IsFrontFace) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * i.color * _Color;
                 clip(c.a - _Cutoff);
-                half3 rgb = OkuLight(c.rgb, i.positionWS, normalize(i.normalWS), i.positionCS, _Glossiness, _Rim);
+                // A face seen from behind, where culling is off, is lit as
+                // its other side.
+                half3 n = normalize(i.normalWS) * (front ? 1 : -1);
+                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, _Glossiness, _Rim);
                 rgb += c.rgb * _Emission;
                 rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), 1);
