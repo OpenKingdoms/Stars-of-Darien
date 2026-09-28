@@ -171,7 +171,7 @@ namespace OpenKingdomsUnity.Game.World
                 case "swamp":
                     return new Look { Sigma = new Vector4(2.2f, 1.3f, 1.9f, 0f), Scatter = new Color(0.03f, 0.035f, 0.012f, 1f), Bed = new Color(0.34f, 0.3f, 0.2f, 0.6f), Sky = new Color(0.44f, 0.52f, 0.54f, 1f) };
                 case "snow":
-                    return new Look { Sigma = new Vector4(2.4f, 0.75f, 0.55f, 0.7f), Scatter = new Color(0.006f, 0.03f, 0.06f, 1f), Bed = new Color(0.6f, 0.62f, 0.62f, 0.7f), Sky = new Color(0.5f, 0.6f, 0.74f, 1f) };
+                    return new Look { Sigma = new Vector4(2.4f, 0.75f, 0.55f, 0.7f), Scatter = new Color(0.008f, 0.04f, 0.075f, 1f), Bed = new Color(0.6f, 0.62f, 0.62f, 0.7f), Sky = new Color(0.5f, 0.6f, 0.74f, 1f) };
                 default:
                     return new Look { Sigma = new Vector4(2.2f, 0.6f, 0.44f, 1f), Scatter = new Color(0.004f, 0.036f, 0.07f, 1f), Bed = new Color(0.86f, 0.82f, 0.68f, 0.8f), Sky = new Color(0.36f, 0.53f, 0.74f, 1f) };
             }

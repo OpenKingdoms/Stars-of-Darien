@@ -391,7 +391,7 @@ namespace OpenKingdomsUnity.Tests
         // variation in the strongest wave (windowed), and the highest
         // correlation it has with itself shifted past its central lobe (and
         // 24 pixels at least). A smooth random sea falls away from itself and
-        // stays away; stripes and tiles come back.
+        // stays away, while stripes and tiles come back.
         static void Spectrum(Texture2D shot, Vector2 at, int n, out double stripe, out double repeat, out double spread)
         {
             int x0 = (int)at.x - n / 2, y0 = (int)at.y - n / 2;

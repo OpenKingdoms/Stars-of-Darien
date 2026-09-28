@@ -119,20 +119,22 @@ Shader "OpenKingdoms/Presentation/Water"
                 float3 sky = OkuSky(r, sun.direction, sun.color);
                 water = lerp(water, sky, fres);
                 float rough = max(0.05 + _OkuWaterWaves.y * 0.8, 0.03 + dist * 0.0012);
-                float glint = OkuGlint(n, v, sun.direction, rough) * sun.shadowAttenuation * _OkuWaterScatter.a;
-                float sheen = OkuGlint(n, v, sun.direction, 0.35) * sun.shadowAttenuation * _OkuWaterScatter.a;
-                water += sun.color * (min(glint, 4) + min(sheen, 1) * 0.3);
+                // The weather's glint strength scales the clamped glint, so
+                // haze dims every sparkle rather than thinning them out.
+                float glint = min(OkuGlint(n, v, sun.direction, rough), 4) * sun.shadowAttenuation * _OkuWaterScatter.a;
+                float sheen = min(OkuGlint(n, v, sun.direction, 0.35), 1) * sun.shadowAttenuation * _OkuWaterScatter.a;
+                water += sun.color * (glint + sheen * 0.3);
 
                 // Foam: a broken line where the water meets the shore, or a
                 // hull or post standing in deeper water, but not across a flat
                 // of wet sand just under the surface. Bands rolling in to the
                 // shore, from the baked distance to it. Whitecaps in a storm.
                 float lace = OkuFoamLace(p.xz, 1);
-                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(depthBelow / 0.4), saturate(1.5 - shore / 0.8));
+                float edge = (1 - smoothstep(0.0, 0.08, under)) * max(saturate(depthBelow / 0.4), saturate(1.5 - shore / 0.8)) * 0.8;
                 float nearShore = saturate(1 - shore / 0.9) * step(0, shore + 0.5);
                 float wash = pow(saturate(sin(6.2831853 * shore / 1.4 - _OkuWaterTime * 1.2 + w.macro * 5)), 4) * exp(-max(shore, 0) / 0.9);
                 float caps = saturate((w.crest - 0.25) * 4) * _OkuWaterWaves.z * lerp(0.6, 1.2, w.macro);
-                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3 + wash * 0.55 + caps)) * 0.92;
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.25 + wash * 0.55 + caps) * 0.95) * 0.92;
                 foam *= saturate(thick / 0.01);
                 float3 foamLight = sun.color * (saturate(dot(n, sun.direction)) * shadow) + ambient;
                 water = lerp(water, foamLight * 0.85, foam);
@@ -224,12 +226,12 @@ Shader "OpenKingdoms/Presentation/Water"
                 water = lerp(water, OkuSky(r, l, _LightColor0.rgb), fres);
                 alpha = saturate(alpha + fres);
                 float rough = max(0.05 + _OkuWaterWaves.y * 0.8, 0.03 + dist * 0.0012);
-                float glint = min(OkuGlint(n, v, l, rough) * _OkuWaterScatter.a, 4) + min(OkuGlint(n, v, l, 0.35) * _OkuWaterScatter.a, 1) * 0.3;
+                float glint = (min(OkuGlint(n, v, l, rough), 4) + min(OkuGlint(n, v, l, 0.35), 1) * 0.3) * _OkuWaterScatter.a;
                 water += _LightColor0.rgb * glint;
                 float lace = OkuFoamLace(p.xz, 1);
-                float edge = (1 - smoothstep(0.0, 0.1, under)) * max(saturate(sea.x / 0.4), saturate(1.5 - sea.y / 0.8));
+                float edge = (1 - smoothstep(0.0, 0.08, under)) * max(saturate(sea.x / 0.4), saturate(1.5 - sea.y / 0.8)) * 0.8;
                 float nearShore = saturate(1 - sea.y / 0.9) * step(0, sea.y + 0.5);
-                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.3)) * 0.92;
+                float foam = OkuFoamCover(lace, saturate(edge + nearShore * 0.25) * 0.95) * 0.92;
                 water = lerp(water, lightIn * 0.85, foam);
                 alpha = saturate(max(alpha, foam) + glint * 0.2) * saturate(thick / 0.05);
                 if (_OkuMapSize.x > 0)

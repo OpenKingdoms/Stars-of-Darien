@@ -104,7 +104,7 @@ namespace OpenKingdomsUnity.Game.World
             {
                 // The ribbon: from the ship back along its path. uv x runs
                 // across (-1 to 1), y along in units from the stern, z
-                // strength, w age; uv1 half the width and the hull's half beam.
+                // strength, w age. uv1 is half the width and the hull's half beam.
                 points.Clear();
                 points.Add((tr.Pos, 0f, tr.Speed));
                 for (int i = tr.Samples.Count - 1; i >= 0; i--)
