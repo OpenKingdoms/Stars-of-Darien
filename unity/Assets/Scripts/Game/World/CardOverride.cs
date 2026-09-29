@@ -3,8 +3,9 @@
 // Thesh's stand). Overrides/Generated/Units/<OBJECT>.glb carries in its
 // root node's glTF extras the piece it replaces ("replacesPiece") and that
 // piece's texture ("replacesTexture"). The unit keeps every other piece,
-// hides the replaced one and its inactive twin (<piece>_off or <piece>off),
-// and draws the glb once at the unit's origin, facing with it.
+// hides the replaced one, its inactive twin (<piece>_off or <piece>off)
+// and any logo plate, and draws the glb once at the unit's origin, facing
+// with it.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -24,9 +25,12 @@ namespace OpenKingdomsUnity.Game.World
         public bool Hides(string piece)
         {
             if (string.IsNullOrEmpty(piece) || ReplacesPiece.Length == 0) return false;
+            // The model carries the whole look, so the original's flat logo
+            // plates go too; drawn from both sides they show through it.
             return string.Equals(piece, ReplacesPiece, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(piece, ReplacesPiece + "_off", StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(piece, ReplacesPiece + "off", StringComparison.OrdinalIgnoreCase);
+                   string.Equals(piece, ReplacesPiece + "off", StringComparison.OrdinalIgnoreCase) ||
+                   piece.IndexOf("logo", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         static readonly Dictionary<string, CardOverride> cache = new Dictionary<string, CardOverride>(StringComparer.OrdinalIgnoreCase);
