@@ -79,7 +79,7 @@ namespace OpenKingdomsUnity.Game.UI
         // A character door: at rest its first picture, and under the pointer
         // the rest in turn at eight a second, finishing the round after it
         // leaves, as the original does without its clips.
-        public sealed class Door : MonoBehaviour, UnityEngine.EventSystems.IPointerEnterHandler, UnityEngine.EventSystems.IPointerExitHandler, UnityEngine.EventSystems.IPointerClickHandler
+        public sealed class Door : MonoBehaviour, UnityEngine.EventSystems.IPointerEnterHandler, UnityEngine.EventSystems.IPointerExitHandler
         {
             public Action Clicked;
             public RawImage Face;
@@ -94,9 +94,8 @@ namespace OpenKingdomsUnity.Game.UI
             public void OnPointerExit(UnityEngine.EventSystems.PointerEventData e) { over = false; }
             public string Sound = "menubutton.wav";
 
-            public void OnPointerClick(UnityEngine.EventSystems.PointerEventData e)
+            public void Press()
             {
-                if (e.button != UnityEngine.EventSystems.PointerEventData.InputButton.Left) return;
                 UiKit.Play(Sound);
                 Clicked?.Invoke();
             }
@@ -128,6 +127,7 @@ namespace OpenKingdomsUnity.Game.UI
                 var hit = p.Wash(p.Root, d.gui.x, d.gui.y, d.gui.width, d.gui.height, LobbyInk.Clear);
                 hit.name = name;
                 var door = hit.gameObject.AddComponent<Door>();
+                ArtButton.Plain(hit.gameObject, door.Press);
                 door.Clicked = clicked;
                 door.Page = p;
                 door.Anchor = d.anchor + d.nudge;

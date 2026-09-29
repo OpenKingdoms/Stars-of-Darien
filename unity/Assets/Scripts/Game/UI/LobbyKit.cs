@@ -283,8 +283,9 @@ namespace OpenKingdomsUnity.Game.UI
 
     // A button in the original's art: frame 0 at rest, frame 1 pressed. A
     // warm light rises behind it under the pointer. Without the art it is
-    // a vellum lozenge lettered in minium.
-    public sealed class ArtButton : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
+    // a vellum lozenge lettered in minium. A plain Button takes the click,
+    // so it presses as every other menu button does.
+    public sealed class ArtButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
     {
         public Action Clicked;
         public string Sound;
@@ -296,11 +297,21 @@ namespace OpenKingdomsUnity.Game.UI
         bool over, down;
         float glow;
 
-        public void OnPointerClick(PointerEventData e)
+        public void Press()
         {
-            if (!Enabled || e.button != PointerEventData.InputButton.Left) return;
+            if (!Enabled) return;
             UiKit.Play(Sound);
             Clicked?.Invoke();
+        }
+
+        // A Button with no look of its own, for the click.
+        public static Button Plain(GameObject go, Action press)
+        {
+            var b = go.AddComponent<Button>();
+            b.transition = Selectable.Transition.None;
+            b.navigation = new Navigation { mode = Navigation.Mode.None };
+            b.onClick.AddListener(() => press());
+            return b;
         }
 
         public void OnPointerEnter(PointerEventData e) { over = true; Paint(); }
@@ -335,6 +346,7 @@ namespace OpenKingdomsUnity.Game.UI
             glow.rectTransform.Place(0, 0, 1, 1, -w * p.K * 0.35f, -h * p.K * 0.3f, -w * p.K * 0.35f, -h * p.K * 0.3f);
             glow.raycastTarget = false;
             var b = holder.gameObject.AddComponent<ArtButton>();
+            Plain(holder.gameObject, b.Press);
             b.Clicked = clicked;
             b.Sound = UiKit.SoundFor(name);
             b.Glow = glow;
