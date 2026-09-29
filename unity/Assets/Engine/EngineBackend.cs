@@ -728,6 +728,19 @@ namespace OpenKingdomsUnity.Engine
             return img;
         }
 
+        public RgbaImage PaintPicture(string kind, string name, string world)
+        {
+            bool texture = kind == "texture";
+            if (string.IsNullOrEmpty(name) || (!texture && kind != "feature")) return null;
+            int need = texture ? OkEngine.okx_texture_by_name(name, world, null, 0, out int w, out int h)
+                               : OkEngine.okx_sprite_by_name(name, world, null, 0, out w, out h);
+            if (need <= 0) return null;
+            var img = new RgbaImage(w, h);
+            if (texture) OkEngine.okx_texture_by_name(name, world, img.Pixels, need, out w, out h);
+            else OkEngine.okx_sprite_by_name(name, world, img.Pixels, need, out w, out h);
+            return img;
+        }
+
         // A pose from the unit's own script, run in an engine of its own
         // so the battle does not move. The model stands at the origin.
         public int PoseModel(int model, string animation, float seconds, PiecePose[] into)

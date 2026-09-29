@@ -201,4 +201,6 @@ def cut_out(ob):
         gt.inputs[1].default_value = 0.5
         nt.links.new(tex.outputs["Alpha"], gt.inputs[0])
         nt.links.new(gt.outputs[0], bsdf.inputs["Alpha"])
+        if "okPaint" in mat:
+            mat["okPaint"]["alpha"] = "mask"
         mat.use_backface_culling = False

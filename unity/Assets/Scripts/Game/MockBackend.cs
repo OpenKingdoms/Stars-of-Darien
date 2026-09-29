@@ -931,6 +931,8 @@ namespace OpenKingdomsUnity.Game
         public ModelData GetModel(int model) => model >= 0 && model < models.Count ? models[model] : null;
         public RgbaImage Texture(int texture) => texture >= 0 && texture < textures.Count ? textures[texture] : null;
         public RgbaImage Sprite(int sprite) => sprite >= 0 && sprite < sprites.Count ? sprites[sprite] : null;
+        // The stand-in world has no game files to paint from.
+        public RgbaImage PaintPicture(string kind, string name, string world) => null;
 
         Matrix4x4[] poseScratch = new Matrix4x4[64];
 

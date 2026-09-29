@@ -42,10 +42,29 @@ def load(catalog_dir, name):
     raise SystemExit("no feature " + name)
 
 
+_CATALOGS = {}
+
+
+def _catalog_row(sprite_path):
+    """The catalog row of a sprite at <catalog dir>/sprites/<name>.png, or None."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(sprite_path)))
+    if root not in _CATALOGS:
+        p = os.path.join(root, "catalog.json")
+        _CATALOGS[root] = {r["name"]: r for r in json.load(open(p))} if os.path.exists(p) else {}
+    return _CATALOGS[root].get(os.path.splitext(os.path.basename(sprite_path))[0])
+
+
 class Sprite:
     def __init__(self, path):
         self.img = bpy.data.images.load(path)
         self.w, self.h = self.img.size
+        # what the game paints this picture from at load (okpaint.py): a
+        # feature's first frame, when the catalog has the sprite as drawn
+        r = _catalog_row(path)
+        self.paint = None
+        if r and not r.get("texture") and r.get("sprite") and (r["sprite"]["w"], r["sprite"]["h"]) == (self.w, self.h):
+            self.paint = {"kind": "feature", "name": r.get("seq") or r["name"], "world": r["world"],
+                          "gain": ALBEDO_GAIN, "bleed": True, "alpha": "opaque", "size": [self.w, self.h]}
         px = self.img.pixels[:]
         w, h = self.w, self.h
         # alpha as rows top-down, for lookups by sprite row
@@ -67,6 +86,8 @@ class Sprite:
         c.img = bpy.data.images.new(self.img.name + "_copy", self.w, self.h, alpha=True)
         c.img.pixels[:] = a.ravel()
         c.alpha = (a[::-1, :, 3] > 0.5).tolist()
+        # a picture cut by keep is not one the game can paint
+        c.paint = dict(self.paint) if self.paint and keep is None else None
         return c
 
     def bleed(self, px):
@@ -115,6 +136,8 @@ class Sprite:
         a[[0, -1], :, 3] = 0.0
         a[:, [0, -1], 3] = 0.0
         self.img.pixels[:] = a.ravel()
+        if self.paint:
+            self.paint["border"] = True
 
     def edge_distance(self):
         """Pixels from each opaque pixel to the silhouette's edge (a two
@@ -537,6 +560,9 @@ def paint(ob, r, spr):
     nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
     # Plain lit colour: in the game the sun and shadows light it like
     # everything else.
+    if spr.paint:
+        # alpha stays unused until frond.cut_out links it
+        mat["okPaint"] = dict(spr.paint, alpha="opaque")
     me.materials.append(mat)
     if trunk or ob.get("bark"):
         # a frond's trunk faces come marked for the bark already

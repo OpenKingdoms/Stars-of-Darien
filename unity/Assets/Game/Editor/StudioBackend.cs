@@ -44,6 +44,7 @@ namespace OpenKingdomsUnity.Studio
             Problem = null;
             if (!PreferMock) backend = TryEngine();
             if (backend == null) backend = new MockBackend { StageSeconds = 0 };
+            GlbLoader.SetPainter(backend);
             return backend;
         }
 
@@ -86,6 +87,7 @@ namespace OpenKingdomsUnity.Studio
         {
             models?.Dispose();
             models = null;
+            if (backend != null && GlbLoader.Painter == backend) GlbLoader.SetPainter(null);
             try { backend?.Dispose(); } catch (Exception e) { Debug.LogWarning("Studio backend: " + e.Message); }
             backend = null;
         }

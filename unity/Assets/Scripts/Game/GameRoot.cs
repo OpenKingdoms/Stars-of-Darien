@@ -76,6 +76,7 @@ namespace OpenKingdomsUnity.Game
             MoveOldData();
             TakeOverScene();
             Backend = injected ?? StartBackend();
+            GlbLoader.SetPainter(Backend);
             Options = GameOptions.Load();
             UiKit.Sound = playSound = wav => Backend != null && Backend.PlaySound(wav, Options.Volume);
             Setup = DefaultSetup(Backend);
@@ -456,6 +457,7 @@ namespace OpenKingdomsUnity.Game
             if (UiKit.Sound == playSound) UiKit.Sound = null;
             Screens?.Dispose();
             Pointer?.Dispose();
+            if (GlbLoader.Painter == Backend) GlbLoader.SetPainter(null);
             Backend?.Dispose();
         }
     }

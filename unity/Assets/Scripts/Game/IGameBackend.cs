@@ -88,6 +88,10 @@ namespace OpenKingdomsUnity.Game
         ModelData GetModel(int model);
         RgbaImage Texture(int texture);
         RgbaImage Sprite(int sprite);
+        // A picture by name for a model painted at load (a glb material's
+        // okPaint): kind "feature" is a sprite feature's first frame in
+        // world's palette, "texture" a 3DO texture. Null without game files.
+        RgbaImage PaintPicture(string kind, string name, string world);
         // A unit's build-menu picture from the game, or null.
         RgbaImage UnitPicture(int def);
         // An effect's frames side by side, for EffectState.Strip.

@@ -11,9 +11,12 @@ sprite's painted light a second time. Waves and
 Noise are left out. Features already carved are skipped, so a batch can be
 stopped and resumed.
 
-The models are painted with the player's own sprites, so they stay on
-the player's machine: copy them into unity/Assets/Overrides/Generated,
-which git ignores.
+A model ships as geometry: its painted materials name their sprite in
+okPaint and the game paints them from the player's own files at load
+(okpaint.py). OK_KEEP_PIXELS=1 keeps the pixels for review on this machine,
+and such models go only to unity/Assets/Overrides/Generated, which git
+ignores. A ruin's rubble skirt is cut by a mask the game cannot repeat, so
+a ruin exports only with its pixels.
 """
 import json
 import math
@@ -28,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import arch  # noqa: E402
 import frond  # noqa: E402
 import carve  # noqa: E402
+import okpaint  # noqa: E402
 
 
 SHAPES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "shapes.json")))
@@ -353,9 +357,7 @@ def main():
                 # of a frond, only a palm's bark takes the gain
                 print("BATCH_GAIN", name, "mean %.2f" % light_gain(ob), flush=True)
             thumbs(ob, out, name, sprite_png)
-            bpy.ops.object.select_all(action="DESELECT")
-            ob.select_set(True)
-            bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_yup=True, export_extras=True)
+            okpaint.export(ob, glb)
             done += 1
             print("BATCH_OK", name, "tris", sum(len(p.vertices) - 2 for p in ob.data.polygons), flush=True)
         except Exception as e:  # keep going, report at the end

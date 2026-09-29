@@ -32,3 +32,6 @@ unity/Assets/Scenes/Studio.unity.meta
 unity/Assets/Overrides/Drop/
 unity/Assets/Overrides/Drop.meta
 Captures/
+
+# Grids read off the original pictures, remade by the kits that use them
+tools/sprite-replace/hand/**/*.npy

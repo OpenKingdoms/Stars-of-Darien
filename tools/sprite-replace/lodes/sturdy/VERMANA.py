@@ -205,6 +205,7 @@ def image(name, rgb):
     """A packed image from an (h, w, 3) array of sRGB values in 0-1."""
     h, w, _ = rgb.shape
     img = bpy.data.images.new(name, w, h, alpha=False)
+    img["okGenerated"] = True  # made here, so it ships (okpaint.py)
     px = np.ones((h, w, 4), np.float32)
     px[..., :3] = np.clip(rgb, 0, 1)
     img.pixels[:] = px.ravel()

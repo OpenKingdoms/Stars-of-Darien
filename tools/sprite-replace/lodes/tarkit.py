@@ -157,6 +157,7 @@ def fire_faces(name, faces, strength=1.0, rough=0.25, seed=1, blots=()):
     rnd = random.Random(seed)
     w, h = 12, 96
     img = bpy.data.images.new(name + "_fire", w, h, alpha=False)
+    img["okGenerated"] = True  # made here, so it ships (okpaint.py)
     cols = []
     for stops in faces:
         col = []

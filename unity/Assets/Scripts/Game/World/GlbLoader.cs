@@ -1,6 +1,7 @@
 // GlbLoader.cs - reads binary glTF (.glb) at runtime with no package: the
 // node tree with its transforms, triangle meshes with normals and one set
-// of UVs, and base colour (factor and embedded PNG or JPEG texture). glTF
+// of UVs, and base colour (factor and embedded PNG or JPEG texture, or a
+// picture painted at load from the player's own game files). glTF
 // is right handed with +Z toward the viewer, and the drop-in convention
 // exports Blender's south (-Y) as glTF +Z. The map's south is Unity's -Z,
 // so z flips: positions and normals negate z, rotations negate x and y,
@@ -220,12 +221,16 @@ namespace OpenKingdomsUnity.Game.World
             var json = index >= 0 ? MiniJson.Arr(ctx.Json, "materials")?[index] : null;
             var pbr = MiniJson.Obj(json, "pbrMetallicRoughness");
             Texture2D tex = null;
+            var extras = MiniJson.Obj(json, "extras");
+            var paint = MiniJson.Obj(extras, "okPaint");
             var bct = MiniJson.Obj(pbr, "baseColorTexture");
-            if (bct != null) tex = TextureFor(ctx, MiniJson.Int(bct, "index"));
+            if (paint != null) tex = PaintedTexture(paint);
+            else if (bct != null) tex = TextureFor(ctx, MiniJson.Int(bct, "index"));
             m = Looks.Model(tex);
             m.name = MiniJson.Text(json, "name", "glb material");
             var factor = MiniJson.Arr(pbr, "baseColorFactor");
             if (factor != null && factor.Count == 4) m.color = new Color(F(factor[0]), F(factor[1]), F(factor[2]), F(factor[3]));
+            if (paint != null) m.color = PaintColour(paint, extras, m.color, tex != null);
             m.SetFloat("_Glossiness", (1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1)) * 0.5f);
             Physical(ctx, json, pbr, m);
             // A plain emissive colour becomes the shader's self light.
@@ -241,6 +246,8 @@ namespace OpenKingdomsUnity.Game.World
             // and no clear texel opens a hole, MASK cuts at alphaCutoff (0.5
             // by default), and BLEND blends over what is behind it.
             string mode = MiniJson.Text(json, "alphaMode", "OPAQUE");
+            // A painted picture's clear texels cut out only when okPaint says so.
+            if (paint != null) mode = MiniJson.Text(paint, "alpha", "opaque") == "mask" ? "MASK" : "OPAQUE";
             m.SetFloat("_Cutoff", mode == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : mode == "BLEND" ? 0.004f : 0f);
             if (mode == "OPAQUE") m.color = new Color(m.color.r, m.color.g, m.color.b, 1f);
             if (mode == "BLEND") Blended(m);
@@ -305,6 +312,178 @@ namespace OpenKingdomsUnity.Game.World
             if (tex != null) m.SetTexture("_EmissionMap", tex);
             m.EnableKeyword("_EMISSION");
             m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+        }
+
+        // ---- Painted at load ----
+        //
+        // A material with okPaint extras names the original picture it was
+        // made against instead of holding it (tools/sprite-replace/okpaint.py):
+        //   kind, name, world   the picture: "feature" is a sprite feature's
+        //                       first frame, "texture" a 3DO texture
+        //   gain, bleed         the colour lift, and clear texels filled
+        //   alpha, border       "opaque" or "mask", and the outer ring cleared
+        //   size                [w, h] the UVs were made against
+        //   tint                a multiplier, 1 when left out
+        // okFallback beside it is the colour drawn without the picture, and
+        // then the base colour factor is that colour rather than a tint.
+
+        // Where okPaint takes its pictures: the backend with the player's
+        // game files. Null, or a backend without them, draws plain colour.
+        public static IGameBackend Painter { get; private set; }
+        public static Func<string, string, string, RgbaImage> Pictures { get; private set; }
+
+        public static readonly Color Neutral = new Color(0.5f, 0.5f, 0.5f, 1f);
+
+        static readonly Dictionary<string, Texture2D> painted = new Dictionary<string, Texture2D>();
+
+        public static void SetPainter(IGameBackend backend)
+        {
+            if (backend != null && ReferenceEquals(backend, Painter)) return;
+            SetPictures(backend != null ? (Func<string, string, string, RgbaImage>)backend.PaintPicture : null);
+            Painter = backend;
+        }
+
+        // Pictures from anywhere, by kind, name and world, as the tests give them.
+        public static void SetPictures(Func<string, string, string, RgbaImage> source)
+        {
+            Painter = null;
+            Pictures = source;
+            painted.Clear();
+        }
+
+        // The pictures asked for so far, one per name and treatment.
+        public static int PaintedCount => painted.Count;
+
+        static Texture2D PaintedTexture(Dictionary<string, object> paint)
+        {
+            string kind = MiniJson.Text(paint, "kind", "feature") ?? "", name = MiniJson.Text(paint, "name", "") ?? "";
+            string world = MiniJson.Text(paint, "world", "") ?? "";
+            float gain = (float)MiniJson.Num(paint, "gain", 1);
+            bool bleed = Flag(paint, "bleed"), border = Flag(paint, "border");
+            bool opaque = MiniJson.Text(paint, "alpha", "opaque") != "mask";
+            string key = $"{kind}|{world}|{name}|{gain:R}|{bleed}|{opaque}|{border}".ToLowerInvariant();
+            if (painted.TryGetValue(key, out var t)) return t;
+            var img = Pictures?.Invoke(kind, name, world);
+            var size = MiniJson.Arr(paint, "size");
+            if (img != null && size != null && size.Count == 2 && ((int)(double)size[0] != img.Width || (int)(double)size[1] != img.Height))
+            {
+                Debug.LogWarning($"okPaint {kind} {name}: the game's picture is {img.Width}x{img.Height}, the model was made against {size[0]}x{size[1]}");
+                img = null;
+            }
+            if (img != null)
+            {
+                var px = Paint(img, gain, bleed, opaque, border);
+                t = new Texture2D(img.Width, img.Height, TextureFormat.RGBA32, true) { hideFlags = HideFlags.DontSave, name = name };
+                // Rows top-down in the picture, bottom-up in the texture.
+                var flipped = new byte[px.Length];
+                int row = img.Width * 4;
+                for (int y = 0; y < img.Height; y++) Buffer.BlockCopy(px, y * row, flipped, (img.Height - 1 - y) * row, row);
+                t.SetPixelData(flipped, 0);
+                t.Apply(true);
+                t.wrapMode = TextureWrapMode.Clamp;
+                t.filterMode = FilterMode.Trilinear;
+                t.anisoLevel = 4;
+            }
+            painted[key] = t;
+            return t;
+        }
+
+        static Color PaintColour(Dictionary<string, object> paint, Dictionary<string, object> extras, Color factor, bool havePicture)
+        {
+            var fb = MiniJson.Arr(extras, "okFallback");
+            bool haveFallback = fb != null && fb.Count >= 3;
+            float tint = (float)MiniJson.Num(paint, "tint", 1);
+            var multiply = haveFallback ? new Color(tint, tint, tint, 1f) : factor * tint;
+            multiply.a = 1f;
+            if (havePicture) return multiply;
+            return haveFallback ? new Color(F(fb[0]), F(fb[1]), F(fb[2]), 1f) : Neutral * multiply;
+        }
+
+        static bool Flag(Dictionary<string, object> o, string key) => o != null && o.TryGetValue(key, out var v) && v is bool b && b;
+
+        // The picture as carve.Sprite leaves it (tools/sprite-replace/carve.py),
+        // in the same float32 steps so the bytes match: clear texels filled
+        // from their opaque neighbours ring by ring, colour times gain, alpha
+        // 1 everywhere when opaque, the outer ring cleared for border. RGBA
+        // bytes, rows top-down, in and out.
+        public static byte[] Paint(RgbaImage img, float gain, bool bleed, bool opaque, bool border)
+        {
+            int w = img.Width, h = img.Height, n = w * h;
+            var src = img.Pixels;
+            var rgb = new float[n * 3];
+            var known = new bool[n];
+            const float inv = 1f / 255f;
+            // Indexed bottom-up as Blender keeps an image, so the fill adds
+            // its neighbours in the same order.
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int s = ((h - 1 - y) * w + x) * 4, i = y * w + x;
+                    for (int c = 0; c < 3; c++) rgb[i * 3 + c] = src[s + c] * inv;
+                    known[i] = src[s + 3] * inv > 0.5f;
+                }
+            if (bleed) Bleed(rgb, known, w, h);
+            var o = new byte[n * 4];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int d = ((h - 1 - y) * w + x) * 4, i = y * w + x;
+                    for (int c = 0; c < 3; c++) o[d + c] = ToByte(Mathf.Clamp((float)(rgb[i * 3 + c] * gain), 0f, 1f));
+                    o[d + 3] = opaque ? (byte)255 : src[d + 3];
+                    if (border && (x == 0 || y == 0 || x == w - 1 || y == h - 1)) o[d + 3] = 0;
+                }
+            return o;
+        }
+
+        // Blender's float to byte, rounding half up. Mono may keep a float
+        // sum in double, so each step is cast back to float as C rounds it.
+        static byte ToByte(float v) => v <= 0f ? (byte)0 : v > 1f - 0.5f / 255f ? (byte)255 : (byte)(float)((float)(255f * v) + 0.5f);
+
+        // carve.Sprite.bleed: each pass gives every clear texel with an opaque
+        // neighbour their mean, until none is left clear.
+        static void Bleed(float[] rgb, bool[] known, int w, int h)
+        {
+            int n = w * h, have = 0;
+            foreach (var k in known) if (k) have++;
+            if (have == 0) return;
+            // As numpy's shift(arr, dy, dx): the value at (y, x) moves to (y + dy, x + dx).
+            var dirs = new[] { (0, 1), (0, -1), (1, 0), (-1, 0) };
+            var acc = new float[n * 3];
+            var cnt = new float[n];
+            var grow = new bool[n];
+            while (have < n)
+            {
+                Array.Clear(acc, 0, acc.Length);
+                Array.Clear(cnt, 0, cnt.Length);
+                foreach (var (dy, dx) in dirs)
+                    for (int y = 0; y < h; y++)
+                    {
+                        int sy = y - dy;
+                        if (sy < 0 || sy >= h) continue;
+                        for (int x = 0; x < w; x++)
+                        {
+                            int sx = x - dx;
+                            if (sx < 0 || sx >= w) continue;
+                            int s = sy * w + sx, i = y * w + x;
+                            if (!known[s]) continue;
+                            acc[i * 3] += rgb[s * 3];
+                            acc[i * 3 + 1] += rgb[s * 3 + 1];
+                            acc[i * 3 + 2] += rgb[s * 3 + 2];
+                            cnt[i] += 1f;
+                        }
+                    }
+                int grew = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    grow[i] = !known[i] && cnt[i] > 0f;
+                    if (!grow[i]) continue;
+                    for (int c = 0; c < 3; c++) rgb[i * 3 + c] = acc[i * 3 + c] / cnt[i];
+                    grew++;
+                }
+                if (grew == 0) break;
+                for (int i = 0; i < n; i++) if (grow[i]) known[i] = true;
+                have += grew;
+            }
         }
 
         static bool DoubleSided(Ctx ctx, int material)

@@ -11,6 +11,12 @@ the object's anchor on the ground. A monarch stands 4 cells tall.
     ob = hk.finish([base, ...], "out/ARALODE.glb", {"replacesTexture": "araplainlode"})
     hk.renders(ob, "out", "ARALODE", "sprites/ARALODE.png", (27, 39))
 
+finish() exports the model as it ships, geometry only (okpaint.py): a part
+painted from the original picture names it in okPaint and loses the pixels,
+and any other texture must come from generated(), made from noise and
+numbers, or the export fails. keep_pixels=True, or OK_KEEP_PIXELS=1, keeps
+the pixels for review renders on this machine only.
+
 renders() writes <name>_classic.png, the model seen by the classic camera
 at the picture's own scale with the anchors aligned, and <name>_turned.png,
 a low three-quarter view beside a 4-cell monarch marker. Then, outside
@@ -30,6 +36,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import carve  # noqa: E402
+import okpaint  # noqa: E402
+from okpaint import generated  # noqa: E402,F401
 
 CELL = carve.CELL
 TILT = carve.TILT
@@ -130,8 +138,9 @@ def project_paint(ob, sprite_png, hotspot, footprint=(2, 2)):
     return ob
 
 
-def finish(parts, glb_path, extras=None):
-    """Joins the parts into one object anchored at the origin and exports it."""
+def finish(parts, glb_path, extras=None, keep_pixels=None):
+    """Joins the parts into one object anchored at the origin and exports it
+    as it ships (okpaint.export), or with its pictures for review."""
     bpy.ops.object.select_all(action="DESELECT")
     for p in parts:
         p.select_set(True)
@@ -146,11 +155,7 @@ def finish(parts, glb_path, extras=None):
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
     for k, v in (extras or {}).items():
         ob[k] = v
-    os.makedirs(os.path.dirname(os.path.abspath(glb_path)), exist_ok=True)
-    bpy.ops.object.select_all(action="DESELECT")
-    ob.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=glb_path, export_format="GLB", use_selection=True,
-                              export_yup=True, export_extras=True)
+    okpaint.export(ob, glb_path, keep_pixels)
     print("HANDKIT_EXPORT", glb_path, "size %.2f x %.2f x %.2f cells" % tuple(ob.dimensions))
     return ob
 

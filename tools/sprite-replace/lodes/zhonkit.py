@@ -107,6 +107,7 @@ def image(name, px, noncolor=False):
     """px is (H, W, 3) in 0..1 (sRGB for colour), row 0 at v = 0."""
     H, W = px.shape[:2]
     img = bpy.data.images.new(name, W, H, alpha=False)
+    img["okGenerated"] = True  # made here, so it ships (okpaint.py)
     if noncolor:
         img.colorspace_settings.name = "Non-Color"
     buf = np.ones((H, W, 4), dtype=np.float32)
