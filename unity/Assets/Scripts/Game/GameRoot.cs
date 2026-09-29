@@ -69,12 +69,15 @@ namespace OpenKingdomsUnity.Game
             catch (Exception e) { Debug.LogWarning("The old saves were not moved: " + e.Message); }
         }
 
+        Func<string, bool> playSound;
+
         void Awake()
         {
             MoveOldData();
             TakeOverScene();
             Backend = injected ?? StartBackend();
             Options = GameOptions.Load();
+            UiKit.Sound = playSound = wav => Backend != null && Backend.PlaySound(wav, Options.Volume);
             Setup = DefaultSetup(Backend);
             Pointer = new GameCursorView(Backend.CursorArt, Options.CursorScale);
             Flow.Changed += OnFlow;
@@ -399,6 +402,7 @@ namespace OpenKingdomsUnity.Game
         void OnDestroy()
         {
             EndGame();
+            if (UiKit.Sound == playSound) UiKit.Sound = null;
             Screens?.Dispose();
             Pointer?.Dispose();
             Backend?.Dispose();

@@ -230,7 +230,28 @@ namespace OpenKingdomsUnity.Game.UI
             return img.rectTransform;
         }
 
-        public static Button MakeButton(Transform parent, string label, Action onClick, int fontSize = 30)
+        // Plays one of the game's own interface sounds by file name, set by
+        // GameRoot to the backend. Null leaves the buttons silent.
+        public static Func<string, bool> Sound;
+
+        public static bool Play(string wav) => Sound != null && Sound(wav);
+
+        // The sound the original's .gui files give a button of this kind:
+        // ok.wav to go ahead, cancel.wav to go back, the main menu's own
+        // for skirmish and quit, and menubutton.wav for the rest.
+        public static string SoundFor(string label)
+        {
+            switch ((label ?? "").Trim().ToLowerInvariant())
+            {
+                case "ok": case "start": case "resume": case "open": case "save game": case "save as new map": return "ok.wav";
+                case "back": case "x": case "cancel": case "menu": case "quit to menu": case "return to menu": return "cancel.wav";
+                case "skirmish": return "skirmish.wav";
+                case "quit": return "previous.wav";
+                default: return "menubutton.wav";
+            }
+        }
+
+        public static Button MakeButton(Transform parent, string label, Action onClick, int fontSize = 30, string sound = null)
         {
             var img = Picture(parent, label, ButtonFace, Color.white, true);
             var b = img.gameObject.AddComponent<Button>();
@@ -244,6 +265,8 @@ namespace OpenKingdomsUnity.Game.UI
             b.colors = cb;
             var t = Label(img.transform, label, fontSize, Gold, TextAnchor.MiddleCenter, true);
             t.rectTransform.Fill(6);
+            string wav = sound ?? SoundFor(label);
+            if (!string.IsNullOrEmpty(wav)) b.onClick.AddListener(() => Play(wav));
             if (onClick != null) b.onClick.AddListener(() => onClick());
             return b;
         }
@@ -251,7 +274,7 @@ namespace OpenKingdomsUnity.Game.UI
         // A button that steps through choices: left click forward, right click back.
         public static CyclePicker Cycle(Transform parent, string[] choices, int index, Action<int> changed, int fontSize = 24)
         {
-            var b = MakeButton(parent, choices.Length > 0 ? choices[index] : "", null, fontSize);
+            var b = MakeButton(parent, choices.Length > 0 ? choices[index] : "", null, fontSize, "");
             var c = b.gameObject.AddComponent<CyclePicker>();
             c.Init(choices, index, changed, b.GetComponentInChildren<Text>());
             b.onClick.AddListener(() => c.Step(1));
@@ -437,6 +460,7 @@ namespace OpenKingdomsUnity.Game.UI
             if (choices.Length == 0) return;
             Index = (Index + by + choices.Length) % choices.Length;
             text.text = choices[Index];
+            UiKit.Play("toggle.wav");
             changed?.Invoke(Index);
         }
 

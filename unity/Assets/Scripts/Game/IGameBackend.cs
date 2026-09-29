@@ -167,8 +167,25 @@ namespace OpenKingdomsUnity.Game
         // How many of def a factory has queued or in progress, or all of
         // them for def -1.
         int QueuedCount(int factory, int def);
+        // A factory's queue as the original's build buttons work it: count
+        // more of def, or fewer for a negative count. A building still
+        // being built takes a queue and starts on it when finished.
+        bool AddToQueue(int factory, int def, int count);
+        // The original's Ctrl-click: the factory makes def over and over
+        // ("+++") until it is turned off. One def repeats at a time.
+        bool SetRepeat(int factory, int def, bool on);
+        // The def a factory repeats, or -1.
+        int RepeatOf(int factory);
         // What a unit is doing now.
         UnitOrder ReadOrder(int handle);
+        // Everything a unit will do, the current order first and each
+        // queued one after, and a factory's rally point. Returns the full
+        // count, and fills what fits.
+        int ReadOrderQueue(int handle, OrderLeg[] into);
+        // One of the game's own interface sounds, by the file name its .gui
+        // files give a widget ("menubutton.wav"), flat, at volume 0 to 1.
+        // False with no audio or no such sound.
+        bool PlaySound(string wav, float volume);
         // A unit's kills and experience rank (0 to 2), for the HUD's kill
         // count and shield. False when the backend cannot tell.
         bool UnitRecord(int handle, out int kills, out int rank);
@@ -283,6 +300,16 @@ namespace OpenKingdomsUnity.Game
         public int TargetUnit;      // handle, or -1
         public Vector3 Target;      // world point
         public int Building;        // the building a builder works on, or -1
+    }
+
+    // One step of a unit's orders, for the lines Shift shows.
+    public struct OrderLeg
+    {
+        public OrderKind Kind;
+        public Vector3 Target;      // world point
+        public int TargetUnit;      // handle, or -1
+        public int BuildDef;        // for Build, else -1
+        public int Facing;          // for Build, 0 to 3
     }
 
     [Flags]

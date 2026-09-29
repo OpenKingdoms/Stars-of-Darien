@@ -319,7 +319,7 @@ namespace OpenKingdomsUnity.Game.UI
             var mb = hit.gameObject.AddComponent<Button>();
             mb.transition = Selectable.Transition.None;
             mb.targetGraphic = hit;
-            mb.onClick.AddListener(() => root.Flow.Fire(FlowEvent.Pause));
+            mb.onClick.AddListener(() => { UiKit.Play("menubutton.wav"); root.Flow.Fire(FlowEvent.Pause); });
             Words(menu.transform, "Label", new Rect(0, 0, HudLayout.MenuButton.width, HudLayout.MenuButton.height), UiKit.UncialFont, 11, HudLayout.BodyFloor, HudArt.Minium, TextAnchor.MiddleCenter).text = "Menu";
             Hover(hit.gameObject, () => ("Menu", "F1 or Pause"), on => { if (menu) menu.texture = on ? lozLit : loz; });
             clock = Words(blk, "Clock", HudLayout.Clock, UiKit.BodyFont, 11, HudLayout.NumberFloor, HudArt.Ink, TextAnchor.MiddleRight);
@@ -666,18 +666,21 @@ namespace OpenKingdomsUnity.Game.UI
             {
                 var u = chosen[0];
                 var def = b.UnitDefs[u.Def];
+                // A frame shows nothing but how far it is built.
+                bool frame = u.BuildProgress < 1f;
                 bool own = u.Player == b.LocalPlayer;
                 ShowName(nameText, Nice(def), ref nameShown);
                 SetPortrait(u.Def);
                 SetFill(healthFill, u.MaxHealth > 0 ? (float)u.Health / u.MaxHealth : 1f);
-                bool caster = own && u.MaxMana > 0;
+                bool caster = own && !frame && u.MaxMana > 0;
                 manaTrough.gameObject.SetActive(caster);
                 if (caster) SetFill(manaFill, (float)u.Mana / u.MaxMana);
-                numbers.text = own
+                numbers.text = own && !frame
                     ? $"<color={Colour(HudArt.MiniumDeep)}>{u.Health}/{u.MaxHealth}</color>" + (caster ? $"  <color={Colour(HudArt.AzuriteDeep)}>{u.Mana}/{u.MaxMana}</color>" : "")
                     : "";
                 status.text = !own ? "" : u.BuildProgress < 1f ? $"Being built, {u.BuildProgress * 100:0}%" : OrderText(b.ReadOrder(u.Handle));
                 bool known = b.UnitRecord(u.Handle, out int k, out int rank);
+                known &= !frame;
                 kills.text = own && known && k > 0 ? k.ToString() : "";
                 shield.enabled = known;
                 if (known) shield.texture = shields[Mathf.Clamp(rank, 0, 2)];
@@ -825,9 +828,11 @@ namespace OpenKingdomsUnity.Game.UI
         {
             var b = root.Backend;
             bool mine = chosen.Count > 0 && chosen.All(u => u.Player == b.LocalPlayer);
-            actions = mine ? b.SelectionActions() : System.Array.Empty<UnitAction>();
+            // Frames take no orders, only a queue.
+            bool frames = chosen.All(u => u.BuildProgress < 1f);
+            actions = mine && !frames ? b.SelectionActions() : System.Array.Empty<UnitAction>();
             if (root.Orders != null) root.Orders.Actions = actions;
-            basicOrders = mine && actions.Length == 0 && chosen.Any(u => !b.UnitDefs[u.Def].IsBuilding);
+            basicOrders = mine && !frames && actions.Length == 0 && chosen.Any(u => !b.UnitDefs[u.Def].IsBuilding);
             if (basicOrders) actions = BasicOrders();
             var o = root.Orders;
             int armedBuild = o != null && o.Armed == CommandKind.Build ? o.ArmedDef : -1;
@@ -855,8 +860,9 @@ namespace OpenKingdomsUnity.Game.UI
             {
                 if (qb.factories == null || qb.badge == null) continue;
                 int q = 0;
-                foreach (int f in qb.factories) q += b.QueuedCount(f, qb.def);
-                string t = q > 0 ? q.ToString() : "";
+                bool repeats = false;
+                foreach (int f in qb.factories) { q += b.QueuedCount(f, qb.def); repeats |= b.RepeatOf(f) == qb.def; }
+                string t = BadgeText(q, repeats);
                 if (qb.badge.text != t) qb.badge.text = t;
             }
         }
@@ -964,6 +970,7 @@ namespace OpenKingdomsUnity.Game.UI
         // rest wait for a click or a drag in the world.
         void Pressed(UnitAction a)
         {
+            UiKit.Play(OrderSound(a));
             var orders = root.Orders;
             nextPanel = 0f;
             if (basicOrders)
@@ -1033,14 +1040,53 @@ namespace OpenKingdomsUnity.Game.UI
             Hover(rt.gameObject, () => (Nice(od), od.ManaCost + " mana"), on => { foreach (var bz in bezel) if (bz) bz.color = on ? HudArt.GoldHi : HudArt.Gold; });
             if (factories != null)
             {
-                btn.onClick.AddListener(() => Enqueue(factories, id, CommandKind.FactoryEnqueue, Shift ? 5 : 1));
-                rt.gameObject.AddComponent<RightClick>().Clicked = () => Enqueue(factories, id, CommandKind.FactoryDequeue, 1);
+                btn.onClick.AddListener(() => BuildClicked(factories, id, false));
+                rt.gameObject.AddComponent<RightClick>().Clicked = () => BuildClicked(factories, id, true);
             }
-            else btn.onClick.AddListener(() => { root.Orders?.Arm(CommandKind.Build, id); nextPanel = 0f; });
+            else btn.onClick.AddListener(() => { UiKit.Play("menubutton.wav"); root.Orders?.Arm(CommandKind.Build, id); nextPanel = 0f; });
             queueBadges.Add((badge, id, factories));
         }
 
-        static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        // Shift and Ctrl as a build click sees them, which tests replace.
+        public static System.Func<bool> ShiftKey = () => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+        public static System.Func<bool> CtrlKey = () => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+
+        // The count on a factory's build card, or the original's +++ for
+        // one it makes over and over.
+        public static string BadgeText(int queued, bool repeats) => repeats ? "+++" : queued > 0 ? queued.ToString() : "";
+
+        // The original's build card: a left click queues one, five with
+        // Shift, and Ctrl makes the factory repeat it. A right click takes
+        // one off, five with Shift, or stops a repeat.
+        void BuildClicked(List<int> factories, int def, bool right)
+        {
+            var b = root.Backend;
+            bool repeating = factories.Any(f => b.RepeatOf(f) == def);
+            int n = ShiftKey() ? 5 : 1;
+            if (!right && CtrlKey())
+                foreach (int f in factories) b.SetRepeat(f, def, !repeating);
+            else if (right && repeating)
+                foreach (int f in factories) b.SetRepeat(f, def, false);
+            else
+                foreach (int f in factories) b.AddToQueue(f, def, right ? -n : n);
+            if (!UiKit.Play(right ? "subbuild" : "addbuild")) UiKit.Play("menubutton.wav");
+            nextPanel = 0f;
+        }
+
+        // The sound the original's .gui gives each order button.
+        static string OrderSound(UnitAction a)
+        {
+            if (a.Kind != ActionKind.Order) return "menubutton.wav";
+            switch (a.Command)
+            {
+                case CommandKind.Move: return "move.wav";
+                case CommandKind.Attack: return "attack.wav";
+                case CommandKind.Stop: return "stop.wav";
+                case CommandKind.Patrol: return "patrol.wav";
+                case CommandKind.Guard: return "guard.wav";
+                default: return "menubutton.wav";
+            }
+        }
 
         // Only past what the original could ever show on one screen.
         void PageTurner(Rect cell, int pages)
@@ -1051,16 +1097,9 @@ namespace OpenKingdomsUnity.Game.UI
             face.color = HudArt.Vellum;
             var btn = rt.gameObject.AddComponent<Button>();
             btn.targetGraphic = face;
-            btn.onClick.AddListener(() => { buildPage = (buildPage + 1) % pages; nextPanel = 0f; });
+            btn.onClick.AddListener(() => { UiKit.Play("menubutton.wav"); buildPage = (buildPage + 1) % pages; nextPanel = 0f; });
             Ring(rt, "Keyline", new Rect(0, 0, cell.width, cell.height), 1.5f, HudArt.Gold);
             Words(rt, "Label", new Rect(0, 0, cell.width, cell.height), UiKit.UncialFont, 12, HudLayout.BodyFloor, HudArt.Minium, TextAnchor.MiddleCenter).text = $"{buildPage + 1} of {pages}";
-        }
-
-        void Enqueue(List<int> factories, int def, CommandKind kind, int times)
-        {
-            for (int n = 0; n < times; n++)
-                foreach (int f in factories)
-                    root.Backend.Command(new GameCommand { Kind = kind, Unit = f, TargetUnit = -1, BuildDef = def });
         }
 
         public void Dispose()

@@ -19,7 +19,7 @@ namespace OpenKingdomsUnity.Game
             public int Accepted;
         }
 
-        struct Leg
+        internal struct Leg
         {
             public Vector2 To;
             public float? Heading;
@@ -28,7 +28,6 @@ namespace OpenKingdomsUnity.Game
 
         readonly Dictionary<int, float> paceCap = new Dictionary<int, float>();
         readonly Dictionary<int, float> holdHeading = new Dictionary<int, float>();
-        readonly Dictionary<int, Queue<Leg>> legs = new Dictionary<int, Queue<Leg>>();
 
         // Every MoveFormation this game and the last one, for tests.
         public readonly List<FormationCall> FormationCalls = new List<FormationCall>();
@@ -61,10 +60,9 @@ namespace OpenKingdomsUnity.Game
             foreach (var (u, to) in taken)
             {
                 var leg = new Leg { To = to, Heading = heading, Pace = groupSpeed ? pace : 0f };
-                if (queue && (u.Goal != null || legs.TryGetValue(u.Handle, out var q) && q.Count > 0))
+                if (queue && (u.Goal != null || Busy(u)))
                 {
-                    if (!legs.TryGetValue(u.Handle, out var list)) legs[u.Handle] = list = new Queue<Leg>();
-                    list.Enqueue(leg);
+                    Enqueue(u.Handle, new Pending { Leg = leg, IsLeg = true });
                     continue;
                 }
                 LetGo(u.Handle);
@@ -79,6 +77,9 @@ namespace OpenKingdomsUnity.Game
         {
             u.Goal = leg.To;
             u.Home = leg.To;
+            u.Target = -1;
+            u.Ordered = true;
+            u.OrderKind = OrderKind.Move;
             if (leg.Pace > 0) paceCap[u.Handle] = leg.Pace; else paceCap.Remove(u.Handle);
             if (leg.Heading is float h) holdHeading[u.Handle] = h; else holdHeading.Remove(u.Handle);
         }
@@ -87,7 +88,7 @@ namespace OpenKingdomsUnity.Game
         {
             paceCap.Clear();
             holdHeading.Clear();
-            legs.Clear();
+            pending.Clear();
             FormationCalls.Clear();
             LastFormation = null;
         }
@@ -97,7 +98,7 @@ namespace OpenKingdomsUnity.Game
         {
             paceCap.Remove(handle);
             holdHeading.Remove(handle);
-            legs.Remove(handle);
+            pending.Remove(handle);
         }
 
         float PacedSpeed(Unit u, float speed) => paceCap.TryGetValue(u.Handle, out float cap) ? Mathf.Min(speed, cap) : speed;
@@ -108,7 +109,8 @@ namespace OpenKingdomsUnity.Game
         void Arrived(Unit u)
         {
             paceCap.Remove(u.Handle);
-            if (legs.TryGetValue(u.Handle, out var q) && q.Count > 0) Begin(u, q.Dequeue());
+            u.Ordered = false;
+            Next(u);
         }
 
         // Idle, a unit turns to its formation's heading and keeps it.
@@ -119,7 +121,7 @@ namespace OpenKingdomsUnity.Game
         }
 
         // Queued points still to go, for tests.
-        public int QueuedLegs(int handle) => legs.TryGetValue(handle, out var q) ? q.Count : 0;
+        public int QueuedLegs(int handle) => pending.TryGetValue(handle, out var q) ? q.Count : 0;
         public float? PaceOf(int handle) => paceCap.TryGetValue(handle, out float p) ? p : (float?)null;
     }
 }

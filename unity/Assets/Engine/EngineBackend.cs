@@ -879,6 +879,33 @@ namespace OpenKingdomsUnity.Engine
 
         public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
 
+        // One enqueue or dequeue at a time, until okx takes a count.
+        public bool AddToQueue(int factory, int def, int count)
+        {
+            var kind = count > 0 ? CommandKind.FactoryEnqueue : CommandKind.FactoryDequeue;
+            bool any = false;
+            for (int i = 0; i < Math.Abs(count); i++)
+                any |= Command(new GameCommand { Kind = kind, Unit = factory, TargetUnit = -1, BuildDef = def });
+            return any;
+        }
+
+        // okx cannot repeat a def yet.
+        public bool SetRepeat(int factory, int def, bool on) => false;
+        public int RepeatOf(int factory) => -1;
+
+        // The order in hand only, until okx reads the queue.
+        public int ReadOrderQueue(int handle, OrderLeg[] into)
+        {
+            var o = ReadOrder(handle);
+            if (o.Kind == OrderKind.None) return 0;
+            if (into != null && into.Length > 0)
+                into[0] = new OrderLeg { Kind = o.Kind, Target = o.Target, TargetUnit = o.TargetUnit, BuildDef = -1 };
+            return 1;
+        }
+
+        // okx plays no interface sound yet.
+        public bool PlaySound(string wav, float volume) => false;
+
         // The engine keeps kills and experience but does not hand them out yet.
         public bool UnitRecord(int handle, out int kills, out int rank)
         {

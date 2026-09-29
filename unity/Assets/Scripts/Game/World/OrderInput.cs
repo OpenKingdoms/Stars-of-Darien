@@ -52,8 +52,8 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         public HashSet<int> Selected => world.Entities.Selected;
-        static bool Shift => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-        static bool Ctrl => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+        // Shift and Ctrl as this frame's pointer read them, a test's frame included.
+        bool Shift, Ctrl;
 
         // The facing a building is placed at, 0 to 3 clockwise, remembered
         // per building type for the next placement.
@@ -154,6 +154,11 @@ namespace OpenKingdomsUnity.Game.World
             if (Classic) PullSelection();
             // The mouse and keys this frame, or a test's frame in their place.
             var p = Formation.Frame(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject());
+            Shift = p.Shift;
+            Ctrl = p.Ctrl;
+            // Shift shows where the selection's orders take it, as in BAR.
+            world.Entities.ShowOrders = Shift;
+            DropStaleArming();
             bool overUi = p.OverUi;
             var m = (Vector3)p.Screen;
             var units = world.Entities.Units;
@@ -207,6 +212,44 @@ namespace OpenKingdomsUnity.Game.World
                 return;
             }
             LeftClick(cam, m, onGround, at);
+        }
+
+        // A command armed for units no longer selected lets go, so it
+        // cannot eat the next click.
+        void DropStaleArming()
+        {
+            if (ArmedAction != null && System.Array.FindIndex(Actions, a => a.Id == ArmedAction.Id) < 0) ArmedAction = null;
+            if (Armed == CommandKind.Build ? !SelectionBuilds(ArmedDef) : Armed != null && Selected.Count == 0) Disarm();
+        }
+
+        bool SelectionBuilds(int def)
+        {
+            var units = world.Entities.Units;
+            var defs = backend.UnitDefs;
+            for (int i = 0; i < world.Entities.UnitCount; i++)
+            {
+                var u = units[i];
+                if (!Selected.Contains(u.Handle) || u.Def < 0 || u.Def >= defs.Count || u.BuildProgress < 1f) continue;
+                if (System.Array.IndexOf(defs[u.Def].BuildOptions, def) >= 0) return true;
+            }
+            return false;
+        }
+
+        // Whether a click on open ground sends the selection somewhere: it
+        // holds a finished unit of the player's that walks, or a factory,
+        // whose units then rally there.
+        public bool SelectionWalks()
+        {
+            var units = world.Entities.Units;
+            var defs = backend.UnitDefs;
+            int me = backend.LocalPlayer;
+            for (int i = 0; i < world.Entities.UnitCount; i++)
+            {
+                var u = units[i];
+                if (u.Player != me || u.BuildProgress < 1f || !Selected.Contains(u.Handle) || u.Def < 0 || u.Def >= defs.Count) continue;
+                if (!defs[u.Def].IsBuilding || defs[u.Def].BuildOptions.Length > 0) return true;
+            }
+            return false;
         }
 
         // The right button's press when it is no drag: the classic scheme
@@ -299,7 +342,11 @@ namespace OpenKingdomsUnity.Game.World
             if (Armed == CommandKind.Build && !GhostOk) return GameCursor.Cannot;
             if (ArmedAction != null) return GameCursors.For(ArmedAction.Command);
             if (!Classic && Armed != null) return GameCursors.For(Armed.Value);
-            return backend.CursorAt(PointerAt, PointerUnit, out _);
+            var c = backend.CursorAt(PointerAt, PointerUnit, out _);
+            // The original shows the move pointer, not the arrow, wherever a
+            // click sends the selection: open ground, and whatever stands
+            // there that the selection cannot act on.
+            return c == GameCursor.Normal && SelectionWalks() ? GameCursor.Move : c;
         }
 
         void Keys()
@@ -434,6 +481,8 @@ namespace OpenKingdomsUnity.Game.World
             float bestDepth = float.MaxValue;
             int me = backend.LocalPlayer;
             var drawn = world.Entities.DrawnSize;
+            var defs = backend.UnitDefs;
+            var ray = cam.ScreenPointToRay(m);
             for (int i = 0; i < count; i++)
             {
                 if ((units[i].Flags & UnitFlags.Dying) != 0) continue;
@@ -442,10 +491,24 @@ namespace OpenKingdomsUnity.Game.World
                 var feet = units[i].Position + Vector3.up * world.Entities.VisualLift(units[i].Handle);
                 if (!OnScreen(cam, feet, size.x, size.y, out var box, out float depth)) continue;
                 if (!box.Contains(m) || depth >= bestDepth) continue;
+                // A building is hit only over its own footprint, so the
+                // ground beside it stays ground, a factory's rally point
+                // included.
+                var def = units[i].Def >= 0 && units[i].Def < defs.Count ? defs[units[i].Def] : null;
+                if (def != null && def.IsBuilding && !FootprintHit(ray, feet, def.Footprint, units[i].Facing, size.x)) continue;
                 bestDepth = depth;
                 best = units[i].Handle;
             }
             return best;
+        }
+
+        // Whether a ray passes through the box a building stands in: its
+        // footprint, odd facings turned, from its foot to its height.
+        public static bool FootprintHit(Ray ray, Vector3 feet, Vector2Int footprint, int facing, float height)
+        {
+            var size = (facing & 1) == 1 ? new Vector2(footprint.y, footprint.x) : new Vector2(footprint.x, footprint.y);
+            var b = new Bounds(feet + Vector3.up * (height * 0.5f), new Vector3(Mathf.Max(1f, size.x), Mathf.Max(0.5f, height), Mathf.Max(1f, size.y)));
+            return b.IntersectRay(ray);
         }
 
         // A unit's bounds on screen, from its feet to its height and out to

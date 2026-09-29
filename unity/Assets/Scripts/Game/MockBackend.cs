@@ -111,6 +111,14 @@ namespace OpenKingdomsUnity.Game
             public Vector3? BuildAt;
             public float Alt, Speed, FlyTime;
             public bool Flying;
+            // Set by an order, so Shift's next one waits behind it.
+            public bool Ordered;
+            public OrderKind OrderKind = OrderKind.Move;
+            // A factory's units still to make after BuildDef, the def it
+            // repeats (-1 for none) and where its units go.
+            public readonly List<int> Line = new List<int>();
+            public int Repeat = -1;
+            public Vector2? Rally;
         }
 
         sealed class Feature
@@ -437,6 +445,7 @@ namespace OpenKingdomsUnity.Game
             bool ranged = RoleOf(u.Def) == Role.Archer || RoleOf(u.Def) == Role.Mage;
             float range = ranged ? 8f : 1.4f;
             if (u.Target >= 0 && (!byHandle.TryGetValue(u.Target, out var tgt) || tgt.Dying)) u.Target = -1;
+            Next(u);
             // Passive units never pick a fight, defensive ones only close by.
             var stance = StanceOf(u.Handle);
             var role = RoleOf(u.Def);
@@ -536,8 +545,10 @@ namespace OpenKingdomsUnity.Game
                 made = Spawn(u.BuildDef, u.Player, new Vector2(u.Pos.x + h.x, u.Pos.z + h.z));
             }
             made.Home = u.Home;
+            if (u.Rally is Vector2 rally) { made.Goal = rally; made.Home = rally; made.Ordered = true; }
             u.BuildDef = -1;
             u.BuildAt = null;
+            if (unitDefs[u.Def].IsBuilding) StartNext(u);
         }
 
         void Face(Unit u, Vector2 dir, float dt)
@@ -903,36 +914,69 @@ namespace OpenKingdomsUnity.Game
 
         // ---- Orders and economy ----
 
+        // Shift's Queue waits behind what the unit is doing, anything else
+        // replaces it. A factory keeps its own queue and rally point.
         public bool Command(in GameCommand c)
         {
             if (Status != GameStatus.Running || !byHandle.TryGetValue(c.Unit, out var u) || u.Dying) return false;
-            var def = unitDefs[u.Def];
+            if (unitDefs[u.Def].IsBuilding) return FactoryCommand(u, c);
+            if (u.Built < 1f) return false;
+            if (c.Queue && c.Kind != CommandKind.Stop && Busy(u))
+            {
+                if (!CanTake(u, c)) return false;
+                Enqueue(u.Handle, new Pending { Command = c });
+                return true;
+            }
             LetGo(c.Unit);
+            return Apply(u, c);
+        }
+
+        bool CanTake(Unit u, in GameCommand c)
+        {
+            var def = unitDefs[u.Def];
+            switch (c.Kind)
+            {
+                case CommandKind.Move: case CommandKind.Patrol: return true;
+                case CommandKind.Attack: return byHandle.ContainsKey(c.TargetUnit);
+                case CommandKind.Build: case CommandKind.FactoryEnqueue:
+                    return Array.IndexOf(def.BuildOptions, c.BuildDef) >= 0
+                        && (c.Kind != CommandKind.Build || !unitDefs[c.BuildDef].IsBuilding || CanBuildAt(c.BuildDef, c.Target, c.Facing, out _));
+                default: return false;
+            }
+        }
+
+        // Carries an order out now, for a unit that is not a building.
+        bool Apply(Unit u, in GameCommand c)
+        {
+            var def = unitDefs[u.Def];
             switch (c.Kind)
             {
                 case CommandKind.Move:
                 case CommandKind.Patrol:
-                    if (def.IsBuilding) return false;
                     u.Goal = new Vector2(c.Target.x, c.Target.z);
                     u.Home = u.Goal.Value;
                     u.Target = -1;
+                    u.Ordered = true;
+                    u.OrderKind = c.Kind == CommandKind.Patrol ? OrderKind.Patrol : OrderKind.Move;
                     return true;
                 case CommandKind.Attack:
-                    if (def.IsBuilding || !byHandle.ContainsKey(c.TargetUnit)) return false;
+                    if (!byHandle.ContainsKey(c.TargetUnit)) return false;
                     u.Target = c.TargetUnit;
                     u.Goal = null;
+                    u.Ordered = true;
                     return true;
                 case CommandKind.Stop:
                     u.Goal = null;
                     u.Target = -1;
                     u.BuildDef = -1;
+                    u.Ordered = false;
                     u.Home = new Vector2(u.Pos.x, u.Pos.z);
                     return true;
                 case CommandKind.Build:
                 case CommandKind.FactoryEnqueue:
                     // One thing at a time: a new order replaces the last.
                     if (Array.IndexOf(def.BuildOptions, c.BuildDef) < 0) return false;
-                    if (c.Kind == CommandKind.Build && unitDefs[c.BuildDef].IsBuilding && !def.IsBuilding)
+                    if (c.Kind == CommandKind.Build && unitDefs[c.BuildDef].IsBuilding)
                     {
                         if (!CanBuildAt(c.BuildDef, c.Target, c.Facing, out var site)) return false;
                         u.BuildAt = site;
@@ -985,7 +1029,7 @@ namespace OpenKingdomsUnity.Game
             if (!add) mockSelection.Clear();
             if (handles == null) return;
             foreach (int h in handles)
-                if (byHandle.TryGetValue(h, out var u) && !u.Dying && u.Player == 0 && !mockSelection.Contains(h))
+                if (byHandle.TryGetValue(h, out var u) && !u.Dying && u.Player == 0 && Selectable(u) && !mockSelection.Contains(h))
                     mockSelection.Add(h);
         }
 
@@ -998,7 +1042,9 @@ namespace OpenKingdomsUnity.Game
 
         public void Click(Vector3 at, int unit, bool shift)
         {
-            bool friend = unit >= 0 && byHandle.TryGetValue(unit, out var hit) && hit.Player == 0;
+            byHandle.TryGetValue(unit, out var hit);
+            bool friend = hit != null && hit.Player == 0;
+            if (friend && !Selectable(hit) && !mockIsArmed) return;
             if (mockIsArmed)
             {
                 mockIsArmed = false;
@@ -1015,8 +1061,11 @@ namespace OpenKingdomsUnity.Game
             }
             foreach (int h in mockSelection.ToArray())
             {
-                if (unit >= 0) Command(new GameCommand { Kind = CommandKind.Attack, Unit = h, TargetUnit = unit, BuildDef = -1 });
-                else Command(GameCommand.To(CommandKind.Move, h, at));
+                var c = unit >= 0
+                    ? new GameCommand { Kind = CommandKind.Attack, Unit = h, TargetUnit = unit, BuildDef = -1 }
+                    : GameCommand.To(CommandKind.Move, h, at);
+                c.Queue = shift;
+                Command(c);
             }
         }
 
@@ -1161,12 +1210,6 @@ namespace OpenKingdomsUnity.Game
                 else if (u.Alt <= 0f && rect.Contains(new Vector2Int(Mathf.FloorToInt(u.Pos.x), Mathf.FloorToInt(-u.Pos.z)))) return false;
             }
             return true;
-        }
-
-        public int QueuedCount(int factory, int def)
-        {
-            if (!byHandle.TryGetValue(factory, out var u) || u.BuildDef < 0) return 0;
-            return def < 0 || u.BuildDef == def ? 1 : 0;
         }
 
         public UnitOrder ReadOrder(int handle)

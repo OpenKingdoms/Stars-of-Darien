@@ -119,37 +119,54 @@ namespace OpenKingdomsUnity.Game.World
         Mesh flat;
         Material ghostGood, ghostBad, barMana;
 
-        // Lines from selected units to where their orders take them.
+        // While Shift is held, as in BAR: a line from each selected unit
+        // through every order it has queued, a marker at each, and a
+        // factory's line to its rally point.
+        public bool ShowOrders;
+        // The legs drawn last frame, for tests.
+        public int OrderLegsDrawn { get; private set; }
         Material lineMove, lineAttack, lineBuild, linePatrol;
         readonly Dictionary<int, Vector3> positions = new Dictionary<int, Vector3>();
+        readonly OrderLeg[] legs = new OrderLeg[64];
+
+        Material LineFor(OrderKind kind)
+        {
+            switch (kind)
+            {
+                case OrderKind.Attack: case OrderKind.AttackGround: return lineAttack;
+                case OrderKind.Build: case OrderKind.Repair: case OrderKind.Reclaim: case OrderKind.Resurrect: return lineBuild;
+                case OrderKind.Patrol: case OrderKind.Guard: return linePatrol;
+                case OrderKind.None: return null;
+                default: return lineMove;
+            }
+        }
 
         void AddOrderLines()
         {
-            if (Selected.Count == 0 || Selected.Count > 60) return;
+            OrderLegsDrawn = 0;
+            if (!ShowOrders || Selected.Count == 0 || Selected.Count > 60) return;
             positions.Clear();
             for (int i = 0; i < UnitCount; i++) positions[Units[i].Handle] = Units[i].Position + Vector3.up * VisualLift(Units[i].Handle);
             foreach (int h in Selected)
             {
                 if (!positions.TryGetValue(h, out var from)) continue;
-                var o = backend.ReadOrder(h);
-                Material mat;
-                switch (o.Kind)
+                int n = Mathf.Min(backend.ReadOrderQueue(h, legs), legs.Length);
+                for (int k = 0; k < n; k++)
                 {
-                    case OrderKind.Move: mat = lineMove; break;
-                    case OrderKind.Attack: case OrderKind.AttackGround: mat = lineAttack; break;
-                    case OrderKind.Build: case OrderKind.Repair: mat = lineBuild; break;
-                    case OrderKind.Patrol: case OrderKind.Guard: mat = linePatrol; break;
-                    default: continue;
+                    var mat = LineFor(legs[k].Kind);
+                    if (mat == null) continue;
+                    var to = legs[k].TargetUnit >= 0 && positions.TryGetValue(legs[k].TargetUnit, out var tp) ? tp : legs[k].Target;
+                    var d = to - from;
+                    d.y = 0;
+                    if (d.magnitude >= 0.5f)
+                    {
+                        var mid = (from + to) * 0.5f + Vector3.up * 0.08f;
+                        overlay.Add(flat, 0, mat, Matrix4x4.TRS(mid, Quaternion.LookRotation(d.normalized), new Vector3(0.08f, 1, d.magnitude)));
+                    }
+                    overlay.Add(ring, 0, mat, Matrix4x4.TRS(to + Vector3.up * 0.08f, Quaternion.identity, new Vector3(0.35f, 1, 0.35f)));
+                    OrderLegsDrawn++;
+                    from = to;
                 }
-                Vector3 to = o.Target;
-                if (o.TargetUnit >= 0 && positions.TryGetValue(o.TargetUnit, out var tp)) to = tp;
-                else if (o.Building >= 0 && positions.TryGetValue(o.Building, out var bp)) to = bp;
-                var d = to - from;
-                d.y = 0;
-                if (d.magnitude < 0.5f) continue;
-                var mid = (from + to) * 0.5f + Vector3.up * 0.08f;
-                overlay.Add(flat, 0, mat, Matrix4x4.TRS(mid, Quaternion.LookRotation(d.normalized), new Vector3(0.08f, 1, d.magnitude)));
-                overlay.Add(ring, 0, mat, Matrix4x4.TRS(to + Vector3.up * 0.08f, Quaternion.identity, new Vector3(0.35f, 1, 0.35f)));
             }
         }
 
@@ -294,6 +311,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             this.backend = backend;
             this.models = models;
+            groundAt = (x, z) => backend.Terrain != null ? backend.Terrain.Sample(x, z) : backend.GroundHeight(x, z);
             quad = Keep(Quad(0.5f));
             // Cards light like the ground under them, not like a wall facing the camera.
             quad.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
@@ -317,6 +335,30 @@ namespace OpenKingdomsUnity.Game.World
 
         T Keep<T>(T o) where T : Object { owned.Add(o); return o; }
 
+        // Every selected unit's ring this frame, as one mesh over the ground.
+        readonly List<Vector3> ringVerts = new List<Vector3>();
+        readonly List<int> ringTris = new List<int>();
+        Mesh rings;
+        System.Func<float, float, float> groundAt;
+        public Mesh Rings => rings;
+        public float WatchedRingRadius { get; private set; }
+
+        void AddRings()
+        {
+            if (rings == null)
+            {
+                rings = Keep(new Mesh { name = "selection rings", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 });
+                rings.MarkDynamic();
+            }
+            rings.Clear();
+            if (ringVerts.Count == 0) return;
+            rings.SetVertices(ringVerts);
+            rings.SetTriangles(ringTris, 0);
+            rings.RecalculateNormals();
+            rings.RecalculateBounds();
+            overlay.Add(rings, 0, ringMat, Matrix4x4.identity);
+        }
+
         public void Render(Camera cam)
         {
             solid.Clear();
@@ -333,6 +375,8 @@ namespace OpenKingdomsUnity.Game.World
             if (haveFrustum) GeometryUtility.CalculateFrustumPlanes(cam, frustum);
 
             UnitCount = backend.ReadUnits(Units);
+            ringVerts.Clear();
+            ringTris.Clear();
             DrawnSize.Clear();
             Hulls.Clear();
             CardTurns.Clear();
@@ -354,6 +398,7 @@ namespace OpenKingdomsUnity.Game.World
 
             AddFeatures(cam);
 
+            AddRings();
             AddGhost();
             AddOrderLines();
             AddBrush();
@@ -582,7 +627,13 @@ namespace OpenKingdomsUnity.Game.World
             if (kind != FloatKind.None && sea > 0) ground.y = Mathf.Max(ground.y, sea + 0.08f);
             if (u.Handle == Watch) WatchedRing = ground;
             if (selected)
-                overlay.Add(ring, 0, ringMat, Matrix4x4.TRS(ground, Quaternion.identity, new Vector3(radius, 1, radius)));
+            {
+                float r = SelectionRing.Radius(def, radius);
+                if (u.Handle == Watch) WatchedRingRadius = r;
+                // A flyer's ring stays under it in the air, anything else's lies on the ground or the water.
+                if (air > 0f) SelectionRing.Add(ground, r, null, ground.y, ringVerts, ringTris);
+                else SelectionRing.Add(u.Position, r, groundAt, kind != FloatKind.None && sea > 0 ? sea + 0.08f : float.MinValue, ringVerts, ringTris);
+            }
             if (selected || u.Health < u.MaxHealth)
             {
                 float f = u.MaxHealth > 0 ? Mathf.Clamp01((float)u.Health / u.MaxHealth) : 1f;
