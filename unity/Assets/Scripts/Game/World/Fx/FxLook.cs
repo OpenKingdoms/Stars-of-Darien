@@ -108,28 +108,35 @@ namespace OpenKingdomsUnity.Game.World
 
         // ── Light ─────────────────────────────────────────────────────
 
+        // The strongest and widest any light gets, merged or not: a glow on
+        // the ground well under the sun's 1.
+        public const float MaxLightIntensity = 0.5f, MaxLightRange = 6f;
+
         // Reach in world units and brightness of a light of each size.
         public static void LightSize(FxLight size, out float range, out float intensity)
         {
             switch (size)
             {
-                case FxLight.Small: range = 5f; intensity = 2.5f; break;
-                case FxLight.Medium: range = 7.5f; intensity = 3.5f; break;
-                case FxLight.Large: range = 10f; intensity = 5f; break;
+                case FxLight.Small: range = 3.5f; intensity = 0.3f; break;
+                case FxLight.Medium: range = 4.5f; intensity = 0.4f; break;
+                case FxLight.Large: range = MaxLightRange; intensity = MaxLightIntensity; break;
                 default: range = 0f; intensity = 0f; break;
             }
         }
 
-        // The light an added picture casts when the backend does not say:
-        // by how big and how bright the art is. A shot glows a little, a
-        // blast more, dim or small art not at all.
-        public static FxLight AutoLight(bool additive, bool shot, float heightUnits, float brightness)
+        // The original lights the ground only round a weapon whose lightmap
+        // is small, medium or large (legacy:250406-250424). A build's
+        // sparkle, a nimbus and anything else the backend does not tie to
+        // such a weapon light nothing.
+        public static FxLight LightOf(FxLight reported) => reported == FxLight.Auto ? FxLight.None : reported;
+
+        // A light takes the effect's own colour, deepened so pale art
+        // never throws white. Colourless art glows a warm white.
+        public static Color LightTint(Color c)
         {
-            if (!additive || brightness < 0.12f) return FxLight.None;
-            if (shot) return heightUnits >= 1.5f || brightness > 0.3f ? FxLight.Small : FxLight.None;
-            if (heightUnits >= 5.5f) return FxLight.Large;
-            if (heightUnits >= 3f) return FxLight.Medium;
-            return heightUnits >= 1.6f ? FxLight.Small : FxLight.None;
+            Color.RGBToHSV(c, out float h, out float s, out _);
+            if (s < 0.05f) return Color.HSVToRGB(0.08f, 0.3f, 1f);
+            return Color.HSVToRGB(h, Mathf.Lerp(s, 1f, 0.35f), 1f);
         }
 
         // The rise and fall of an impact's light over its life, 0 to 1.

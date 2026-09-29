@@ -115,6 +115,10 @@ namespace OpenKingdomsUnity.Game
             Add("flat", 32, 32, 1, true, (x, y, t) => new Color(0.30f, 0.12f, 0.02f, 1f), 0.5f, 1f);
             Add("flatbright", 32, 32, 1, true, (x, y, t) => new Color(0.60f, 0.55f, 0.10f, 1f), 0.5f, 1f);
             Add("nimbus_zhon", 52, 47, 11, true, (x, y, t) => Nimbus(x, y, t, green), 0.5f, 0.6f, 3);
+            // A builder's sparkle over its work, as each kingdom's <side>build.
+            var red = new[] { new Color(0.35f, 0.02f, 0.02f), new Color(0.85f, 0.1f, 0.08f), new Color(1f, 0.45f, 0.35f), new Color(1f, 0.85f, 0.8f) };
+            foreach (var side in new[] { "aramon", "taros", "veruna", "zhon", "creon" })
+                Add(side + "build", 40, 40, 12, true, (x, y, t) => Sparks(x, y, t, red), 0.5f, 0.8f);
         }
 
         // ── Painting ──────────────────────────────────────────────────

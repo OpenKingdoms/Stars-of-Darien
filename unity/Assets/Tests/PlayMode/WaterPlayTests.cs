@@ -2,9 +2,9 @@
 // their hull's waterline, a lake inside a high border shows as water in
 // either pipeline, fogged water is dimmed water, shallows are lighter than
 // the deep, a lace of foam lines the shore, a moving ship leaves a wake,
-// the open sea shows no stripes or tiling, a frame throws nothing away per
-// unit, a dry map after a sea map copies no scene for a sea, and what the
-// sea costs.
+// the open sea shows no stripes or tiling, the sea runs on past a sea
+// edge into the haze, a frame throws nothing away per unit, a dry map
+// after a sea map copies no scene for a sea, and what the sea costs.
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -342,6 +342,49 @@ namespace OpenKingdomsUnity.Tests
             Debug.Log($"Shallows {ls:F1}, deep {ld:F1}, shallow colour {Mean(shot, shallow)}, deep colour {Mean(shot, deep)}");
             Assert.Greater(ls, ld * 1.25f, "the shallows, over the sand, are lighter than the deep");
         }
+
+        // Past a sea edge the sea runs on, its own colour easing into the
+        // haze rather than a grey sheet. Past a land edge the ring keeps
+        // its haze.
+        [UnityTest]
+        public IEnumerator PastASeaEdgeTheSeaRunsOnIntoTheHaze()
+        {
+            yield return Begin("mock_bay", true, false);
+            FogView.Disabled = true;
+            root.World.Fog.Update(true);
+            float sea = mock.Terrain.SeaLevel;
+            Assert.Less(mock.GroundHeight(66, -0.5f), sea - 1f, "the north edge is sea over the bay");
+            Assert.Greater(mock.GroundHeight(14, -0.5f), sea, "and land to the west");
+            yield return Look(new Vector3(40, sea, -6), 70f, 45f);
+            var rt = RenderTexture.GetTemporary(960, 540, 24);
+            var inside = OnScreen(rt, SeaPoints(60, 72, -10, -4, 1.5f, 9f));
+            var past = OnScreen(rt, Grid(60, 72, 16, 28, sea));
+            var land = OnScreen(rt, Grid(8, 20, 16, 28, sea));
+            var shot = Shot(Cam, rt);
+            RenderTexture.ReleaseTemporary(rt);
+            Save(shot, "water-test-sea-edge.png");
+            Assert.Greater(inside.Count, 30);
+            Assert.Greater(past.Count, 30);
+            Assert.Greater(land.Count, 30);
+            Color water = Mean(shot, inside), far = Mean(shot, past), shelf = Mean(shot, land);
+            float sw = Saturation(water), sf = Saturation(far), sl = Saturation(shelf);
+            Debug.Log($"Sea edge: water {water} sat {sw:F2}, past the sea edge {far} sat {sf:F2}, past the land edge {shelf} sat {sl:F2}");
+            Assert.Greater(sf, sw * 0.5f, "past the sea edge it is still the sea's colour, not grey");
+            Assert.Greater(far.b, far.r * 1.15f, "and still blue");
+            Assert.Less(sf, sw + 0.02f, "tinted toward the haze, never more coloured than the sea");
+            Assert.Less(sl, sf - 0.15f, "past a land edge the haze stays");
+        }
+
+        static List<Vector3> Grid(float x0, float x1, float z0, float z1, float y, float step = 0.5f)
+        {
+            var list = new List<Vector3>();
+            for (float x = x0; x <= x1; x += step)
+                for (float z = z0; z <= z1; z += step)
+                    list.Add(new Vector3(x, y, z));
+            return list;
+        }
+
+        static float Saturation(Color c) => Saturation((Color32)new Color(c.r / 255f, c.g / 255f, c.b / 255f));
 
         // The foam at the shore pulses as the wash rolls in and its lace
         // drifts, so it is judged over one wash, from four pictures. It is

@@ -1,7 +1,9 @@
 // The land past the map's edge: the map's own picture mirrored, lit by the
 // sun, darkening and losing its colour into the climate's haze with
-// distance from the edge. One untagged pass, so it draws in the built-in
-// pipeline and in URP alike, and it casts no shadow.
+// distance from the edge. Past a sea edge it is sea bed under the water,
+// and the plain beyond is the open sea running on to the horizon. One
+// untagged pass, so it draws in the built-in pipeline and in URP alike,
+// and it casts no shadow.
 Shader "OpenKingdoms/Presentation/EdgeRing"
 {
     Properties
@@ -24,7 +26,6 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
             #include "../../Shaders/OkuWaterCommon.hlsl"
             sampler2D _MainTex;
             float _Width;
-            float4 _OkuSunDir, _OkuSunColor, _OkuAmbient;
             struct appdata { float4 vertex : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; float2 dist : TEXCOORD1; };
             struct v2f { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; float dist : TEXCOORD1; half3 normal : TEXCOORD2; float3 world : TEXCOORD4; UNITY_FOG_COORDS(3) };
             v2f vert(appdata v)
@@ -47,11 +48,20 @@ Shader "OpenKingdoms/Presentation/EdgeRing"
                 // The fog of war at the nearest edge, so the ring is never
                 // brighter than the map beside it.
                 float3 edge = float3(clamp(i.world.x, 0, _OkuMapSize.x), i.world.y, clamp(i.world.z, -_OkuMapSize.y, 0));
-                c *= OkuFogLight(edge) * 0.8;
+                half seen = OkuFogLight(edge);
+                c *= seen * 0.8;
                 float f = saturate(i.dist / _Width);
                 fixed grey = dot(c, fixed3(0.3, 0.59, 0.11));
-                c = lerp(c, grey.xxx, f * 0.7);
-                c = lerp(c, _OkuHaze.rgb, smoothstep(0, 1, f));
+                fixed3 land = lerp(c, grey.xxx, f * 0.7);
+                land = lerp(land, _OkuHaze.rgb, smoothstep(0, 1, f));
+                // Past a sea edge the bed keeps its colour, since the water
+                // over it hazes itself, and the plain is the open sea.
+                float seaEdge;
+                float cells = OkuPastEdge(i.world.xz, _OkuMapSize.xy, seaEdge);
+                bool plain = i.dist > _Width + 1;
+                fixed3 sea = plain ? OkuFarSea(cells, i.world, _WorldSpaceCameraPos) * seen : c;
+                float wet = plain ? 1 : saturate((_OkuSeaLevel - i.world.y) / 0.5);
+                c = lerp(land, sea, seaEdge * wet);
                 fixed4 col = fixed4(c, 1);
                 UNITY_APPLY_FOG(i.fogCoord, col);
                 return col;

@@ -72,7 +72,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             var t = backend.Terrain;
             Sea = new WaterView();
-            Sea.Build(seaParent, t.Size, t.CellSize, t.SeaLevel, SeaGround, EdgeRing.Width * t.CellSize + 40f);
+            Sea.Build(seaParent, t.Size, t.CellSize, t.SeaLevel, SeaGround, EdgeRing.SeaReach(t));
             Sea.SetBedLuma(bedLuma);
             Sea.SetClimate(seaClimate);
         }
@@ -191,7 +191,8 @@ namespace OpenKingdomsUnity.Game.World
             r.receiveShadows = false;
 
             // Past the ring, haze at the ring's far height out to the far
-            // clip. It stays outside the ring, so it never hides the map.
+            // clip, or past the sea just under its surface. It stays outside
+            // the ring, so it never hides the map.
             var plain = EdgeRing.HazeFrame(t);
             owned.Add(plain);
             var pg = new GameObject("Haze plain");

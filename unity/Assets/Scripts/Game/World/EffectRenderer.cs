@@ -64,6 +64,11 @@ namespace OpenKingdomsUnity.Game.World
         public int BeamEnds { get; private set; }
         public int ModelShots { get; private set; }
         public int LightsLit => lights.Lit;
+        public int LightsAsked => lights.Asked;
+        // This frame's strongest and widest light, and the palest one's saturation.
+        public float LightBrightest => lights.Brightest;
+        public float LightWidest => lights.Widest;
+        public float LightPalest => lights.Palest;
         public int LightToggles => lights.Toggles;
         public int Marks => decals.Count;
         public int TrailCount => trails.Count;
@@ -245,15 +250,13 @@ namespace OpenKingdomsUnity.Game.World
 
             float tall = e.Top - e.Bottom;
             if (e.IsProjectile) pictureOf[-1 - e.Id] = (s, tall);
-            var size = e.Light == FxLight.Auto ? FxLook.AutoLight(e.Additive, e.IsProjectile, tall, s.Art.Brightness) : e.Light;
-            // A crowd of looping sprites, a ring or a rain, lights only when told to.
-            if (e.Light == FxLight.Auto && e.Loops && !e.IsProjectile) size = FxLight.None;
+            var size = FxLook.LightOf(e.Light);
             if (size != FxLight.None)
             {
                 float life = 1f;
                 if (!e.Loops && frames != null && frames.Length > 0) life = FxLook.LightEnvelope((e.Frame + phase) / frames.Length);
                 float flicker = 0.92f + 0.08f * Mathf.Sin(now * 23f + e.Id * 1.7f);
-                lights.Ask(e.Position + Vector3.up * Mathf.Max(1.2f, e.Bottom + tall * 0.45f), s.Art.Glow, size, life, e.Id, flicker);
+                lights.Ask(e.Position + Vector3.up * Mathf.Max(1.2f, e.Bottom + tall * 0.45f), FxLook.LightTint(s.Art.Glow), size, life, e.Id, flicker);
             }
 
             if (!e.IsProjectile && !e.Loops)
@@ -378,7 +381,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             Glowing(p.Position, 0.55f, new Color32(255, 200, 96, 200), 0.8f, eye);
             Glowing(p.Position, 0.22f, new Color32(255, 236, 170, 255), 1.2f, eye);
-            lights.Ask(p.Position, new Color(1f, 0.75f, 0.4f), FxLight.Small, 0.45f, ShotKey(p.Id));
+            lights.Ask(p.Position, new Color(1f, 0.75f, 0.4f), FxLook.LightOf(p.Light), 0.45f, ShotKey(p.Id));
         }
 
         static int ShotKey(int id) => -1000000 - id;
@@ -406,8 +409,9 @@ namespace OpenKingdomsUnity.Game.World
             var to = p.Position;
             if (p.Beam == BeamKind.Fire)
             {
-                // The flame particles are the stream. The breath lights its way.
-                lights.Ask(from + (to - from) * 0.3f, new Color(1f, 0.55f, 0.2f), FxLight.Small, 0.8f, ShotKey(p.Id));
+                // The flame particles are the stream. The breath lights its way
+                // when its weapon has a lightmap.
+                lights.Ask(from + (to - from) * 0.3f, new Color(1f, 0.55f, 0.2f), FxLook.LightOf(p.Light), 0.8f, ShotKey(p.Id));
                 return;
             }
             var dir = to - from;
@@ -435,8 +439,8 @@ namespace OpenKingdomsUnity.Game.World
                 Glowing(to, 1.1f, Fade(middle, 0.8f * fade), 1f, eye);
                 Glowing(from, 0.5f, Fade(inner, 0.6f * fade), 1f, eye);
             }
-            var size = p.Light == FxLight.Auto ? FxLight.Small : p.Light;
-            if (size != FxLight.None) lights.Ask(to + Vector3.up * 0.4f, (Color)middle, size, fade, ShotKey(p.Id));
+            var size = FxLook.LightOf(p.Light);
+            if (size != FxLight.None) lights.Ask(to + Vector3.up * 0.4f, FxLook.LightTint(middle), size, fade, ShotKey(p.Id));
         }
 
         // A beam's points from its source to its end, each thrown aside

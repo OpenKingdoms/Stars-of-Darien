@@ -555,7 +555,7 @@ namespace OpenKingdomsUnity.Game
     public enum BeamKind : byte { Lightning, CreonLightning, CreonParalyzer, CreonLightbeam, Fire }
 
     // The original's lightmap, a ground light round a shot or where it
-    // lands. Auto when the backend does not know, and the art decides.
+    // lands. Auto when the backend does not know, which lights nothing.
     public enum FxLight : byte { Auto, None, Small, Medium, Large }
 
     public struct ProjectileState

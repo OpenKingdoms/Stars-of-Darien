@@ -79,7 +79,7 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [UnityTest]
-        public IEnumerator ABrightBlastLightsTheGroundRoundIt()
+        public IEnumerator ALightmapWeaponsBlastLightsTheGroundRoundIt()
         {
             var mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
             GameRoot root = null;
@@ -92,7 +92,7 @@ namespace OpenKingdomsUnity.Tests
                 var fx = root.World.Effects;
                 var at = mock.StageCentre + new Vector3(0, 0, 6);
                 Frame(root, at, 28f);
-                mock.FireFx("TARNECRO 2", at + new Vector3(0, 1, -4), at + new Vector3(0, 1, 0.5f));
+                mock.FireFx("ARAPRIES 3", at + new Vector3(0, 1, -4), at + new Vector3(0, 1, 0.5f));
                 // Until its blast has flared up and its light is lit.
                 for (int f = 0; f < 90 && !(fx.LightsLit > 0 && mock.FxShotCount == 0); f++) { mock.Advance(1); yield return null; }
                 mock.Advance(3);
@@ -108,7 +108,8 @@ namespace OpenKingdomsUnity.Tests
                 var s = cam.WorldToViewportPoint(at);
                 float gain = Luma(Region(lit, s, 60)) - Luma(Region(dark, s, 60));
                 Debug.Log($"Fx: the blast's light brightens the ground round it by {gain:0.000}");
-                Assert.Greater(gain, 0.01f, "the ground round the blast is lit");
+                Assert.Greater(gain, 0.002f, "the ground round the blast is lit");
+                Assert.Less(gain, 0.02f, "softly, never a flood");
             }
             finally { Object.Destroy(root.gameObject); }
         }

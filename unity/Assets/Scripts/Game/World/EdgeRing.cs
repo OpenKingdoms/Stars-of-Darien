@@ -80,13 +80,20 @@ namespace OpenKingdomsUnity.Game.World
             return low - 1.5f;
         }
 
-        // The plain of haze past the ring, out to the far clip, so no gap
-        // shows between land and sky: a frame of four quads around the map
-        // grown by the ring, never over the map or the ring itself.
+        // How far the sea reaches past the map's edge, world units.
+        public static float SeaReach(MapTerrain t) => Width * t.CellSize + 40f;
+
+        // True where the map's edge meets the sea somewhere.
+        public static bool SeaAtEdge(MapTerrain t) => t.SeaLevel > 0 && Shelf(t) + 1.5f < t.SeaLevel;
+
+        // The plain past the ring out to the far clip, a frame of four quads
+        // never over the map or the ring. Where the edge meets the sea it
+        // starts under the sea's far end, just below its surface.
         public static Mesh HazeFrame(MapTerrain t, float far = 4000f)
         {
             var size = t.Size;
             float w = Width * t.CellSize, y = Shelf(t) - 0.05f;
+            if (SeaAtEdge(t)) { w = SeaReach(t) - 2f * t.CellSize; y = t.SeaLevel - 0.3f; }
             float x0 = -w, x1 = size.x + w, zn = w, zs = -size.y - w;
             float fx0 = x0 - far, fx1 = x1 + far, fzn = zn + far, fzs = zs - far;
             var v = new List<Vector3>();

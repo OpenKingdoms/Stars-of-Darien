@@ -1,6 +1,6 @@
-// FxLights.cs - short-lived point lights round bright magic and blasts: asks
-// close together merge, the strongest take a small pool, and a light fades in
-// and out rather than blinking as the ranking shifts.
+// FxLights.cs - short-lived point lights round a lightmap weapon's shots
+// and blasts: asks close together merge, the strongest take a small pool,
+// each is a soft glow, and a light fades in and out rather than blinking.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,7 +16,7 @@ namespace OpenKingdomsUnity.Game.World
         // Seconds a light takes to come up or go out.
         public const float Fade = 0.12f;
         // Asks nearer than this share of their reach become one light.
-        public const float MergeReach = 0.5f;
+        public const float MergeReach = 0.75f;
         const int MaxClusters = 48;
 
         struct Request
@@ -53,6 +53,10 @@ namespace OpenKingdomsUnity.Game.World
         public int Lit { get; private set; }
         public int Toggles { get; private set; }
         public int Asked => asks.Count;
+        // The strongest and widest light on now, and the least saturated.
+        public float Brightest { get; private set; }
+        public float Widest { get; private set; }
+        public float Palest { get; private set; }
 
         public void Begin() => asks.Clear();
 
@@ -109,6 +113,8 @@ namespace OpenKingdomsUnity.Game.World
             }
             float step = dt <= 0f ? 1f : Mathf.Clamp01(dt / Fade);
             Lit = 0;
+            Brightest = Widest = 0f;
+            Palest = 1f;
             foreach (var s in slots)
             {
                 s.Level = Mathf.MoveTowards(s.Level, s.Target, step);
@@ -121,6 +127,10 @@ namespace OpenKingdomsUnity.Game.World
                 s.Light.color = s.Colour;
                 s.Light.range = s.Range;
                 s.Light.intensity = s.Intensity * s.Level;
+                Brightest = Mathf.Max(Brightest, s.Light.intensity);
+                Widest = Mathf.Max(Widest, s.Range);
+                Color.RGBToHSV(s.Colour, out _, out float sat, out _);
+                Palest = Mathf.Min(Palest, sat);
             }
             litBefore.Clear();
             foreach (var s in slots) if (s.Key != int.MinValue) litBefore.Add(s.Key);
@@ -131,8 +141,8 @@ namespace OpenKingdomsUnity.Game.World
             s.Target = 1f;
             s.At = c.At;
             s.Colour = c.Colour;
-            s.Range = c.Range;
-            s.Intensity = c.Intensity * c.Flicker;
+            s.Range = Mathf.Min(c.Range, FxLook.MaxLightRange);
+            s.Intensity = Mathf.Min(c.Intensity * c.Flicker, FxLook.MaxLightIntensity);
         }
 
         bool HasSlot(int key)

@@ -15,7 +15,7 @@ sampler2D _OkuSeaData;          // r depth / 8, g 0.5 + shore distance / 32 cell
 sampler2D _OkuWakeTex;          // r wake foam, g churned water
 float4 _OkuWakeRect;            // x, z of the wake picture's corner, 1 / width, 1 / depth; 0 with no wakes
 float4 _OkuSeaRect;             // x, z of the north-west corner, width, depth
-float4 _OkuSeaCell;             // x cell size
+float4 _OkuSeaCell;             // x cell size, y how far the sea reaches past the map, in cells
 float _OkuSeaLevel;             // -1000 with no sea
 float _OkuWaterTime;
 float4 _OkuWaterWind;           // xy direction, z strength
@@ -29,6 +29,7 @@ float4 _OkuHaze;
 float _OkuBedLuma;              // the painted ground's usual lightness under the sea
 float4 _OkuSwellDirs[2];        // the four swell waves' directions, as xy and zw
 float4 _OkuLayerTurns[2];       // cos and sin of the three wave layers' turns from +x, and the sparkle layer's
+float4 _OkuSunDir, _OkuSunColor, _OkuAmbient;   // the sun and sky, for what lights itself
 
 // Wavelength, turn from the wind in degrees, steepness.
 static const float3 OKU_SWELL[4] =
@@ -73,6 +74,26 @@ float3 OkuSeaAt(float2 xz)
     if (any(uv < 0) || any(uv > 1)) return float3(8, 16, 8);
     float4 s = tex2Dlod(_OkuSeaData, float4(uv, 0, 0));
     return float3(s.r * 8, (s.g - 0.5) * 32, s.b * 8);
+}
+
+// Past the map's edge: how far out a point lies, in cells, and how much of
+// the edge beside it is sea, 0 to 1, read over a stretch that widens with
+// the distance so a coast at the edge parts sea from haze softly.
+float OkuSeaIsAt(float2 xz) { return saturate(OkuSeaAt(xz).x / 0.75); }
+float OkuPastEdge(float2 xz, float2 mapSize, out float seaEdge)
+{
+    float2 edge = float2(clamp(xz.x, 0, mapSize.x), clamp(xz.y, -mapSize.y, 0));
+    float2 off = xz - edge;
+    float d = length(off);
+    seaEdge = 0;
+    if (_OkuSeaLevel > -999 && d > 0)
+    {
+        float2 along = float2(-off.y, off.x) * 0.15;
+        float2 lo = float2(0, -mapSize.y), hi = float2(mapSize.x, 0);
+        seaEdge = (OkuSeaIsAt(edge) + OkuSeaIsAt(clamp(edge + along, lo, hi)) + OkuSeaIsAt(clamp(edge - along, lo, hi))
+            + OkuSeaIsAt(clamp(edge + along * 2, lo, hi)) + OkuSeaIsAt(clamp(edge - along * 2, lo, hi))) / 5;
+    }
+    return d / max(_OkuSeaCell.x, 1e-3);
 }
 
 // The ships' wakes at a world point: x foam, y churned water.
@@ -223,6 +244,22 @@ float OkuSheen(float3 n, float3 v, float3 l)
 float OkuFresnel(float3 n, float3 v)
 {
     return 0.035 + 0.965 * pow(1 - saturate(dot(n, v)), 5);
+}
+
+// How much haze lies over the sea this many cells past a sea edge: a
+// little over the ring, all of it toward the horizon.
+float OkuSeaHaze(float cells) { return 1 - exp(-cells / 600); }
+
+// The open sea far past a sea edge seen from cam, one look for the water
+// and the plain beyond it alike: the deep water in the day's light with
+// the sky off its flat surface, into the haze.
+float3 OkuFarSea(float cells, float3 p, float3 cam)
+{
+    float3 v = normalize(cam - p), up = float3(0, 1, 0);
+    float3 lightIn = _OkuSunColor.rgb * saturate(_OkuSunDir.y + 0.2) + _OkuAmbient.rgb * 1.1;
+    float3 sea = _OkuWaterDeep.rgb * lightIn;
+    sea = lerp(sea, OkuSky(reflect(-v, up), _OkuSunDir.xyz, _OkuSunColor.rgb), saturate(OkuFresnel(up, v) * _OkuWaterSky.a));
+    return lerp(sea, _OkuHaze.rgb, OkuSeaHaze(cells));
 }
 
 // Foam lace, two layers drifting apart, 0 to 1, read a touch blurred so

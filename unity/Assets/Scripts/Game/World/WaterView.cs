@@ -200,7 +200,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             Shader.SetGlobalTexture("_OkuSeaData", seaData);
             Shader.SetGlobalVector("_OkuSeaRect", SeaRect);
-            Shader.SetGlobalVector("_OkuSeaCell", new Vector4(cell, 0, 0, 0));
+            Shader.SetGlobalVector("_OkuSeaCell", new Vector4(cell, margin / Mathf.Max(cell, 1e-3f), 0, 0));
             Shader.SetGlobalFloat("_OkuSeaLevel", SeaLevel);
             Shader.SetGlobalFloat("_OkuBedLuma", bedLuma);
             Shader.SetGlobalTexture("_OkuWaterNormals", WaterTextures.Normals);

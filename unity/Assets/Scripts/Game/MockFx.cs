@@ -240,7 +240,7 @@ namespace OpenKingdomsUnity.Game
                 default: shot.Vel = d.normalized * w.Speed; break;
             }
             fxShots.Add(shot);
-            if (w.Draw == FxDraw.Beam && w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(to), struck: target);
+            if (w.Draw == FxDraw.Beam && w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(to), struck: target, light: w.Light);
         }
 
         // A row of shooters and targets at the map's middle, as the engine's
@@ -349,7 +349,7 @@ namespace OpenKingdomsUnity.Game
                 if (!hit && s.Pos.y > ground && s.Age < Tps * 8) continue;
                 var at = hit ? s.Aim : new Vector3(s.Pos.x, ground, s.Pos.z);
                 if (s.Damage > 0 && s.Target >= 0 && byHandle.TryGetValue(s.Target, out var victim) && hit) Hurt(victim, s.Damage, s.Shooter);
-                if (w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(at), struck: hit ? s.Target : -1);
+                if (w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(at), struck: hit ? s.Target : -1, light: w.Light);
                 fxShots.RemoveAt(i);
             }
 
@@ -430,7 +430,8 @@ namespace OpenKingdomsUnity.Game
 
         public EffectFrame[] EffectFrames(int strip) => strip >= 0 && strip < fxStrips.Count ? fxStrips[strip].Frames : null;
 
-        // The strips of every weapon the mock fires, and their blasts.
+        // The strips of every weapon the mock fires, and their blasts, and
+        // the builders' sparkles.
         public IReadOnlyList<int> WarmEffectStrips()
         {
             var ids = new List<int>();
@@ -443,7 +444,26 @@ namespace OpenKingdomsUnity.Game
                     if (id >= 0 && !ids.Contains(id)) ids.Add(id);
                 }
             }
+            foreach (var p in players)
+            {
+                int id = FxStripId(BuildStrip(p.Side));
+                if (id >= 0 && !ids.Contains(id)) ids.Add(id);
+            }
             return ids;
+        }
+
+        static string BuildStrip(string side) => (string.IsNullOrEmpty(side) ? "aramon" : side.ToLowerInvariant()) + "build";
+
+        // A builder raising a building throws its kingdom's sparkle over the
+        // site, a still picture the engine reports with no light of its own.
+        void BuildSparkle(Unit u)
+        {
+            if (Tick % 5 != 0 || !(u.BuildAt is Vector3 site)) return;
+            int pos = PosOf(u.Player);
+            int strip = FxStripId(BuildStrip(pos >= 0 ? players[pos].Side : null));
+            if (strip < 0) strip = FxStripId(BuildStrip(null));
+            float a = Hash01((int)Tick * 31 + u.Handle) * 2f * Mathf.PI, r = Hash01((int)Tick * 17 + u.Handle) * 1.2f;
+            SpawnBlast(strip, GroundAt(site + new Vector3(Mathf.Cos(a) * r, 0, Mathf.Sin(a) * r)) + Vector3.up * 0.4f);
         }
 
         // Shows one picture of the mock's art standing at a point for a

@@ -120,12 +120,18 @@ float3 OkuWaterShade(float3 p, float3 cam, float2 suv, float surfEye, OkuSun sun
     float3 foamLight = sun.color * (saturate(dot(n, sun.dir)) * shadow) + sun.ambient;
     water = lerp(water, foamLight * 0.85, foam * 0.92);
 
-    // Past the map's edge the sea melts into the haze as the land does.
+    // Past a land edge the sea melts into the haze as the land does. Past
+    // a sea edge the sea runs on, hazing slowly, and toward the far end of
+    // the water eases into the open sea's one colour, which the plain past
+    // it carries on to the horizon.
     if (_OkuMapSize.x > 0)
     {
-        float2 over = max(max(-float2(p.x, -p.z), float2(p.x, -p.z) - _OkuMapSize.xy), 0);
-        float away = length(over) / max(_OkuSeaCell.x, 1e-3) / 32;
-        water = lerp(water, _OkuHaze.rgb, smoothstep(0, 1, saturate(away)));
+        float seaEdge;
+        float cells = OkuPastEdge(p.xz, _OkuMapSize.xy, seaEdge);
+        float3 land = lerp(water, _OkuHaze.rgb, smoothstep(0, 1, saturate(cells / 32)));
+        float3 open = lerp(water, _OkuHaze.rgb, OkuSeaHaze(cells));
+        open = lerp(open, OkuFarSea(cells, p, cam), smoothstep(0.3, 1, cells / max(_OkuSeaCell.y, 1)));
+        water = lerp(land, open, seaEdge);
     }
     return water;
 }

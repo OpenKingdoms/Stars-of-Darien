@@ -565,6 +565,80 @@ namespace OpenKingdomsUnity.Tests
             }
         }
 
+        // Only a lightmap weapon lights the ground, and only softly, in its
+        // own colour. A builder's sparkle lights nothing.
+        [Test]
+        public void ABuildLightsNothingAndAWeaponsLightIsASoftGlow()
+        {
+            var b = MockGame();
+            var fx = Renderer(b, out var cam, out var models);
+            try
+            {
+                var units = new UnitState[256];
+                int n = b.ReadUnits(units);
+                bool ordered = false;
+                int builder = -1;
+                for (int i = 0; i < n && !ordered; i++)
+                {
+                    var u = units[i];
+                    if (u.Player != b.LocalPlayer) continue;
+                    foreach (int def in b.UnitDefs[u.Def].BuildOptions)
+                    {
+                        if (!b.UnitDefs[def].IsBuilding) continue;
+                        for (int k = 0; k < 16 && !ordered; k++)
+                        {
+                            var at = u.Position + Quaternion.Euler(0, k * 22.5f, 0) * Vector3.forward * 5f;
+                            if (b.CanBuildAt(def, at, 0, out var site))
+                                ordered = b.Command(new GameCommand { Kind = CommandKind.Build, Unit = builder = u.Handle, Target = site, TargetUnit = -1, BuildDef = def });
+                        }
+                        if (ordered) break;
+                    }
+                }
+                Assert.IsTrue(ordered, "a builder raises a building");
+                int sparkles = 0, asked = 0;
+                for (int t = 0; t < 120; t++)
+                {
+                    b.Advance(1);
+                    fx.Render(cam);
+                    sparkles = Mathf.Max(sparkles, fx.Pictures);
+                    asked = Mathf.Max(asked, fx.LightsAsked);
+                }
+                Assert.Greater(sparkles, 0, "the build sparkles");
+                Assert.AreEqual(0, asked, "a build lights nothing");
+                b.Command(GameCommand.To(CommandKind.Stop, builder, Vector3.zero));
+                b.Advance(300);
+                fx.Render(cam);
+
+                var at0 = b.StageCentre;
+                foreach (var name in new[] { "TARDRAG 2", "ARAPRIES 3", "VERDRAG 2", "CREPRIS 1" })
+                {
+                    b.FireFx(name, at0 + new Vector3(0, 1, -5), at0 + new Vector3(0, 1, 5));
+                    float brightest = 0f, widest = 0f, palest = 1f;
+                    for (int t = 0; t < 150; t++)
+                    {
+                        b.Advance(1);
+                        fx.Render(cam);
+                        brightest = Mathf.Max(brightest, fx.LightBrightest);
+                        widest = Mathf.Max(widest, fx.LightWidest);
+                        if (fx.LightsLit > 0) palest = Mathf.Min(palest, fx.LightPalest);
+                    }
+                    Assert.Greater(brightest, 0f, name + " lights the ground");
+                    Assert.LessOrEqual(brightest, 0.5f, name + "'s light stays well under the sun's 1");
+                    Assert.LessOrEqual(widest, 6f, name + "'s light stays a small pool");
+                    Assert.Greater(palest, 0.25f, name + "'s light takes its colour, not white");
+                    b.Advance(300);
+                    fx.Render(cam);
+                }
+            }
+            finally
+            {
+                fx.Dispose();
+                models.Dispose();
+                Object.DestroyImmediate(cam.gameObject);
+                b.Dispose();
+            }
+        }
+
         [Test]
         public void AFireBlastScorchesTheGroundAndAShotsTrailFollowsItsPath()
         {

@@ -581,6 +581,7 @@ namespace OpenKingdomsUnity.Game
             if (e.Mana < rate * dt) return;
             e.Mana -= rate * dt;
             economy[u.Player] = e;
+            BuildSparkle(u);
             u.BuildLeft -= dt;
             if (u.BuildLeft > 0) return;
             Unit made;
