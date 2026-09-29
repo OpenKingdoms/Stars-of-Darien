@@ -177,7 +177,7 @@ namespace OpenKingdomsUnity.Game.World
             // A press on an enemy stays an attack, never a formation.
             if ((p.LeftDown || p.RightDown) && !overUi) p.OnEnemy = EnemyUnder(cam, m, units, count);
 
-            bool armedHasMouse = ArmedAction != null && UpdateArmedAction(cam, m, overUi, onGround, at, units, count);
+            bool armedHasMouse = ArmedAction != null && UpdateArmedAction(cam, p, onGround, at, units, count);
             if (Formation.Update(cam, p, onGround, at, armedHasMouse) || armedHasMouse) return;
 
             if (p.RightDown && !overUi && RightClick(cam, m, onGround, at)) return;
@@ -258,12 +258,13 @@ namespace OpenKingdomsUnity.Game.World
         // out, a drag covers an area where the action takes one, Shift keeps
         // it armed for another, and a right click or Escape lets it go.
         // Returns true while it has the mouse.
-        bool UpdateArmedAction(Camera cam, Vector3 m, bool overUi, bool onGround, Vector3 at, UnitState[] units, int count)
+        bool UpdateArmedAction(Camera cam, in PointerFrame p, bool onGround, Vector3 at, UnitState[] units, int count)
         {
             var a = ArmedAction;
-            if (Input.GetKeyDown(KeyCode.Escape) || (Input.GetMouseButtonDown(1) && !overUi)) { ArmedAction = null; return true; }
-            if (Input.GetMouseButtonDown(0) && !overUi) { dragFrom = m; dragging = true; return true; }
-            if (!Input.GetMouseButtonUp(0) || !dragging) return true;
+            var m = (Vector3)p.Screen;
+            if (p.EscapeDown || (p.RightDown && !p.OverUi)) { ArmedAction = null; return true; }
+            if (p.LeftDown && !p.OverUi) { dragFrom = m; dragging = true; return true; }
+            if (!p.LeftUp || !dragging) return true;
             dragging = false;
             bool areaAction = a.Target == ActionTarget.Area || a.Id == "ATTACK";
             bool done;
@@ -327,7 +328,7 @@ namespace OpenKingdomsUnity.Game.World
                     // W, A, S and D pan the camera, so their commands take Ctrl.
                     bool camKey = "wasd".IndexOf(c) >= 0;
                     if (camKey != Ctrl) continue;
-                    if (a.Target == ActionTarget.None) backend.DoAction(a.Id, Vector3.zero, -1, default, Shift);
+                    if (a.Target == ActionTarget.None || a.Kind == ActionKind.Spell) backend.DoAction(a.Id, Vector3.zero, -1, default, Shift);
                     else ArmAction(a);
                 }
                 return;

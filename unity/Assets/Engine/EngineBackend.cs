@@ -833,9 +833,19 @@ namespace OpenKingdomsUnity.Engine
                 }
                 if (c.kind != OkEngine.CmdTarget) return OkEngine.okx_hud_do(c.id) != 0;
                 // A targeted order: armed, then carried out by the click or
-                // the drag the classic view would send.
+                // the drag the classic view would send. The engine's drag
+                // carries out only a load, so an attack over a box goes for
+                // the nearest enemy in it by a click, and stays armed for
+                // nothing after.
+                bool boxed = area.width > 0f && area.height > 0f;
+                if (boxed && c.id != OkEngine.ArmLoad)
+                {
+                    unit = NearestEnemyIn(area, out at);
+                    if (unit < 0) return false;
+                    aimed = true;
+                }
                 OkEngine.okx_arm(c.id, -1);
-                if (area.width > 0f && area.height > 0f)
+                if (boxed && c.id == OkEngine.ArmLoad)
                 {
                     OkEngine.okx_drag(area.xMin / S, -area.yMin / S, area.xMax / S, -area.yMax / S, queue ? 1 : 0);
                     return true;
@@ -918,6 +928,28 @@ namespace OpenKingdomsUnity.Engine
                 art[f] = new CursorFrame { Image = img, Hotspot = new Vector2Int(hx, hy), Millis = ms };
             }
             return art;
+        }
+
+        // The enemy standing nearest a box's middle, inside it, or -1.
+        int NearestEnemyIn(Rect area, out Vector3 at)
+        {
+            int n = OkEngine.okx_units(null, 0);
+            if (unitBuf.Length < n) unitBuf = new OkxUnit[Mathf.NextPowerOfTwo(n)];
+            n = Mathf.Min(OkEngine.okx_units(unitBuf, unitBuf.Length), unitBuf.Length);
+            int best = -1;
+            float bestD = float.MaxValue;
+            at = Vector3.zero;
+            for (int i = 0; i < n; i++)
+            {
+                var u = unitBuf[i];
+                if (u.state != OkEngine.UnitActive || this.Allied(u.player, LocalPlayer)) continue;
+                var w = EngineSettings.ToUnity(u.x, u.y, u.z);
+                var p = new Vector2(w.x, w.z);
+                if (!area.Contains(p)) continue;
+                float d = (p - area.center).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = u.handle; at = w; }
+            }
+            return best;
         }
 
         public void Arm(CommandKind kind, int buildDef = -1, int facing = 0)

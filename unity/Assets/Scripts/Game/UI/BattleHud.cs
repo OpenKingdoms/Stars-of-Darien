@@ -959,8 +959,9 @@ namespace OpenKingdomsUnity.Game.UI
             if (!p.Hovered) p.Bezel.color = Rest(a);
         }
 
-        // A button with nothing to aim at acts at once. The rest wait for a
-        // click or a drag in the world. A spell is chosen at once too.
+        // A button with nothing to aim at acts at once, and so does a spell,
+        // which only chooses the weapon as the original's buttons do. The
+        // rest wait for a click or a drag in the world.
         void Pressed(UnitAction a)
         {
             var orders = root.Orders;
@@ -973,7 +974,7 @@ namespace OpenKingdomsUnity.Game.UI
             }
             bool shift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             if (a.Target == ActionTarget.None) { root.Backend.DoAction(a.Id, Vector3.zero, -1, default, shift); return; }
-            if (a.Kind == ActionKind.Spell) root.Backend.DoAction(a.Id, Vector3.zero, -1, default, false);
+            if (a.Kind == ActionKind.Spell) { root.Backend.DoAction(a.Id, Vector3.zero, -1, default, false); return; }
             orders?.ArmAction(a);
         }
 

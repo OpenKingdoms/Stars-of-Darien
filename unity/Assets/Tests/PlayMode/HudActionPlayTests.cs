@@ -6,6 +6,7 @@ using System.Collections;
 using System.Linq;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
+using OpenKingdomsUnity.Game.World;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
@@ -72,7 +73,7 @@ namespace OpenKingdomsUnity.Tests
             yield return Button("PrimaryWeapon", b => fire = b);
             Assert.IsTrue(fire.interactable);
             fire.onClick.Invoke();
-            Assert.AreEqual("PrimaryWeapon", root.Orders.ArmedAction?.Id, "the spell waits for a target");
+            Assert.IsNull(root.Orders.ArmedAction, "the button chooses the spell and arms nothing");
 
             var enemy = Units().First(u => u.Player == 2);
             int before = mock.ManaOf(mage);
@@ -88,6 +89,56 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsFalse(fire.interactable, "no mana, no fireball");
             var action = mock.SelectionActions().First(a => a.Id == "PrimaryWeapon");
             Assert.AreEqual("Not enough mana", action.Why);
+        }
+
+        // A spell's button chooses the weapon, as the original's do, and
+        // arms nothing: after the mage fights with it, a plain click on the
+        // ground is a move.
+        [UnityTest]
+        public IEnumerator APickedSpellLeavesTheNextClickAMove()
+        {
+            yield return Begin();
+            root.Orders.Classic = true;
+            var frame = new PointerFrame { Focused = true, Dpi = 96 };
+            root.Orders.Formation.Source = () =>
+            {
+                var r = frame;
+                frame.LeftDown = frame.LeftUp = frame.RightDown = frame.RightUp = false;
+                return r;
+            };
+            int mage = Own(MockBackend.Role.Mage);
+            mock.Select(new[] { mage }, false);
+            Button frost = null;
+            yield return Button("SecondaryWeapon", b => frost = b);
+            frost.onClick.Invoke();
+            Assert.IsTrue(mock.SelectionActions().First(a => a.Id == "SecondaryWeapon").Toggled, "the spell is chosen");
+            var enemy = Units().First(u => u.Player == 2);
+            Assert.IsTrue(mock.Command(new GameCommand { Kind = CommandKind.Attack, Unit = mage, TargetUnit = enemy.Handle, BuildDef = -1 }));
+            // Open ground near the mage, at the middle of the view.
+            var from = Units().First(u => u.Handle == mage).Position;
+            var at = from;
+            for (int k = 0; k < 16; k++)
+            {
+                at = from + Quaternion.Euler(0, k * 22.5f, 0) * new Vector3(0f, 0f, 5f);
+                var p = at;
+                if (!Units().Any(u => (new Vector2(u.Position.x - p.x, u.Position.z - p.z)).magnitude < 2.5f)) break;
+            }
+            at.y = mock.GroundHeight(at.x, at.z);
+            var cam = root.World.Camera;
+            cam.focus = at;
+            cam.yaw = 0f;
+            cam.pitch = GameCamera.ClassicPitch;
+            cam.Zoom(30f);
+            for (int i = 0; i < 3; i++) yield return null;
+            frame.Screen = cam.GetComponent<Camera>().WorldToScreenPoint(at);
+            frame.LeftDown = frame.LeftHeld = true;
+            yield return null;
+            frame.LeftHeld = false;
+            frame.LeftUp = true;
+            yield return null;
+            yield return null;
+            Assert.IsNull(root.Orders.ArmedAction, "nothing is left armed");
+            Assert.AreEqual(OrderKind.Move, mock.ReadOrder(mage).Kind, "a plain click on the ground moves");
         }
 
         [UnityTest]

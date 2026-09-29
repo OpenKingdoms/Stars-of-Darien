@@ -531,6 +531,74 @@ namespace OpenKingdomsUnity.Tests
                 Assert.IsFalse(backend.MoveFormation(new[] { enemy }, new[] { to }, null, false, false), "nobody took it");
         }
 
+        // A spell chosen on the sidebar and cast at an enemy is used once:
+        // the next plain click on the ground is a move, as in the original.
+        [Test, Order(10)]
+        public void ASpellCastOnceLeavesTheNextClickAMove()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, caster = -1, enemy = -1;
+            UnitAction spell = null;
+            for (int i = 0; i < n; i++)
+            {
+                if ((units[i].Flags & UnitFlags.Active) == 0) continue;
+                if (units[i].Player != me) { if (enemy < 0 && !backend.UnitDefs[units[i].Def].IsBuilding) enemy = i; continue; }
+                if (caster >= 0 || backend.UnitDefs[units[i].Def].IsBuilding) continue;
+                backend.Select(new[] { units[i].Handle }, false);
+                foreach (var a in backend.SelectionActions())
+                    if (a.Kind == ActionKind.Spell && a.ManaCost > 0 && a.Enabled) { spell = a; caster = i; break; }
+            }
+            Assert.IsNotNull(spell, "a caster with a spell it can cast");
+            Assert.GreaterOrEqual(enemy, 0);
+            var u = units[caster];
+            backend.Select(new[] { u.Handle }, false);
+            // The sidebar's press chooses it, the click on the enemy casts it.
+            Assert.IsTrue(backend.DoAction(spell.Id, Vector3.zero, -1, default, false));
+            backend.Advance(2);
+            Assert.IsTrue(backend.DoAction(spell.Id, units[enemy].Position, units[enemy].Handle, default, false));
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.Attack, backend.ReadOrder(u.Handle).Kind, "it goes for the enemy");
+            Assert.AreEqual(OkEngine.ArmNone, OkEngine.okx_armed(out _), "nothing stays armed");
+            var ground = u.Position + new Vector3(-3f, 0f, 3f);
+            ground.y = backend.GroundHeight(ground.x, ground.z);
+            backend.Click(ground, -1, false);
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.Move, backend.ReadOrder(u.Handle).Kind, "a plain click afterwards moves");
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, u.Handle, ground + new Vector3(1f, 0f, 0f))));
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.Move, backend.ReadOrder(u.Handle).Kind, "so does a move order");
+            backend.Command(GameCommand.To(CommandKind.Stop, u.Handle, Vector3.zero));
+            backend.Cancel();
+            backend.Cancel();
+        }
+
+        // An attack dragged over an area arms the engine only for that
+        // drag: the next plain click on the ground is a move.
+        [Test, Order(10)]
+        public void AnAttackDragLeavesTheNextClickAMove()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, pick = -1;
+            for (int i = 0; i < n && pick < 0; i++)
+                if (units[i].Player == me && (units[i].Flags & UnitFlags.Active) != 0 && !backend.UnitDefs[units[i].Def].IsBuilding) pick = i;
+            Assert.GreaterOrEqual(pick, 0);
+            var u = units[pick];
+            backend.Select(new[] { u.Handle }, false);
+            var c = u.Position + new Vector3(6f, 0f, 6f);
+            backend.DoAction("ATTACK", c, -1, Rect.MinMaxRect(c.x - 2f, c.z - 2f, c.x + 2f, c.z + 2f), false);
+            backend.Advance(3);
+            Assert.AreEqual(OkEngine.ArmNone, OkEngine.okx_armed(out _), "nothing stays armed");
+            backend.Select(new[] { u.Handle }, false);
+            var ground = u.Position + new Vector3(-3f, 0f, 3f);
+            ground.y = backend.GroundHeight(ground.x, ground.z);
+            backend.Click(ground, -1, false);
+            backend.Advance(3);
+            Assert.AreEqual(OrderKind.Move, backend.ReadOrder(u.Handle).Kind, "a plain click afterwards moves");
+            backend.Command(GameCommand.To(CommandKind.Stop, u.Handle, Vector3.zero));
+            backend.Cancel();
+            backend.Cancel();
+        }
+
         // A ship the engine builds is drawn with its origin just under the
         // surface, and posed there too: the engine reports a floater at the
         // sea but poses it on the floor.
