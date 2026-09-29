@@ -199,6 +199,10 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Skirmish:
                     if (now == FlowState.MainMenu) LastError = null;
                     if (World != null || GameFlow.InGame(was)) EndGame();
+                    if (now == FlowState.MainMenu) EndRooms();
+                    break;
+                case FlowState.Multiplayer:
+                    if (was == FlowState.Room || was == FlowState.MapChoice || was == FlowState.Loading) Backend.Rooms?.LeaveRoom();
                     break;
                 case FlowState.Quit:
                     EndGame();
@@ -210,6 +214,31 @@ namespace OpenKingdomsUnity.Game
                     break;
             }
             Screens.Show(now);
+        }
+
+        // Leaving the lobby for the menu hangs up on the relay, and the
+        // skirmish setup comes back from before a room's battle.
+        void EndRooms()
+        {
+            netMatch = false;
+            var rooms = Backend.Rooms;
+            if (rooms != null && rooms.State != RoomSession.Off) rooms.Disconnect();
+            if (skirmishSetup != null) { Setup = skirmishSetup; skirmishSetup = null; }
+        }
+
+        bool netMatch;
+        SkirmishSetup skirmishSetup;
+
+        // The relay said go: the room's battle loads.
+        void StartRoomBattle(RoomState room)
+        {
+            MapInfo map = null;
+            foreach (var m in Backend.Maps) if (m.Id == room.MapId) map = m;
+            skirmishSetup = skirmishSetup ?? Setup;
+            Setup = RoomSetup.ToSkirmish(room, map, (uint)(room.Id * 2654435761u));
+            netMatch = true;
+            if (Flow.State == FlowState.MapChoice || Flow.State == FlowState.Options) Flow.Fire(FlowEvent.Back);
+            Flow.Fire(FlowEvent.Start);
         }
 
         void EndGame()
@@ -279,13 +308,35 @@ namespace OpenKingdomsUnity.Game
                     // The world stands still while it is edited.
                     Editor?.Update();
                     break;
+                case FlowState.Options when Flow.OptionsReturn == FlowState.Room:
+                    // The room goes on while its options are open.
+                    if (Backend.Rooms?.Pump() == RoomSession.Loading && Backend.Rooms.Room != null) StartRoomBattle(Backend.Rooms.Room);
+                    else if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
+                    break;
                 case FlowState.Options:
                 case FlowState.Skirmish:
                 case FlowState.LoadList:
                 case FlowState.EditorSetup:
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
                     break;
+                case FlowState.Multiplayer:
+                case FlowState.Room:
+                case FlowState.MapChoice:
+                {
+                    var rooms = Backend.Rooms;
+                    var session = rooms?.Pump() ?? RoomSession.Off;
+                    if (Flow.State != FlowState.Multiplayer && session == RoomSession.Loading && rooms.Room != null) StartRoomBattle(rooms.Room);
+                    else if (Flow.State != FlowState.Multiplayer && rooms?.Room == null)
+                    {
+                        if (Flow.State == FlowState.MapChoice) Flow.Fire(FlowEvent.Back);
+                        Flow.Fire(FlowEvent.Back);
+                    }
+                    else if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Back);
+                    break;
+                }
             }
+            // A room's battle keeps the relay's turns flowing.
+            if (netMatch && GameFlow.InGame(Flow.State) || netMatch && Flow.State == FlowState.Loading) Backend.Rooms?.Pump();
             if (World != null)
             {
                 // The sim's own clock, which stands still while paused.

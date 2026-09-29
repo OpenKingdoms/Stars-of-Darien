@@ -113,5 +113,42 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsFalse(f.Fire(FlowEvent.Pause), "no pausing a load");
             Assert.IsFalse(f.Fire(FlowEvent.Back), "no backing out of a load half way");
         }
+
+        [Test]
+        public void ARoomOpensTheMapChoiceAndStartsABattle()
+        {
+            var f = new GameFlow();
+            Assert.IsTrue(f.Fire(FlowEvent.OpenMultiplayer));
+            Assert.AreEqual(FlowState.Multiplayer, f.State);
+            Assert.IsFalse(f.Fire(FlowEvent.Start), "no battle without a room");
+            Assert.IsTrue(f.Fire(FlowEvent.EnterRoom));
+            Assert.IsTrue(f.Fire(FlowEvent.ChooseMap));
+            Assert.AreEqual(FlowState.MapChoice, f.State);
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.AreEqual(FlowState.Room, f.State);
+            Assert.IsTrue(f.Fire(FlowEvent.Start));
+            Assert.IsTrue(f.Fire(FlowEvent.LoadFailed));
+            Assert.AreEqual(FlowState.Room, f.State, "a failed load returns to the room");
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.AreEqual(FlowState.MainMenu, f.State);
+        }
+
+        [Test]
+        public void TheSkirmishOpensOptionsAndSavedGamesAndComesBack()
+        {
+            var f = new GameFlow();
+            f.Fire(FlowEvent.OpenSkirmish);
+            Assert.IsTrue(f.Fire(FlowEvent.OpenOptions));
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.AreEqual(FlowState.Skirmish, f.State);
+            Assert.IsTrue(f.Fire(FlowEvent.OpenLoad));
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.AreEqual(FlowState.Skirmish, f.State);
+            f.Fire(FlowEvent.Back);
+            f.Fire(FlowEvent.OpenLoad);
+            f.Fire(FlowEvent.Back);
+            Assert.AreEqual(FlowState.MainMenu, f.State);
+        }
     }
 }

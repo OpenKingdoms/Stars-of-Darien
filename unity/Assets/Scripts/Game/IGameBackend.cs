@@ -25,6 +25,12 @@ namespace OpenKingdomsUnity.Game
         IReadOnlyList<FeatureDef> FeatureDefs { get; }
         // A picture of the whole map at most maxSize on its longer side, or null.
         RgbaImage MapPreview(string mapId, int maxSize);
+        // Multiplayer rooms, or null when this backend has none.
+        IGameRooms Rooms { get; }
+        // The original's interface art from the player's own files: frame
+        // `frame` of `entry` in anims/<gaf>, in the palette of the .pcx
+        // beside it, for the menus. Null when the backend has none.
+        ArtFrame InterfaceArt(string gaf, string entry, int frame);
 
         // A game. StartSkirmish only records the setup. The presentation then
         // calls PumpLoading once a frame, and each call does a slice of the
@@ -337,6 +343,9 @@ namespace OpenKingdomsUnity.Game
         public string Description;
         public int MaxPlayers;
         public Vector2 Size;        // world units, east by south
+        // Where each kingdom may start, StartPos1 first, in world units east
+        // by south like Size. Empty when the backend cannot say.
+        public Vector2[] Starts = Array.Empty<Vector2>();
         // The land's look, for sky, weather and water defaults: "grass",
         // "snow", "desert", "swamp", "volcanic" or "".
         public string Climate = "";
@@ -399,6 +408,9 @@ namespace OpenKingdomsUnity.Game
         public int Colour;
         public int Team;            // allies share a team
         public AiDifficulty Difficulty = AiDifficulty.Normal;
+        // The start this seat has taken, an index into MapInfo.Starts, or -1
+        // to take one of those left (StartPositions.Assign).
+        public int Start = -1;
     }
 
     public sealed class SkirmishSetup
@@ -411,6 +423,11 @@ namespace OpenKingdomsUnity.Game
         public bool MapRevealed;
         public int StartMana = 1000;
         public int UnitLimit = 250;
+        // Seats that took no start are dealt the free ones at random by
+        // Seed, else in seat order.
+        public bool RandomStarts;
+        // The battle goes on when a monarch falls.
+        public bool MonarchExpendable;
     }
 
     public struct LoadProgress

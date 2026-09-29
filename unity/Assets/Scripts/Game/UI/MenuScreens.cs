@@ -1,6 +1,7 @@
-// MenuScreens.cs - every screen of the game flow on one canvas: the main
-// menu, skirmish setup, options, loading, the pause menu and the victory
-// and defeat screens. The battle HUD has a canvas of its own beneath them.
+// MenuScreens.cs - every screen of the game flow on one canvas: options,
+// loading, the pause menu and the victory and defeat screens here, the
+// opening screen and the lobby in LobbyScreens, the map editor's in
+// EditorScreens. The battle HUD has a canvas of its own beneath them.
 // Show() picks the screens for a flow state, and Tick() refreshes what
 // changes while one is up.
 using System;
@@ -13,27 +14,28 @@ namespace OpenKingdomsUnity.Game.UI
     public sealed class MenuScreens
     {
         public const int ReferenceWidth = 1920, ReferenceHeight = 1080;
+        // Lay out for this size instead of the screen's, for captures and
+        // tests that render off screen.
+        public static Vector2Int? SizeOverride;
 
         readonly GameRoot root;
         readonly Canvas canvas;
         readonly Dictionary<string, GameObject> screens = new Dictionary<string, GameObject>();
         readonly List<UnityEngine.Object> owned = new List<UnityEngine.Object>();
 
-        // Skirmish setup parts that change.
-        RawImage preview, loadingBackdrop;
+        RawImage loadingBackdrop;
         Text saveNote, loadEmpty;
         BattleHud hud;
         EditorScreens editor;
+        LobbyScreens lobby;
         RectTransform saveItems;
-        Text mapTitle, mapInfo, loadingTitle, loadingStage, loadingTip, resultTitle, resultInfo, setupError;
+        Text loadingTitle, loadingStage, loadingTip, resultTitle, resultInfo;
         Image loadingFill;
-        readonly List<Button> mapButtons = new List<Button>();
         readonly Dictionary<string, Texture2D> previews = new Dictionary<string, Texture2D>();
         float resultShownAt;
 
         public string Visible { get; private set; } = "";
 
-        static readonly string[] ColourNames = { "Blue", "Red", "White", "Black", "Green", "Yellow", "Purple", "Orange" };
         static readonly string[] Tips =
         {
             "Right click the ground to move, or an enemy to attack.",
@@ -48,8 +50,6 @@ namespace OpenKingdomsUnity.Game.UI
             this.root = root;
             canvas = UiKit.MakeCanvas("Screens", 10);
             canvas.transform.SetParent(root.transform, false);
-            BuildMainMenu();
-            BuildSkirmish();
             BuildOptions();
             BuildLoading();
             BuildHud();
@@ -57,6 +57,9 @@ namespace OpenKingdomsUnity.Game.UI
             BuildResult();
             BuildLoadList();
             editor = new EditorScreens(root, this);
+            lobby = new LobbyScreens(root, this);
+            Measure(out var size, out float scale);
+            lobby.Fit(size, scale);
             // Modal screens draw over the battle HUD, and their dimmed
             // backdrops take every click meant for what lies beneath.
             foreach (var name in new[] { "Pause", "Options", "Load", "Result" })
@@ -65,6 +68,38 @@ namespace OpenKingdomsUnity.Game.UI
 
         public Canvas Canvas => canvas;
         public BattleHud Hud => hud;
+        public LobbyScreens Lobby => lobby;
+
+        // The canvas's size in its own units and its scale, as it will draw:
+        // the canvas scaler's pick for the screen, or SizeOverride's.
+        void Measure(out Vector2 size, out float scale)
+        {
+            var scaler = canvas.GetComponent<CanvasScaler>();
+            if (SizeOverride is Vector2Int o)
+            {
+                scale = Mathf.Sqrt(o.x / (float)ReferenceWidth * (o.y / (float)ReferenceHeight));
+                scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+                scaler.scaleFactor = scale;
+                canvas.scaleFactor = scale;
+                size = new Vector2(o.x, o.y) / scale;
+                return;
+            }
+            if (scaler.uiScaleMode != CanvasScaler.ScaleMode.ScaleWithScreenSize) scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            size = ((RectTransform)canvas.transform).rect.size;
+            scale = canvas.scaleFactor;
+            if (size.x < 1f || size.y < 1f || scale <= 0f)
+            {
+                scale = Mathf.Sqrt(UnityEngine.Screen.width / (float)ReferenceWidth * (UnityEngine.Screen.height / (float)ReferenceHeight));
+                size = new Vector2(UnityEngine.Screen.width, UnityEngine.Screen.height) / Mathf.Max(0.01f, scale);
+            }
+        }
+
+        public void DropScreen(string name)
+        {
+            if (!screens.TryGetValue(name, out var go)) return;
+            screens.Remove(name);
+            if (go != null) { go.SetActive(false); World.Looks.Release(go); }
+        }
 
         public GameObject Screen(string name) => screens.TryGetValue(name, out var s) ? s : null;
 
@@ -74,7 +109,10 @@ namespace OpenKingdomsUnity.Game.UI
             switch (state)
             {
                 case FlowState.MainMenu: on = new[] { "Menu" }; break;
-                case FlowState.Skirmish: on = new[] { "Skirmish" }; RefreshSkirmish(); break;
+                case FlowState.Skirmish: on = new[] { "Skirmish" }; break;
+                case FlowState.Multiplayer: on = new[] { "Multiplayer" }; break;
+                case FlowState.Room: on = new[] { "Room" }; break;
+                case FlowState.MapChoice: on = new[] { "Room", "MapChoice" }; break;
                 case FlowState.Options: on = root.Flow.OptionsReturn == FlowState.Paused ? new[] { "Hud", "Options" } : new[] { "Options" }; break;
                 case FlowState.Loading: on = new[] { "Loading" }; RefreshLoading(); break;
                 case FlowState.Playing: on = new[] { "Hud" }; break;
@@ -88,11 +126,15 @@ namespace OpenKingdomsUnity.Game.UI
             }
             foreach (var kv in screens) kv.Value.SetActive(Array.IndexOf(on, kv.Key) >= 0);
             Visible = string.Join(",", on);
+            lobby?.Show(state);
         }
 
         public void Tick()
         {
             if (!canvas) return;
+            Measure(out var size, out float scale);
+            if (lobby.Fit(size, scale)) Show(root.Flow.State);
+            lobby.Tick();
             if (root.Flow.State == FlowState.Editing) editor.Tick();
             var b = root.Backend;
             switch (root.Flow.State)
@@ -139,101 +181,6 @@ namespace OpenKingdomsUnity.Game.UI
             return t;
         }
 
-        void BuildMainMenu()
-        {
-            var s = NewScreen("Menu", true);
-            Heading(s, GameRoot.Title, 120, 0.66f, 0.86f);
-            var sub = UiKit.Label(s, "A remaster of Total Annihilation: Kingdoms", 34, UiKit.Pale);
-            sub.rectTransform.Place(0, 0.6f, 1, 0.67f);
-            var rule = UiKit.Picture(s, "Rule", UiKit.BarFill, new Color(1, 1, 1, 0.8f), true);
-            rule.rectTransform.Place(0.5f, 0.59f, 0.5f, 0.59f, -260, -2, -260, -2);
-
-            var col = UiKit.Rect(s, "Buttons").Place(0.5f, 0.06f, 0.5f, 0.56f, -230, 0, -230, 0);
-            UiKit.Column(col, 18);
-            UiKit.MakeButton(col, "Skirmish", () => root.Flow.Fire(FlowEvent.OpenSkirmish), 38).GetComponent<RectTransform>().Size(460, 84);
-            UiKit.MakeButton(col, "Load game", () => root.Flow.Fire(FlowEvent.OpenLoad), 38).GetComponent<RectTransform>().Size(460, 84);
-            UiKit.MakeButton(col, "Map editor", () => root.Flow.Fire(FlowEvent.OpenEditor), 38).GetComponent<RectTransform>().Size(460, 84);
-            UiKit.MakeButton(col, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), 38).GetComponent<RectTransform>().Size(460, 84);
-            UiKit.MakeButton(col, "Quit", () => root.Flow.Fire(FlowEvent.Exit), 38).GetComponent<RectTransform>().Size(460, 84);
-
-            string engine = root.Backend is MockBackend ? "Mock engine, made-up maps" : "Engine: " + root.Backend.Name;
-            string why = string.IsNullOrEmpty(root.BackendProblem) ? "" : "   " + root.BackendProblem;
-            var foot = UiKit.Label(s, $"{engine}.{why}   Free and open, played with your own game files.", 24, string.IsNullOrEmpty(why) ? UiKit.Dim : new Color(1f, 0.6f, 0.45f));
-            foot.rectTransform.Place(0, 0, 1, 0, 0, 20, 0, -60);
-        }
-
-        void BuildSkirmish()
-        {
-            var s = NewScreen("Skirmish", true);
-            Heading(s, "Skirmish", 72, 0.88f, 0.98f);
-
-            // Maps.
-            var list = UiKit.Panel(s, "Maps", false).Place(0, 0, 0, 1, 60, 130, -440, 150);
-            var listTitle = UiKit.Label(list, "Maps", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
-            listTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
-            mapItems = UiKit.ScrollList(list, "Items", 10);
-            ((RectTransform)mapItems.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 80);
-            FillMapList();
-
-            // Preview and details.
-            var pv = UiKit.Panel(s, "Preview", false).Place(0, 0, 0, 1, 470, 130, -1010, 150);
-            var frame = UiKit.Picture(pv, "Mat", UiKit.White, new Color(0.05f, 0.04f, 0.03f));
-            frame.rectTransform.Place(0.5f, 1, 0.5f, 1, -240, -510, -240, 30);
-            preview = UiKit.Rect(frame.transform, "Image").Fill(4).gameObject.AddComponent<RawImage>();
-            preview.gameObject.AddComponent<AspectRatioFitter>().aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-            mapTitle = UiKit.Label(pv, "", 40, UiKit.Gold, TextAnchor.UpperCenter, true);
-            mapTitle.rectTransform.Place(0, 1, 1, 1, 20, -620, 20, 560);
-            mapInfo = UiKit.Label(pv, "", 27, UiKit.Pale, TextAnchor.UpperCenter);
-            mapInfo.rectTransform.Place(0, 0, 1, 1, 30, 20, 30, 630);
-
-            // Seats and options.
-            var seats = UiKit.Panel(s, "Seats", false).Place(0, 0, 1, 1, 1040, 130, 60, 150);
-            var seatTitle = UiKit.Label(seats, "Kingdoms", 34, UiKit.Gold, TextAnchor.MiddleCenter, true);
-            seatTitle.rectTransform.Place(0, 1, 1, 1, 0, -70, 0, 10);
-            var rows = UiKit.Rect(seats, "Rows").Place(0, 0, 1, 1, 24, 24, 24, 80);
-            UiKit.Column(rows, 12);
-            var sideIds = new List<string> { "" };
-            var sideNames = new List<string> { "Random" };
-            foreach (var side in root.Backend.Sides) { sideIds.Add(side.Id); sideNames.Add(side.Name); }
-            for (int i = 0; i < root.Setup.Seats.Count; i++) SeatRow(rows, i, sideIds, sideNames);
-
-            var gap = UiKit.Rect(rows, "Gap").Size(0, 16);
-            var optTitle = UiKit.Label(rows, "Options", 30, UiKit.Gold, TextAnchor.MiddleLeft, true);
-            optTitle.rectTransform.Size(0, 46);
-            var set = root.Setup;
-            OptionRow(rows, "Line of sight", new[] { "On", "Off" }, set.LineOfSight ? 0 : 1, i => set.LineOfSight = i == 0);
-            OptionRow(rows, "Map", new[] { "Unexplored", "Revealed" }, set.MapRevealed ? 1 : 0, i => set.MapRevealed = i == 1);
-            var mana = new[] { 500, 1000, 2500, 5000 };
-            OptionRow(rows, "Starting mana", Array.ConvertAll(mana, m => m.ToString()), Math.Max(0, Array.IndexOf(mana, set.StartMana)), i => set.StartMana = mana[i]);
-            OptionRow(rows, "Weather", new[] { "By map", "Clear", "Rain", "Snow", "Fog" }, (int)root.Options.Weather, i => { root.Options.Weather = (WeatherChoice)i; root.Options.Save(); });
-
-            setupError = UiKit.Label(s, "", 26, new Color(1f, 0.5f, 0.4f));
-            setupError.rectTransform.Place(0, 0, 1, 0, 600, 40, 600, -110);
-            var back = UiKit.MakeButton(s, "Back", () => root.Flow.Fire(FlowEvent.Back), 32);
-            back.GetComponent<RectTransform>().Place(0, 0, 0, 0, 60, 40, -360, -110);
-            var start = UiKit.MakeButton(s, "Start", StartGame, 36);
-            start.name = "Start";
-            start.GetComponent<RectTransform>().Place(1, 0, 1, 0, -360, 40, 60, -110);
-        }
-
-        RectTransform mapItems;
-
-        // The map buttons, made again when the backend's list grows, as it
-        // does when the editor saves a map.
-        void FillMapList()
-        {
-            for (int i = mapItems.childCount - 1; i >= 0; i--) UnityEngine.Object.Destroy(mapItems.GetChild(i).gameObject);
-            mapButtons.Clear();
-            foreach (var m in root.Backend.Maps)
-            {
-                var id = m.Id;
-                var b = UiKit.MakeButton(mapItems, m.Name, () => { root.Setup.MapId = id; RefreshSkirmish(); }, 28);
-                b.GetComponent<RectTransform>().Size(0, 62);
-                b.name = "Map " + id;
-                mapButtons.Add(b);
-            }
-        }
-
         public void StartGame()
         {
             int humans = 0, players = 0;
@@ -243,46 +190,13 @@ namespace OpenKingdomsUnity.Game.UI
                 if (seat.Kind != SeatKind.Closed) players++;
             }
             var map = root.CurrentMap();
-            if (humans == 0 || players < 2) { setupError.text = "A game needs you and at least one computer player."; return; }
-            if (map != null && players > map.MaxPlayers) { setupError.text = $"{map.Name} holds {map.MaxPlayers} players."; return; }
-            setupError.text = "";
+            string why = null;
+            if (humans == 0 || players < 2) why = "A game needs you and at least one computer player.";
+            else if (map != null && players > MapCatalog.PlayersOf(map)) why = $"{map.Name} holds {MapCatalog.PlayersOf(map)} players.";
+            lobby.Skirmish?.ShowError(why);
+            if (why != null) return;
             root.Setup.Seed = (uint)Environment.TickCount;
             root.Flow.Fire(FlowEvent.Start);
-        }
-
-        void SeatRow(Transform parent, int index, List<string> sideIds, List<string> sideNames)
-        {
-            var seat = root.Setup.Seats[index];
-            var row = UiKit.Rect(parent, "Seat " + index).Size(0, 58);
-            UiKit.Row(row, 10);
-            var name = UiKit.Label(row, index == 0 ? "You" : "Seat " + (index + 1), 28, UiKit.Pale, TextAnchor.MiddleLeft, true);
-            name.rectTransform.Size(92, 0);
-            if (index == 0)
-            {
-                var fixedKind = UiKit.Label(row, "Human", 22, UiKit.Dim);
-                fixedKind.rectTransform.Size(150, 0);
-            }
-            else
-                UiKit.Cycle(row, new[] { "Closed", "Computer" }, seat.Kind == SeatKind.Computer ? 1 : 0,
-                    i => seat.Kind = i == 1 ? SeatKind.Computer : SeatKind.Closed, 21).GetComponent<RectTransform>().Size(150, 0);
-            UiKit.Cycle(row, sideNames.ToArray(), Math.Max(0, sideIds.IndexOf(seat.Side)), i => seat.Side = sideIds[i], 21)
-                .GetComponent<RectTransform>().Size(140, 0);
-            var colour = UiKit.Cycle(row, ColourNames, seat.Colour % ColourNames.Length, null, 21);
-            colour.GetComponent<RectTransform>().Size(120, 0);
-            var swatch = colour.GetComponent<Image>();
-            swatch.color = Tint(seat.Colour);
-            colour.Init(ColourNames, seat.Colour % ColourNames.Length, i => { seat.Colour = i; swatch.color = Tint(i); }, colour.GetComponentInChildren<Text>());
-            UiKit.Cycle(row, new[] { "Team 1", "Team 2", "Team 3", "Team 4" }, seat.Team % 4, i => seat.Team = i, 21)
-                .GetComponent<RectTransform>().Size(110, 0);
-            if (index > 0)
-                UiKit.Cycle(row, new[] { "Easy", "Normal", "Hard", "Brutal" }, (int)seat.Difficulty, i => seat.Difficulty = (AiDifficulty)i, 21)
-                    .GetComponent<RectTransform>().Size(116, 0);
-        }
-
-        static Color Tint(int colour)
-        {
-            var c = (Color)MockBackend.Palette[Mathf.Abs(colour) % MockBackend.Palette.Length];
-            return Color.Lerp(c, Color.white, 0.35f);
         }
 
         static void OptionRow(Transform parent, string label, string[] choices, int index, Action<int> changed)
@@ -292,27 +206,6 @@ namespace OpenKingdomsUnity.Game.UI
             var l = UiKit.Label(row, label, 27, UiKit.Pale, TextAnchor.MiddleLeft);
             l.rectTransform.Size(260, 0);
             UiKit.Cycle(row, choices, index, changed).GetComponent<RectTransform>().Size(260, 0);
-        }
-
-        void RefreshSkirmish()
-        {
-            if (mapButtons.Count != root.Backend.Maps.Count) FillMapList();
-            var map = root.CurrentMap();
-            if (map == null) return;
-            root.Setup.MapId = map.Id;
-            foreach (var b in mapButtons)
-            {
-                bool on = b.name == "Map " + map.Id;
-                b.GetComponent<Image>().color = on ? new Color(1.2f, 1.05f, 0.75f) : Color.white;
-                b.GetComponentInChildren<Text>().color = on ? UiKit.GoldBright : UiKit.Gold;
-            }
-            var tex = Preview(map.Id);
-            preview.texture = tex;
-            if (tex != null) preview.GetComponent<AspectRatioFitter>().aspectRatio = (float)tex.width / tex.height;
-            mapTitle.text = map.Name;
-            string climate = string.IsNullOrEmpty(map.Climate) ? "" : "   " + char.ToUpper(map.Climate[0]) + map.Climate.Substring(1);
-            mapInfo.text = $"{map.Description}\n\n{map.Size.x:0} by {map.Size.y:0}   Up to {map.MaxPlayers} players{climate}";
-            if (setupError != null) setupError.text = root.LastError ?? "";
         }
 
         Texture2D Preview(string mapId)
@@ -517,6 +410,7 @@ namespace OpenKingdomsUnity.Game.UI
         public void Dispose()
         {
             hud?.Dispose();
+            lobby?.Dispose();
             foreach (var o in owned) World.Looks.Release(o);
             owned.Clear();
             if (canvas) World.Looks.Release(canvas.gameObject);

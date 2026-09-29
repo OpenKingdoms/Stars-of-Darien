@@ -59,7 +59,45 @@ namespace OpenKingdomsUnity.Game
             new MapInfo { Id = "mock_dunes", Name = "Red Dunes", Description = "Dry land and an oasis.", MaxPlayers = 4, Size = new Vector2(128, 96), Climate = "desert" },
             new MapInfo { Id = "mock_moat", Name = "Castle Moat", Description = "A high rim around a lake, as on Castle.", MaxPlayers = 4, Size = new Vector2(96, 96), Climate = "grass" },
             new MapInfo { Id = "mock_bay", Name = "Quiet Bay", Description = "A long bay between a sandy beach and a cliff.", MaxPlayers = 2, Size = new Vector2(128, 128), Climate = "grass" },
+            // Larger lands for the lobby's browser, in the original's map units of 32.
+            new MapInfo { Id = "mock_marches", Name = "Border Marches", Description = "Eight holds along a wide frontier.", MaxPlayers = 8, Size = new Vector2(512, 512), Climate = "grass" },
+            new MapInfo { Id = "mock_fens", Name = "Seven Fens", Description = "Reed beds and causeways between black pools.", MaxPlayers = 7, Size = new Vector2(448, 384), Climate = "swamp" },
+            new MapInfo { Id = "mock_ridge", Name = "Ember Ridge", Description = "Three camps below a smoking ridge.", MaxPlayers = 3, Size = new Vector2(320, 192), Climate = "volcanic" },
+            new MapInfo { Id = "mock_crossing", Name = "Harrow Crossing", Description = "Fords over a winding river.", MaxPlayers = 6, Size = new Vector2(384, 256), Climate = "grass" },
+            new MapInfo { Id = "mock_steppe", Name = "Wide Steppe", Description = "Open sand from edge to edge.", MaxPlayers = 8, Size = new Vector2(640, 640), Climate = "desert" },
+            new MapInfo { Id = "mock_hollow", Name = "Wren Hollow", Description = "A small green valley for two.", MaxPlayers = 2, Size = new Vector2(192, 192), Climate = "grass" },
+            new MapInfo { Id = "mock_spine", Name = "Serpent Spine", Description = "Snowfields either side of a long ridge.", MaxPlayers = 5, Size = new Vector2(480, 480), Climate = "snow" },
+            new MapInfo { Id = "mock_saltmarsh", Name = "Saltmarsh Keep", Description = "Four keeps on the edge of a marsh.", MaxPlayers = 4, Size = new Vector2(288, 320), Climate = "swamp" },
         };
+
+        // The first six keep the corners their armies always had, the rest
+        // stand round the middle.
+        static readonly Vector2[] Corners = { new Vector2(0.18f, 0.82f), new Vector2(0.82f, 0.18f), new Vector2(0.82f, 0.82f), new Vector2(0.18f, 0.18f) };
+
+        void GiveStarts()
+        {
+            for (int i = 0; i < maps.Count; i++)
+            {
+                var m = maps[i];
+                var st = new Vector2[m.MaxPlayers];
+                for (int k = 0; k < st.Length; k++)
+                {
+                    Vector2 f = i < 6 ? Corners[k % 4] : new Vector2(0.5f + 0.36f * Mathf.Cos(2.3f + k * 2f * Mathf.PI / st.Length), 0.5f + 0.34f * Mathf.Sin(2.3f + k * 2f * Mathf.PI / st.Length));
+                    st[k] = new Vector2(f.x * m.Size.x, f.y * m.Size.y);
+                }
+                m.Starts = st;
+            }
+        }
+
+        MockRooms rooms;
+        public IGameRooms Rooms => rooms ??= new MockRooms(id => maps.Find(m => m.Id == id), () => maps.Count > 0 ? maps[0].Id : null);
+
+        // A folder of the game's own interface art (its anims folder), from
+        // OKU_ART_DIR, or null for none.
+        public string ArtDir = System.Environment.GetEnvironmentVariable("OKU_ART_DIR");
+
+        public ArtFrame InterfaceArt(string gaf, string entry, int frame) =>
+            string.IsNullOrEmpty(ArtDir) ? null : GafFiles.Read(ArtDir, gaf, entry, frame);
 
         readonly List<SideInfo> sides = new List<SideInfo>
         {
@@ -139,6 +177,7 @@ namespace OpenKingdomsUnity.Game
 
         public MockBackend()
         {
+            GiveStarts();
             string[] anims = { "idle", "walk", "attack" };
             foreach (var s in sides)
             {
@@ -272,10 +311,14 @@ namespace OpenKingdomsUnity.Game
         void MakePlayers()
         {
             int seat = 0, position = 0;
+            var dealt = StartPositions.Assign(setup.Seats, map.Starts.Length, setup.RandomStarts, setup.Seed);
+            homes.Clear();
             foreach (var s in setup.Seats)
             {
                 position++;
                 if (s.Kind == SeatKind.Closed) continue;
+                int start = dealt[position - 1];
+                homes.Add(start >= 0 ? new Vector2(map.Starts[start].x, -map.Starts[start].y) : Corner(homes.Count));
                 string side = string.IsNullOrEmpty(s.Side) ? sides[rng.Next(sides.Count)].Id : s.Side;
                 players.Add(new PlayerInfo
                 {
@@ -288,15 +331,19 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
+        // Each player's start by list position, from the seats' dealt starts.
+        readonly List<Vector2> homes = new List<Vector2>();
+
         Vector2 StartOf(int player)
         {
-            var sz = map.Size;
-            Vector2[] corners =
-            {
-                new Vector2(0.18f, 0.82f), new Vector2(0.82f, 0.18f), new Vector2(0.82f, 0.82f), new Vector2(0.18f, 0.18f),
-            };
-            var c = corners[player % corners.Length];
-            return new Vector2(c.x * sz.x, -c.y * sz.y);
+            if (player < homes.Count) return homes[player];
+            return Corner(player);
+        }
+
+        Vector2 Corner(int player)
+        {
+            var c = Corners[player % Corners.Length];
+            return new Vector2(c.x * map.Size.x, -c.y * map.Size.y);
         }
 
         void PlantFeatures()
@@ -308,7 +355,7 @@ namespace OpenKingdomsUnity.Game
                 float h = Terrain.Sample(x, z);
                 if (h < Terrain.SeaLevel + 0.4f) continue;
                 bool nearStart = false;
-                for (int p = 0; p < 4; p++) nearStart |= (StartOf(p) - new Vector2(x, z)).magnitude < 12;
+                for (int p = 0; p < Mathf.Max(4, homes.Count); p++) nearStart |= (StartOf(p) - new Vector2(x, z)).magnitude < 12;
                 if (nearStart) continue;
                 int def = i % 5 < 3 ? 0 : (i % 5 == 3 ? 1 : 2);
                 features.Add(new Feature
@@ -767,7 +814,7 @@ namespace OpenKingdomsUnity.Game
                 SeaLevel = t.SeaLevel, BlocksW = t.BlocksW, BlocksH = t.BlocksH, BlockSize = t.BlockSize,
                 BlockTexels = t.BlockTexels, ChunkCount = t.ChunkCount, Blocks = (int[])t.Blocks.Clone(),
             };
-            var info = new MapInfo { Id = name, Name = name, Description = "Made in the map editor.", MaxPlayers = map.MaxPlayers, Size = map.Size, Climate = map.Climate };
+            var info = new MapInfo { Id = name, Name = name, Description = "Made in the map editor.", MaxPlayers = map.MaxPlayers, Size = map.Size, Climate = map.Climate, Starts = map.Starts };
             savedMaps[name] = (copy, new List<Feature>(features), new Dictionary<uint, int>(libraryChunk));
             maps.RemoveAll(m => m.Id == name);
             maps.Add(info);

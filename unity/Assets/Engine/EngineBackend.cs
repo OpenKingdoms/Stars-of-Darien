@@ -71,13 +71,23 @@ namespace OpenKingdomsUnity.Engine
                 {
                     Id = mi.name, Name = mi.name, Description = mi.description ?? "",
                     MaxPlayers = Mathf.Max(2, mi.maxPlayers),
-                    Size = new Vector2(mi.sizeX, mi.sizeY), Climate = Climate(mi.kingdom)
+                    // The .ota's size is in map units of 32 cells.
+                    Size = new Vector2(mi.sizeX, mi.sizeY) * MapCatalog.CellsPerUnit, Climate = Climate(mi.kingdom)
                 });
                 mapIndex[mi.name] = i;
             }
         }
 
         public IReadOnlyList<MapInfo> Maps => maps;
+        public IGameRooms Rooms { get; } = new EngineRooms();
+
+        // The engine has no call for interface art yet, so it comes from the
+        // unpacked data folder when there is one.
+        public ArtFrame InterfaceArt(string gaf, string entry, int frame)
+        {
+            string d = EngineSettings.DataDir;
+            return string.IsNullOrEmpty(d) ? null : GafFiles.Read(System.IO.Path.Combine(d, "data", "anims"), gaf, entry, frame);
+        }
         public IReadOnlyList<SideInfo> Sides => sides;
         public IReadOnlyList<UnitDef> UnitDefs => unitDefs;
         public IReadOnlyList<FeatureDef> FeatureDefs => featureDefs;
@@ -183,6 +193,8 @@ namespace OpenKingdomsUnity.Engine
             cfg.mapRevealed = setup.MapRevealed ? 1 : 0;
             cfg.seed = setup.Seed;
             cfg.unitsPerSide = setup.UnitLimit;
+            cfg.randomStartLocations = setup.RandomStarts ? 1 : 0;
+            cfg.monarchExpendable = setup.MonarchExpendable ? 1 : 0;
             // The lobby's lineup seat by seat. The engine plays seat 0 as
             // the local player.
             cfg.seatCount = Mathf.Min(setup.Seats.Count, cfg.seats.Length);

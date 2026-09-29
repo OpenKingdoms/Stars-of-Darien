@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.UI
 {
-    public static class HudArt
+    public static partial class HudArt
     {
         public static readonly Color Vellum = Hex(0xEDE0C4), VellumShade = Hex(0xD9C7A0), VellumEdge = Hex(0xB89A68);
         public static readonly Color Ink = Hex(0x2E2118), Minium = Hex(0xA8291B), Azurite = Hex(0x2F4F9A), Verdigris = Hex(0x2E6346);

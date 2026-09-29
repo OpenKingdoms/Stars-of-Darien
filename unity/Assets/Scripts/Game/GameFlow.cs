@@ -7,12 +7,13 @@ using System.Collections.Generic;
 
 namespace OpenKingdomsUnity.Game
 {
-    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit, LoadList, EditorSetup, Editing }
+    public enum FlowState { MainMenu, Skirmish, Options, Loading, Playing, Paused, Victory, Defeat, Quit, LoadList, EditorSetup, Editing, Multiplayer, Room, MapChoice }
 
     public enum FlowEvent
     {
         OpenSkirmish, OpenOptions, Back, Start, Loaded, LoadFailed, OpenLoad, OpenEditor,
         Pause, Resume, Won, Lost, ToMenu, Exit,
+        OpenMultiplayer, EnterRoom, ChooseMap,
     }
 
     public sealed class GameFlow
@@ -22,6 +23,8 @@ namespace OpenKingdomsUnity.Game
         public FlowState OptionsReturn { get; private set; } = FlowState.MainMenu;
         // Where a failed load returns: skirmish setup or the saved games.
         public FlowState LoadingFrom { get; private set; } = FlowState.Skirmish;
+        // Where Back from the saved games returns: the menu or the skirmish.
+        public FlowState LoadListReturn { get; private set; } = FlowState.MainMenu;
         public event Action<FlowState, FlowState> Changed;
 
         static readonly Dictionary<(FlowState, FlowEvent), FlowState> Table = new Dictionary<(FlowState, FlowEvent), FlowState>
@@ -38,6 +41,16 @@ namespace OpenKingdomsUnity.Game
             { (FlowState.LoadList, FlowEvent.Start), FlowState.Loading },
             { (FlowState.Skirmish, FlowEvent.Back), FlowState.MainMenu },
             { (FlowState.Skirmish, FlowEvent.Start), FlowState.Loading },
+            { (FlowState.Skirmish, FlowEvent.OpenOptions), FlowState.Options },
+            { (FlowState.Skirmish, FlowEvent.OpenLoad), FlowState.LoadList },
+            { (FlowState.MainMenu, FlowEvent.OpenMultiplayer), FlowState.Multiplayer },
+            { (FlowState.Multiplayer, FlowEvent.Back), FlowState.MainMenu },
+            { (FlowState.Multiplayer, FlowEvent.EnterRoom), FlowState.Room },
+            { (FlowState.Room, FlowEvent.Back), FlowState.Multiplayer },
+            { (FlowState.Room, FlowEvent.ChooseMap), FlowState.MapChoice },
+            { (FlowState.Room, FlowEvent.OpenOptions), FlowState.Options },
+            { (FlowState.Room, FlowEvent.Start), FlowState.Loading },
+            { (FlowState.MapChoice, FlowEvent.Back), FlowState.Room },
             { (FlowState.Loading, FlowEvent.Loaded), FlowState.Playing },
             { (FlowState.Loading, FlowEvent.LoadFailed), FlowState.Skirmish },
             { (FlowState.Playing, FlowEvent.Pause), FlowState.Paused },
@@ -53,6 +66,7 @@ namespace OpenKingdomsUnity.Game
         public bool CanFire(FlowEvent e)
         {
             if (State == FlowState.Options && e == FlowEvent.Back) return true;
+            if (State == FlowState.LoadList && e == FlowEvent.Back) return true;
             return Table.ContainsKey((State, e));
         }
 
@@ -62,11 +76,13 @@ namespace OpenKingdomsUnity.Game
         {
             FlowState next;
             if (State == FlowState.Options && e == FlowEvent.Back) next = OptionsReturn;
+            else if (State == FlowState.LoadList && e == FlowEvent.Back) next = LoadListReturn;
             else if (State == FlowState.Loading && e == FlowEvent.LoadFailed) next = LoadingFrom;
             else if (State == FlowState.Loading && e == FlowEvent.Loaded && LoadingFrom == FlowState.EditorSetup) next = FlowState.Editing;
             else if (!Table.TryGetValue((State, e), out next)) return false;
             if (next == FlowState.Loading) LoadingFrom = State;
             if (next == FlowState.Options) OptionsReturn = State;
+            if (next == FlowState.LoadList) LoadListReturn = State;
             var was = State;
             State = next;
             Changed?.Invoke(was, next);
