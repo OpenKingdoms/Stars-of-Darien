@@ -181,7 +181,17 @@ namespace OpenKingdomsUnity.Game.UI
             }
             p.Root.SetAsLastSibling();
             var bg = p.ArtImage(p.Root, gaf, entry, 0, ox, oy);
-            if (bg != null) { bg.raycastTarget = true; bg.transform.SetAsFirstSibling(); }
+            if (bg != null)
+            {
+                bg.raycastTarget = true;
+                bg.transform.SetAsFirstSibling();
+                // The art leaves holes for its buttons, black as the game's
+                // own screen under them, so no seam shows the margin.
+                var under = p.Wash(p.Root, ox, oy, bg.texture.width, bg.texture.height, Color.black);
+                under.name = "Under";
+                under.raycastTarget = false;
+                under.transform.SetAsFirstSibling();
+            }
             else PaintedPage(p, ox, oy, panels, dim);
             var light = UiKit.Picture(p.Root, "Light", UiKit.Glow, new Color(1f, 0.84f, 0.58f, 0.07f));
             var lr = light.rectTransform;
