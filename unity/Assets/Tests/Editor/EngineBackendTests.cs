@@ -171,6 +171,41 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(1, facing);
         }
 
+        // A building stands facing south, toward the classic camera, and
+        // reads 180 as the contract turns.
+        [Test, Order(7)]
+        public void ALodestoneStandsFacingSouth()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, king = -1;
+            for (int i = 0; i < n && king < 0; i++)
+                if (units[i].Player == me && backend.UnitDefs[units[i].Def].BuildOptions.Length > 0 && !backend.UnitDefs[units[i].Def].IsBuilding) king = i;
+            Assert.GreaterOrEqual(king, 0);
+            var u = units[king];
+            int lode = Array.Find(backend.UnitDefs[u.Def].BuildOptions, o => backend.UnitDefs[o].IsBuilding && backend.UnitDefs[o].Name.ToUpperInvariant().Contains("LODE"));
+            var features = new FeatureState[8192];
+            int nf = backend.ReadFeatures(features);
+            Vector3 site = default;
+            float best = float.MaxValue;
+            for (int i = 0; i < nf; i++)
+            {
+                if (backend.FeatureDefs[features[i].Def].Name.IndexOf("Mana", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                float d = (features[i].Position - u.Position).sqrMagnitude;
+                if (d < best && backend.CanBuildAt(lode, features[i].Position, 0, out var snapped)) { best = d; site = snapped; }
+            }
+            Assert.Less(best, float.MaxValue, "a lodestone site");
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = u.Handle, Target = site, TargetUnit = -1, BuildDef = lode }));
+            float heading = float.NaN;
+            for (int t = 0; t < 60 * 90 && float.IsNaN(heading); t += 60)
+            {
+                backend.Advance(60);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                    if (units[i].Def == lode && units[i].Player == me) heading = units[i].Heading;
+            }
+            Assert.AreEqual(0f, Mathf.DeltaAngle(heading, 180f), 0.5f, "a lodestone faces south");
+        }
+
         [Test, Order(9)]
         public void TheWholeBattleIsCountedAndNoMatchIsOutOfStep()
         {
@@ -445,7 +480,8 @@ namespace OpenKingdomsUnity.Tests
         }
 
         // A formation move reaches the engine whole: the point in the
-        // contract's space, and the heading held on arrival.
+        // contract's space, and the heading held on arrival, turned as the
+        // unit's own walking turns it.
         [Test, Order(10)]
         public void AFormationMoveWalksToItsPointAndHoldsItsHeading()
         {
@@ -460,6 +496,21 @@ namespace OpenKingdomsUnity.Tests
             }
             Assert.GreaterOrEqual(pick, 0);
             var u = units[pick];
+            // East is 90 in the contract, and a walk east faces east.
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, u.Handle, u.Position + new Vector3(8f, 0f, 0f))));
+            float walking = float.NaN;
+            for (int t = 0; t < 60 && float.IsNaN(walking); t += 5)
+            {
+                backend.Advance(5);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                    if (units[i].Handle == u.Handle && units[i].Position.x > u.Position.x + 0.5f) walking = units[i].Heading;
+            }
+            Assert.AreEqual(0f, Mathf.DeltaAngle(walking, 90f), 20f, "walking east it faces 90");
+            backend.Command(GameCommand.To(CommandKind.Stop, u.Handle, Vector3.zero));
+            backend.Advance(3);
+            n = backend.ReadUnits(units);
+            for (int i = 0; i < n; i++) if (units[i].Handle == u.Handle) u = units[i];
             var to = new Vector2(u.Position.x - 4f, u.Position.z + 2f);
             Assert.IsTrue(backend.MoveFormation(new[] { u.Handle }, new[] { to }, 90f, false, false));
             Vector3 at = u.Position;
@@ -475,6 +526,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(to.x, at.x, 0.5f);
             Assert.AreEqual(to.y, at.z, 0.5f);
             Assert.AreEqual(0f, Mathf.DeltaAngle(heading, 90f), 3f, "it faces the heading given");
+            Assert.AreEqual(0f, Mathf.DeltaAngle(heading, walking), 20f, "the way its walk east faced");
             if (enemy >= 0)
                 Assert.IsFalse(backend.MoveFormation(new[] { enemy }, new[] { to }, null, false, false), "nobody took it");
         }

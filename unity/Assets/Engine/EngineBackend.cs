@@ -367,13 +367,9 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Snapshots ──────────────────────────────────────────────────
 
-        // Engine heading: radians, 0 facing south, turning clockwise seen
-        // from above. The contract's: degrees, 0 facing north, clockwise.
-        static float Heading(float radians)
-        {
-            float d = radians * Mathf.Rad2Deg + 180f;
-            return Mathf.Repeat(d, 360f);
-        }
+        // Engine heading: radians, 0 facing north, turning clockwise seen
+        // from above, as the contract's degrees turn.
+        static float Heading(float radians) => Mathf.Repeat(radians * Mathf.Rad2Deg, 360f);
 
         // The engine does not report a flyer's altitude, speed or flying
         // state yet, so they are worked out here from where it stands, tick
@@ -489,7 +485,7 @@ namespace OpenKingdomsUnity.Engine
                 into[i] = new FeatureState
                 {
                     Index = f.index, Def = f.def, Position = EngineSettings.ToUnity(f.x, f.y, f.z),
-                    Heading = Heading(f.heading), Pitch = f.pitch * Mathf.Rad2Deg, Roll = f.roll * Mathf.Rad2Deg,
+                    Heading = f.model < 0 ? FeatureState.PictureHeading : Heading(f.heading), Pitch = f.pitch * Mathf.Rad2Deg, Roll = f.roll * Mathf.Rad2Deg,
                     Model = f.model, Sprite = f.sprite,
                     SpriteTop = (f.top - f.y) * S, SpriteBottom = (f.bottom - f.y) * S,
                     SpriteOffsetX = f.offX * S, SpriteWidth = f.w * S, Flat = f.flat != 0
@@ -718,7 +714,7 @@ namespace OpenKingdomsUnity.Engine
                 xy[2 * i] = (int)(targets[i].x / S);
                 xy[2 * i + 1] = (int)(-targets[i].y / S);
             }
-            float rad = heading.HasValue ? (heading.Value - 180f) * Mathf.Deg2Rad : 0f;
+            float rad = heading.HasValue ? heading.Value * Mathf.Deg2Rad : 0f;
             return OkEngine.okx_move_formation(units, xy, n, heading.HasValue ? 1 : 0, rad, groupSpeed ? 1 : 0, queue ? 1 : 0) == 0;
         }
 

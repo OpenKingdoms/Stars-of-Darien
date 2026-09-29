@@ -494,6 +494,8 @@ namespace OpenKingdomsUnity.Game
         // ground, OffsetX left of centre, Width wide. Flat lies on the ground.
         public float SpriteTop, SpriteBottom, SpriteOffsetX, SpriteWidth;
         public bool Flat;
+        // A sprite feature is a picture facing the camera, so it faces south.
+        public const float PictureHeading = 180f;
     }
 
     // How a shot in flight is drawn, the engine's OKX_PROJ_*.

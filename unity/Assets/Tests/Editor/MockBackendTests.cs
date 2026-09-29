@@ -32,6 +32,24 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(26, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer, a wagon and a flyer");
         }
 
+        // Headings agree with the engine's: a building stands facing south,
+        // 180, and so does a sprite feature, a picture facing the camera.
+        [Test]
+        public void BuildingsAndPicturesFaceSouth()
+        {
+            var b = Loaded();
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units), buildings = 0;
+            for (int i = 0; i < n; i++)
+                if (b.UnitDefs[units[i].Def].IsBuilding) { buildings++; Assert.AreEqual(180f, units[i].Heading, 0.01f, "a building faces south"); }
+            Assert.Greater(buildings, 0);
+            var fs = new FeatureState[4096];
+            int nf = b.ReadFeatures(fs), pictures = 0;
+            for (int i = 0; i < nf; i++)
+                if (fs[i].Model < 0) { pictures++; Assert.AreEqual(180f, fs[i].Heading, 0.01f, "a picture faces south"); }
+            Assert.Greater(pictures, 0);
+        }
+
         // A knight walks out and back. Ground it saw is dimmed after with
         // line of sight on, and stays clear with it off.
         static (int dim, int clear) Scouted(bool lineOfSight)

@@ -58,7 +58,7 @@ namespace OpenKingdomsUnity.Tests
                     if (units[i].Def == lodge && (units[i].Position - site).sqrMagnitude < 0.01f) { built = i; break; }
                 Assert.GreaterOrEqual(built, 0, "the lodge went up at the site");
                 Assert.AreEqual(1, units[built].Facing);
-                Assert.AreEqual(90f, units[built].Heading, 0.01f, "it faces a quarter turn round");
+                Assert.AreEqual(270f, units[built].Heading, 0.01f, "a quarter turn round from south, it faces west");
                 var cells = mock.Occupied(units[built].Handle);
                 Assert.AreEqual(new Vector2Int(fp.y, fp.x), cells.size, "width and depth are swapped");
 

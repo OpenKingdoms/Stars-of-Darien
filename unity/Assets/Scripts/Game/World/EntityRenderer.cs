@@ -228,6 +228,10 @@ namespace OpenKingdomsUnity.Game.World
             return list;
         }
 
+        // Every model faces south at rest, the side the classic camera sees,
+        // so a model with a heading turns by that less a half turn.
+        public static Quaternion ModelTurn(float heading, float pitch = 0f, float roll = 0f) => Quaternion.Euler(pitch, heading - 180f, roll);
+
         // Where the ghost's pieces reach, in world space.
         public Bounds GhostBounds(GhostState g) => BoundsOf(GhostParts(g, g.Facing * 90f));
 
@@ -251,7 +255,7 @@ namespace OpenKingdomsUnity.Game.World
                 if (card != null)
                 {
                     var u = Units[i];
-                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * lift, Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
+                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * lift, ModelTurn(u.Heading, u.Pitch, u.Roll), Vector3.one);
                     foreach (var part in card.Model.Parts) list.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot));
                 }
             }
@@ -331,6 +335,7 @@ namespace OpenKingdomsUnity.Game.World
             UnitCount = backend.ReadUnits(Units);
             DrawnSize.Clear();
             Hulls.Clear();
+            CardTurns.Clear();
             swayOf.Clear();
             rising.Clear();
             blocksUsed = 0;
@@ -367,6 +372,8 @@ namespace OpenKingdomsUnity.Game.World
         // Each ship drawn this frame: its hull at the waterline, and where
         // that hull's middle and bow lie.
         public readonly Dictionary<int, (ShipHull hull, Vector2 middle, Vector2 bow)> Hulls = new Dictionary<int, (ShipHull, Vector2, Vector2)>();
+        // The turn each card model was drawn with this frame.
+        public readonly Dictionary<int, Quaternion> CardTurns = new Dictionary<int, Quaternion>();
         readonly Dictionary<PresentedModel, ShipHull> hullOf = new Dictionary<PresentedModel, ShipHull>();
 
         ShipHull HullOf(PresentedModel m)
@@ -534,8 +541,9 @@ namespace OpenKingdomsUnity.Game.World
                 var card = def != null ? CardOverride.For(def.ObjectName) : null;
                 if (card != null)
                 {
-                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f),
-                        Quaternion.Euler(u.Pitch, u.Heading - 180f, u.Roll), Vector3.one);
+                    var turn = ModelTurn(u.Heading, u.Pitch, u.Roll);
+                    CardTurns[u.Handle] = turn;
+                    var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f), turn, Vector3.one);
                     foreach (var part in card.Model.Parts) Put(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
                 }
                 for (int p = 0; p < n; p++)
@@ -748,6 +756,8 @@ namespace OpenKingdomsUnity.Game.World
             public float W, Bottom, Top, OffX;
             public Mesh Drape;
             public float SiteTop;
+            public bool DropIn;
+            public Quaternion Turn;
 
             public bool Same(in FeatureState f) =>
                 f.Def == Def && f.Model == Model && f.Sprite == Sprite && f.Position == Position && f.Heading == Heading;
@@ -758,6 +768,15 @@ namespace OpenKingdomsUnity.Game.World
 
         // Whether a feature is drawn standing at p, to within in x and z.
         public bool FeatureDrawnAt(Vector3 p, float within) => !float.IsNaN(FeatureDrawnHeight(p, within));
+
+        // The turn of a drop-in model drawn for a feature standing at p.
+        public bool FeatureTurn(Vector3 p, float within, out Quaternion turn)
+        {
+            foreach (var e in featureEntries)
+                if (e.DropIn && Mathf.Abs(e.Position.x - p.x) <= within && Mathf.Abs(e.Position.z - p.z) <= within) { turn = e.Turn; return true; }
+            turn = Quaternion.identity;
+            return false;
+        }
 
         // The height a feature standing at p is drawn at, or NaN.
         public float FeatureDrawnHeight(Vector3 p, float within)
@@ -817,6 +836,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             e.Draws.Clear();
             e.Card = false;
+            e.DropIn = false;
             e.SiteTop = 0;
             if (e.Drape != null) { owned.Remove(e.Drape); Looks.Release(e.Drape); e.Drape = null; }
         }
@@ -836,7 +856,9 @@ namespace OpenKingdomsUnity.Game.World
                 if (over != null)
                 {
                     if (over.StandTop > 0) e.SiteTop = over.StandTop;
-                    var at = Matrix4x4.TRS(f.Position, Quaternion.Euler(0, f.Heading, 0), Vector3.one);
+                    e.DropIn = true;
+                    e.Turn = ModelTurn(f.Heading);
+                    var at = Matrix4x4.TRS(f.Position, e.Turn, Vector3.one);
                     foreach (var part in over.Parts) e.Draws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat));
                     return;
                 }

@@ -798,7 +798,7 @@ namespace OpenKingdomsUnity.Game
                 into[n++] = new UnitState
                 {
                     Handle = u.Handle, StableId = (uint)u.Handle, Def = u.Def, Player = IdOf(u.Player), Flags = f,
-                    Position = u.Pos + Vector3.up * Lift(u), Heading = u.Heading, Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
+                    Position = u.Pos + Vector3.up * Lift(u), Heading = ContractHeading(u), Roll = u.Dying ? Mathf.Min(90f, u.DyingFor * 120f) : 0f,
                     Health = u.Health, MaxHealth = u.MaxHealth, BuildProgress = u.Built, Model = u.Model, Facing = u.Facing,
                     Mana = ManaOf(u.Handle), MaxMana = mana.ContainsKey(u.Handle) ? MageMana : 0,
                     Altitude = u.Alt, Speed = u.Dying ? 0f : u.Speed,
@@ -806,6 +806,10 @@ namespace OpenKingdomsUnity.Game
             }
             return n;
         }
+
+        // A building keeps its turn from where it stands at rest, facing
+        // south as the engine's do.
+        float ContractHeading(Unit u) => unitDefs[u.Def].IsBuilding ? Mathf.Repeat(u.Heading + 180f, 360f) : u.Heading;
 
         // As EngineBackend does: a ship afloat is drawn in the surface.
         float Lift(Unit u) => Terrain == null ? 0f : Afloat.Lift(unitDefs[u.Def], u.Pos.y, Terrain.SeaLevel);
@@ -819,7 +823,7 @@ namespace OpenKingdomsUnity.Game
                 var def = featureDefs[f.Def];
                 into[n++] = new FeatureState
                 {
-                    Index = i, Def = f.Def, Position = f.Pos, Heading = f.Heading, Model = f.Model, Sprite = f.Sprite,
+                    Index = i, Def = f.Def, Position = f.Pos, Heading = f.Model < 0 ? FeatureState.PictureHeading : f.Heading, Model = f.Model, Sprite = f.Sprite,
                     SpriteBottom = 0, SpriteTop = def.Height, SpriteWidth = def.Footprint.x * 1.2f,
                     SpriteOffsetX = def.Footprint.x * 0.6f,
                 };
