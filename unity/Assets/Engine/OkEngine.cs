@@ -207,6 +207,17 @@ namespace OpenKingdomsUnity.Engine
         public int kind, target, x, y, building;
     }
 
+    // One of a unit's orders, the one in hand first, then each queued:
+    // kind a TAK_CMD_* value (Rally for a factory's rally), a point in
+    // world pixels, a target handle or -1, a build's def and facing, and
+    // OkEngine.Leg* flags. heading is in radians with LegFace.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxOrderLeg
+    {
+        public int kind, x, y, target, def, facing, flags;
+        public float heading;
+    }
+
     // The engine's command types (TAK_CMD_* in tak_commands.h).
     public enum OkxCmd
     {
@@ -219,7 +230,11 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 20;
+        public const int ApiVersion = 21;
+        // In okx_command's arg: behind the orders the unit holds, as Shift.
+        public const int Queue = 0x8000;
+        public const int LegQueued = 1, LegFormation = 2, LegFace = 4, LegReturn = 8;
+        public const int AllowQueueUnfinished = 1;
         public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;
         public const int WhyOk = 0, WhyMana = 1, WhyUnsupported = 2;
         public const int AnimIdle = 0, AnimMoving = 1, AnimAttacking = 2, AnimBuilding = 3, AnimDying = 4, AnimDead = 5;
@@ -257,6 +272,13 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_effect_strip(int sprite, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_build_site(int def, int x, int y, out int sx, out int sy);
         [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
+        [DllImport(Lib)] public static extern int okx_factory_add(int factory, int def, int count);
+        [DllImport(Lib)] public static extern int okx_factory_set_repeat(int factory, int def, int on);
+        [DllImport(Lib)] public static extern int okx_factory_repeat_of(int factory);
+        [DllImport(Lib)] public static extern void okx_allow(int flags);
+        [DllImport(Lib)] public static extern int okx_allowed();
+        [DllImport(Lib)] public static extern int okx_unit_orders(int handle, [Out] OkxOrderLeg[] legs, int cap);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_play_ui_sound(string wav, int volume);
         [DllImport(Lib)] public static extern int okx_unit_order(int handle, out OkxOrder order);
         [DllImport(Lib)] public static extern int okx_fog([Out] byte[] cells, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_select(int[] handles, int n, int add);

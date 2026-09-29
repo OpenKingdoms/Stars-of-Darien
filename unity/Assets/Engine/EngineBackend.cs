@@ -706,11 +706,13 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Orders ─────────────────────────────────────────────────────
 
-        // A build order's arg is its facing.
+        // A build order's arg is its facing, and Queue puts the order behind
+        // the ones the unit holds, as Shift does.
         public bool Command(in GameCommand c)
         {
             float x = c.Target.x / S, z = -c.Target.z / S;
             int arg = c.Kind == CommandKind.Build ? (c.Facing & 3) : c.Arg;
+            if (c.Queue) arg |= OkEngine.Queue;
             return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, arg) == 0;
         }
 
@@ -891,32 +893,55 @@ namespace OpenKingdomsUnity.Engine
 
         public int QueuedCount(int factory, int def) => OkEngine.okx_factory_queue(factory, def);
 
-        // One enqueue or dequeue at a time, until okx takes a count.
-        public bool AddToQueue(int factory, int def, int count)
+        public bool AddToQueue(int factory, int def, int count) =>
+            count != 0 && OkEngine.okx_factory_add(factory, def, count) == 0;
+
+        public bool SetRepeat(int factory, int def, bool on) =>
+            OkEngine.okx_factory_set_repeat(factory, def, on ? 1 : 0) == 0;
+
+        public int RepeatOf(int factory) => OkEngine.okx_factory_repeat_of(factory);
+
+        readonly OkxOrderLeg[] legBuf = new OkxOrderLeg[64];
+
+        // A factory's rally reads as a move, the sweep and the raise as the
+        // reclaim and resurrect they are.
+        static OrderKind LegKind(in OkxOrderLeg l)
         {
-            var kind = count > 0 ? CommandKind.FactoryEnqueue : CommandKind.FactoryDequeue;
-            bool any = false;
-            for (int i = 0; i < Math.Abs(count); i++)
-                any |= Command(new GameCommand { Kind = kind, Unit = factory, TargetUnit = -1, BuildDef = def });
-            return any;
+            switch ((OkxCmd)l.kind)
+            {
+                case OkxCmd.Move: case OkxCmd.Rally: return OrderKind.Move;
+                case OkxCmd.Attack: case OkxCmd.Capture: return OrderKind.Attack;
+                case OkxCmd.SpecialWeapon: return l.target >= 0 ? OrderKind.Attack : OrderKind.Move;
+                case OkxCmd.Build: return OrderKind.Build;
+                case OkxCmd.Patrol: return OrderKind.Patrol;
+                case OkxCmd.Guard: return OrderKind.Guard;
+                case OkxCmd.Repair: return OrderKind.Repair;
+                case OkxCmd.Reclaim: case OkxCmd.ReclaimFeature: return OrderKind.Reclaim;
+                case OkxCmd.ResurrectFeature: return OrderKind.Resurrect;
+                case OkxCmd.Load: return OrderKind.Load;
+                case OkxCmd.Unload: return OrderKind.Unload;
+                case OkxCmd.AttackGround: return OrderKind.AttackGround;
+                default: return OrderKind.None;
+            }
         }
 
-        // okx cannot repeat a def yet.
-        public bool SetRepeat(int factory, int def, bool on) => false;
-        public int RepeatOf(int factory) => -1;
-
-        // The order in hand only, until okx reads the queue.
         public int ReadOrderQueue(int handle, OrderLeg[] into)
         {
-            var o = ReadOrder(handle);
-            if (o.Kind == OrderKind.None) return 0;
-            if (into != null && into.Length > 0)
-                into[0] = new OrderLeg { Kind = o.Kind, Target = o.Target, TargetUnit = o.TargetUnit, BuildDef = -1 };
-            return 1;
+            int n = OkEngine.okx_unit_orders(handle, legBuf, legBuf.Length);
+            if (n <= 0) return 0;
+            int fill = Math.Min(Math.Min(n, legBuf.Length), into?.Length ?? 0);
+            for (int i = 0; i < fill; i++)
+            {
+                var l = legBuf[i];
+                var at = new Vector3(l.x * S, 0f, -l.y * S);
+                at.y = GroundHeight(at.x, at.z);
+                into[i] = new OrderLeg { Kind = LegKind(l), Target = at, TargetUnit = l.target, BuildDef = l.def, Facing = l.facing };
+            }
+            return n;
         }
 
-        // okx plays no interface sound yet.
-        public bool PlaySound(string wav, float volume) => false;
+        public bool PlaySound(string wav, float volume) =>
+            !string.IsNullOrEmpty(wav) && OkEngine.okx_play_ui_sound(wav, Mathf.RoundToInt(Mathf.Clamp01(volume) * 127f)) == 0;
 
         // The engine keeps kills and experience but does not hand them out yet.
         public bool UnitRecord(int handle, out int kills, out int rank)
