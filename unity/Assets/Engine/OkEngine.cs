@@ -28,6 +28,7 @@ namespace OpenKingdomsUnity.Engine
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 96)] public string name;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string description;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string kingdom;
+        // In cells: the .ota's "8 x 8" is 256 x 256.
         public int sizeX, sizeY, maxPlayers;
         [MarshalAs(UnmanagedType.ByValArray, SizeConst = 8)] public int[] playerCounts;
         public int playerCountN;
@@ -52,7 +53,8 @@ namespace OpenKingdomsUnity.Engine
     [StructLayout(LayoutKind.Sequential)]
     public struct OkxProjectile
     {
-        public int id, player, color, kind, model;
+        // lightmap is the weapon's ground glow, OkEngine.Lightmap*.
+        public int id, player, color, kind, model, lightmap;
         public float x, y, z, vx, vy, vz, heading, pitch, roll, fromX, fromY, fromZ;
     }
 
@@ -68,7 +70,8 @@ namespace OpenKingdomsUnity.Engine
     [StructLayout(LayoutKind.Sequential)]
     public struct OkxSeat
     {
-        public int kind, side, team, color, difficulty;
+        // start is the claimed index into okx_map_starts, -1 for any.
+        public int kind, side, team, color, difficulty, start;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -161,6 +164,9 @@ namespace OpenKingdomsUnity.Engine
     {
         public int kind, id, sprite, frame;
         public float x, y, z, top, bottom, offX, w, u0, u1, v1;
+        // The weapon's ground glow, OkEngine.Lightmap*, and the pace: ticks
+        // since it began, ticks a picture, the strip's pictures, repeats.
+        public int lightmap, age, ticksPerFrame, frameCount, loops;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -179,6 +185,7 @@ namespace OpenKingdomsUnity.Engine
     {
         public int kind, side, colour, team, ready, connected, loadPercent, hasMap;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 16)] public string name;
+        public int start;           // claimed, an index into okx_map_starts, -1 any
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -230,7 +237,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 21;
+        public const int ApiVersion = 22;
         // In okx_command's arg: behind the orders the unit holds, as Shift.
         public const int Queue = 0x8000;
         // In okx_command's arg: in place of the order in hand, keeping the queue, as Ctrl.
@@ -247,6 +254,9 @@ namespace OpenKingdomsUnity.Engine
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
             ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
         public const int EffectImpact = 0, EffectProjectile = 1;
+        public const int LightmapNone = 0, LightmapSmall = 1, LightmapMedium = 2, LightmapLarge = 3;
+        // TAK_EDIT_START and TAK_EDIT_MOVE_START.
+        public const int EditStart = 8, EditMoveStart = 42;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
 
@@ -268,12 +278,16 @@ namespace OpenKingdomsUnity.Engine
             [Out] float[] matrices, [Out] byte[] hidden, int cap);
         [DllImport(Lib)] public static extern int okx_map_info(int index, out OkxMapInfo info);
         [DllImport(Lib)] public static extern int okx_map_preview(int index, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_map_starts(int index, [Out] int[] xz, int cap);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_gui_art(string gaf, string entry, int frame,
+            [Out] byte[] rgba, int cap, out int w, out int h, out int ox, out int oy, out int frames);
         [DllImport(Lib)] public static extern int okx_players([Out] OkxPlayer[] players, int cap);
         [DllImport(Lib)] public static extern int okx_economy(int player, out OkxEconomy economy);
         [DllImport(Lib)] public static extern int okx_projectiles([Out] OkxProjectile[] projectiles, int cap);
         [DllImport(Lib)] public static extern int okx_projectile_pose(int id, [Out] float[] matrices, int cap);
         [DllImport(Lib)] public static extern int okx_effects([Out] OkxEffect[] effects, int cap);
         [DllImport(Lib)] public static extern int okx_effect_strip(int sprite, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern int okx_effect_frames(int sprite, [Out] int[] geometry, int cap);
         [DllImport(Lib)] public static extern int okx_build_site(int def, int x, int y, out int sx, out int sy);
         [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
         [DllImport(Lib)] public static extern int okx_factory_add(int factory, int def, int count);
@@ -377,6 +391,10 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_features([Out] OkxFeature[] features, int cap);
         [DllImport(Lib)] public static extern int okx_feature_pose(int index, [Out] float[] matrices, int cap);
         [DllImport(Lib)] public static extern int okx_sprite(int def, [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_sprite_by_name(string name, string world,
+            [Out] byte[] rgba, int cap, out int w, out int h);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_texture_by_name(string name, string world,
+            [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_feature_def_count();
         [DllImport(Lib)] public static extern int okx_feature_def_info(int def, out OkxFeatureDefInfo info);
 

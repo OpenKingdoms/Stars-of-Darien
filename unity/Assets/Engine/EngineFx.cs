@@ -295,7 +295,7 @@ namespace OpenKingdomsUnity.Engine
                 Id = b.OutId, Strip = b.Strip, IsProjectile = false, Position = b.At,
                 Top = q.Top, Bottom = q.Bottom, OffsetX = q.OffsetX, Width = q.Width, UvMin = q.UvMin, UvMax = q.UvMax,
                 Frame = frame, Phase = phase, Loops = b.Moving,
-                Additive = s.Rule.Additive, Light = FxLight.Auto, Follow = -1, Struck = -1, Age = age,
+                Additive = s.Rule.Additive, Light = LightOf(b.Last.lightmap), Follow = -1, Struck = -1, Age = age,
             });
             return true;
         }
@@ -317,6 +317,10 @@ namespace OpenKingdomsUnity.Engine
                 UvMin = new Vector2(last.u0, 0f), UvMax = new Vector2(last.u1, last.v1),
             };
         }
+
+        // The weapon's lightmap key as the presentation's light.
+        static FxLight LightOf(int lightmap) => lightmap >= OkEngine.LightmapSmall && lightmap <= OkEngine.LightmapLarge
+            ? (FxLight)(lightmap + 1) : FxLight.None;
 
         // ── Shots ─────────────────────────────────────────────────────
 
@@ -355,7 +359,7 @@ namespace OpenKingdomsUnity.Engine
             {
                 Id = -1 - e.id, Strip = e.sprite, IsProjectile = true, Position = at,
                 Top = q.Top, Bottom = q.Bottom, OffsetX = q.OffsetX, Width = q.Width, UvMin = q.UvMin, UvMax = q.UvMax,
-                Frame = frame, Phase = phase, Loops = true, Additive = s.Rule.Additive, Light = FxLight.Auto,
+                Frame = frame, Phase = phase, Loops = true, Additive = s.Rule.Additive, Light = LightOf(e.lightmap),
                 Follow = -1, Struck = -1, Age = age,
             });
         }
@@ -370,7 +374,7 @@ namespace OpenKingdomsUnity.Engine
                 // Pixels a tick to units a second.
                 Velocity = new Vector3(p.vx, p.vy, -p.vz) * (S * tps),
                 Heading = p.heading * Mathf.Rad2Deg, Pitch = p.pitch * Mathf.Rad2Deg, Roll = p.roll * Mathf.Rad2Deg,
-                Light = FxLight.Auto,
+                Light = LightOf(p.lightmap),
             };
             if (p.kind == OkEngine.ProjBeam)
             {

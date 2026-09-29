@@ -67,24 +67,43 @@ namespace OpenKingdomsUnity.Engine
             for (int i = 0; i < mapCount; i++)
             {
                 if (OkEngine.okx_map_info(i, out var mi) != 0) continue;
+                // Start positions in cells, StartPos1 first.
+                int n = OkEngine.okx_map_starts(i, startsBuf, startsBuf.Length / 2);
+                var starts = new Vector2[Mathf.Clamp(n, 0, startsBuf.Length / 2)];
+                for (int k = 0; k < starts.Length; k++) starts[k] = new Vector2(startsBuf[2 * k], startsBuf[2 * k + 1]);
                 maps.Add(new MapInfo
                 {
                     Id = mi.name, Name = mi.name, Description = mi.description ?? "",
                     MaxPlayers = Mathf.Max(2, mi.maxPlayers),
-                    // The .ota's size is in map units of 32 cells.
-                    Size = new Vector2(mi.sizeX, mi.sizeY) * MapCatalog.CellsPerUnit, Climate = Climate(mi.kingdom)
+                    // The engine gives the size in cells.
+                    Size = new Vector2(mi.sizeX, mi.sizeY), Climate = Climate(mi.kingdom), Starts = starts
                 });
                 mapIndex[mi.name] = i;
             }
         }
 
+        readonly int[] startsBuf = new int[16];
+
         public IReadOnlyList<MapInfo> Maps => maps;
         public IGameRooms Rooms { get; } = new EngineRooms();
 
-        // The engine has no call for interface art yet, so it comes from the
-        // unpacked data folder when there is one.
+        // The game's interface art through the engine, in the palette its
+        // own screens use, or from an unpacked data folder when the engine
+        // has none.
         public ArtFrame InterfaceArt(string gaf, string entry, int frame)
         {
+            int need = OkEngine.okx_gui_art(gaf, entry, frame, null, 0, out int w, out int h, out _, out _, out _);
+            if (need > 0)
+            {
+                var px = new byte[need];
+                if (OkEngine.okx_gui_art(gaf, entry, frame, px, need, out w, out h, out int ox, out int oy, out int frames) == need)
+                {
+                    // Both run top row first.
+                    var img = new RgbaImage(w, h);
+                    Array.Copy(px, img.Pixels, need);
+                    return new ArtFrame { Image = img, Origin = new Vector2Int(ox, oy), Frames = frames };
+                }
+            }
             string d = EngineSettings.DataDir;
             return string.IsNullOrEmpty(d) ? null : GafFiles.Read(System.IO.Path.Combine(d, "data", "anims"), gaf, entry, frame);
         }
@@ -123,8 +142,12 @@ namespace OpenKingdomsUnity.Engine
             pending = setup;
             pendingSave = null;
             loadStarted = false;
+            // A room's match is built from what the relay described.
+            netMatch = Rooms.State == RoomSession.Loading;
             status = GameStatus.Loading;
         }
+
+        bool netMatch;
 
         // Saved games, through the engine's own writer and the same sliced
         // loading screen as a new battle.
@@ -188,6 +211,17 @@ namespace OpenKingdomsUnity.Engine
                 loadStarted = true;
                 return new LoadProgress { Fraction = 0, Stage = "starting" };
             }
+            if (netMatch)
+            {
+                if (OkEngine.okx_net_load_begin() != 0)
+                {
+                    pending = null;
+                    status = GameStatus.Failed;
+                    return new LoadProgress { Fraction = 1, Failed = true, Error = OkEngine.LastError, Stage = "failed" };
+                }
+                loadStarted = true;
+                return new LoadProgress { Fraction = 0, Stage = "starting" };
+            }
             var cfg = OkxSkirmish.For(setup.MapId);
             cfg.lineOfSight = setup.LineOfSight ? 1 : 0;
             cfg.mapRevealed = setup.MapRevealed ? 1 : 0;
@@ -207,7 +241,7 @@ namespace OpenKingdomsUnity.Engine
                     // Teams count from 0 here and from 1 in the engine,
                     // where 0 means a side alone.
                     side = SideIndex(seat.Side), team = Mathf.Max(0, seat.Team) + 1, color = seat.Colour,
-                    difficulty = (int)seat.Difficulty
+                    difficulty = (int)seat.Difficulty, start = seat.Start
                 };
             }
             if (OkEngine.okx_load_begin(ref cfg) != 0)
@@ -289,10 +323,10 @@ namespace OpenKingdomsUnity.Engine
             };
         }
 
-        static readonly string[] SideIds = { "ARAMON", "TAROS", "VERUNA", "ZHON", "", "", "", "CREON" };
+        internal static readonly string[] SideIds = { "ARAMON", "TAROS", "VERUNA", "ZHON", "", "", "", "CREON" };
 
         // A side's engine number, -1 for random.
-        static int SideIndex(string side)
+        internal static int SideIndex(string side)
         {
             if (string.IsNullOrEmpty(side)) return -1;
             for (int i = 0; i < SideIds.Length; i++)

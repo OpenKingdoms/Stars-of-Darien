@@ -48,6 +48,43 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsNotNull(preview);
             Assert.AreEqual(preview.Width * preview.Height * 4, preview.Pixels.Length);
             Assert.AreEqual(5, backend.Sides.Count);
+            // Sizes and starts in cells, the starts inside the map.
+            Assert.AreEqual(0f, two.Size.x % 32f);
+            Assert.GreaterOrEqual(two.Size.x, 64f);
+            Assert.GreaterOrEqual(two.Starts.Length, 2);
+            foreach (var st in two.Starts)
+                Assert.IsTrue(st.x >= 0 && st.x < two.Size.x && st.y >= 0 && st.y < two.Size.y, "a start at " + st);
+            // The menus' art comes from the engine.
+            var art = backend.InterfaceArt("mainscreen", "ExitButton", 1);
+            Assert.IsNotNull(art);
+            Assert.AreEqual(3, art.Frames);
+            Assert.AreEqual(art.Image.Width * art.Image.Height * 4, art.Image.Pixels.Length);
+        }
+
+        // A seat that claimed a start stands there, the rest take what is left.
+        [Test, Order(21)]
+        public void AClaimedStartIsWhereTheMonarchStands()
+        {
+            MapInfo two = null;
+            foreach (var m in backend.Maps) if (m.Id == "two castles") two = m;
+            var setup = TwoCastles();
+            setup.Seats[0].Start = 1;
+            backend.StartSkirmish(setup);
+            LoadProgress p = default;
+            for (int i = 0; i < 20000 && !p.Done && !p.Failed; i++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, king = -1;
+            for (int i = 0; i < n && king < 0; i++)
+            {
+                var d = backend.UnitDefs[units[i].Def];
+                if (units[i].Player == me && !d.IsBuilding && d.BuildOptions.Length > 0) king = i;
+            }
+            Assert.GreaterOrEqual(king, 0);
+            var at = units[king].Position;
+            var want = two.Starts[1];
+            Assert.Less(Mathf.Abs(at.x - want.x), 4f, "east of " + want + ": " + at);
+            Assert.Less(Mathf.Abs(-at.z - want.y), 4f, "south of " + want + ": " + at);
         }
 
         // The HUD's build row shows every option of every builder in the
