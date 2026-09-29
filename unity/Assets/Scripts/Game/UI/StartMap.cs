@@ -152,7 +152,9 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void OnPointerClick(PointerEventData e)
         {
-            if (e.button == PointerEventData.InputButton.Left && !e.dragging) Map.Clicked(Index);
+            if (e.button != PointerEventData.InputButton.Left || e.dragging) return;
+            UiKit.Play("menubutton.wav");
+            Map.Clicked(Index);
         }
 
         public void OnBeginDrag(PointerEventData e)

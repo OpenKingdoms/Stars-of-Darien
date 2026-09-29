@@ -49,6 +49,7 @@ namespace OpenKingdomsUnity.Game.UI
                 string[] names = { "Skirmish", "Adventure", "Multiplayer" };
                 for (int i = 0; i < DoorArt.Length; i++)
                     Doors.Add(Door.Make(p, names[i], DoorArt[i], open[i]));
+                Doors[0].Sound = "skirmish.wav";
 
                 ArtButton.Make(p, "Quit", "mainscreen.gaf", "ExitButton", 68, 407, 39, 51, "Quit", () => root.Flow.Fire(FlowEvent.Exit), "Leave the game");
                 ArtButton.Make(p, "Options", "mainscreen.gaf", "OptionsButton", 524, 406, 58, 56, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), "Options");
@@ -91,7 +92,14 @@ namespace OpenKingdomsUnity.Game.UI
 
             public void OnPointerEnter(UnityEngine.EventSystems.PointerEventData e) { over = true; playing = true; }
             public void OnPointerExit(UnityEngine.EventSystems.PointerEventData e) { over = false; }
-            public void OnPointerClick(UnityEngine.EventSystems.PointerEventData e) { if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Left) Clicked?.Invoke(); }
+            public string Sound = "menubutton.wav";
+
+            public void OnPointerClick(UnityEngine.EventSystems.PointerEventData e)
+            {
+                if (e.button != UnityEngine.EventSystems.PointerEventData.InputButton.Left) return;
+                UiKit.Play(Sound);
+                Clicked?.Invoke();
+            }
 
             void Update()
             {

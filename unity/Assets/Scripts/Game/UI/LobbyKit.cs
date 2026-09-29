@@ -252,6 +252,7 @@ namespace OpenKingdomsUnity.Game.UI
         public void OnPointerClick(PointerEventData e)
         {
             if (!Enabled || Step == null) return;
+            UiKit.Play("menubutton.wav");
             Step(e.button == PointerEventData.InputButton.Right ? -1 : 1);
         }
 
@@ -286,6 +287,7 @@ namespace OpenKingdomsUnity.Game.UI
     public sealed class ArtButton : MonoBehaviour, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
     {
         public Action Clicked;
+        public string Sound;
         public RawImage Face;
         public Texture2D[] Frames;
         public Image Glow;
@@ -296,7 +298,9 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void OnPointerClick(PointerEventData e)
         {
-            if (Enabled && e.button == PointerEventData.InputButton.Left) Clicked?.Invoke();
+            if (!Enabled || e.button != PointerEventData.InputButton.Left) return;
+            UiKit.Play(Sound);
+            Clicked?.Invoke();
         }
 
         public void OnPointerEnter(PointerEventData e) { over = true; Paint(); }
@@ -332,6 +336,7 @@ namespace OpenKingdomsUnity.Game.UI
             glow.raycastTarget = false;
             var b = holder.gameObject.AddComponent<ArtButton>();
             b.Clicked = clicked;
+            b.Sound = UiKit.SoundFor(name);
             b.Glow = glow;
             var f0 = gaf != null ? p.Art.Get(gaf, entry, 0) : default;
             if (f0.Tex != null)
@@ -367,7 +372,13 @@ namespace OpenKingdomsUnity.Game.UI
         public Texture2D[] Frames;   // off, on, off lit, on lit, dim
         bool over;
 
-        public void OnPointerClick(PointerEventData e) { if (Enabled) { Toggle?.Invoke(); Paint(); } }
+        public void OnPointerClick(PointerEventData e)
+        {
+            if (!Enabled) return;
+            UiKit.Play("toggle.wav");
+            Toggle?.Invoke();
+            Paint();
+        }
         public void OnPointerEnter(PointerEventData e) { over = true; Paint(); }
         public void OnPointerExit(PointerEventData e) { over = false; Paint(); }
 
