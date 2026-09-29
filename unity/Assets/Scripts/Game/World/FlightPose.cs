@@ -133,10 +133,10 @@ namespace OpenKingdomsUnity.Game.World
                     }
                     Quaternion q;
                     Vector3 at;
-                    if (rig != null) rig.Sample(k, fa, fb, fw, ga, gb, gw, g, out q, out at);
-                    else Target(f, t, t.Pieces[k], d.Pieces[p].Offset * d.Scale, seconds, out q, out at);
                     orig[p] = posed[p];
-                    bool keepY = rig != null ? rig.KeepY[k] : t.Pieces[k].KeepY;
+                    bool keepY = rig != null ? rig.KeepsY(k, g) : t.Pieces[k].KeepY;
+                    var scriptY = Quaternion.identity;
+                    var script = Matrix4x4.identity;
                     if (keepY || f.Weight < 1f)
                     {
                         ref var above = ref (moved[parent] ? ref orig[parent] : ref posed[parent]);
@@ -146,15 +146,24 @@ namespace OpenKingdomsUnity.Game.World
                             float l02 = above.m00 * orig[p].m02 + above.m10 * orig[p].m12 + above.m20 * orig[p].m22;
                             float l22 = above.m02 * orig[p].m02 + above.m12 * orig[p].m12 + above.m22 * orig[p].m22;
                             float half = 0.5f * Mathf.Atan2(l02, l22);
-                            q = new Quaternion(0f, Mathf.Sin(half), 0f, Mathf.Cos(half)) * q;
+                            scriptY = new Quaternion(0f, Mathf.Sin(half), 0f, Mathf.Cos(half));
                         }
                         if (f.Weight < 1f)
                         {
                             RigidInverse(above, out var inv);
-                            Mul(inv, orig[p], out var script);
-                            q = Quaternion.Slerp(script.rotation, q, f.Weight);
-                            at = Vector3.Lerp(script.GetColumn(3), at, f.Weight);
+                            Mul(inv, orig[p], out script);
                         }
+                    }
+                    if (rig != null) rig.Sample(k, fa, fb, fw, ga, gb, gw, g, scriptY, out q, out at);
+                    else
+                    {
+                        Target(f, t, t.Pieces[k], d.Pieces[p].Offset * d.Scale, seconds, out q, out at);
+                        q = scriptY * q;
+                    }
+                    if (f.Weight < 1f)
+                    {
+                        q = Quaternion.Slerp(script.rotation, q, f.Weight);
+                        at = Vector3.Lerp(script.GetColumn(3), at, f.Weight);
                     }
                     Compose(posed[parent], q, at, out posed[p]);
                     carry[p] = p;

@@ -1,8 +1,10 @@
 // FlightRigTests.cs - a flyer's fly and soar functions become clips: the
-// cycle is found once the function has settled, keys fall where the pose
-// changes, every piece the function moves follows the animator's phase,
-// a head turner's y turn stays the script's, and the top of the stroke is
-// where the table's wing is nearest its up pose.
+// cycle is found once the function has settled, however slowly, and past
+// an idle, keys fall where the pose changes, every piece the function
+// moves follows the animator's phase, a head turner's y turn stays the
+// script's in a clip that does not beat it, a soar that never repeats is
+// held, a flyer with no soar glides on its flap slowed, and the top of the
+// stroke is where the table's wing is nearest its up pose.
 using System.Collections.Generic;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
@@ -92,10 +94,12 @@ namespace OpenKingdomsUnity.Tests
 
         static readonly Matrix4x4 ModelRoot = Matrix4x4.Scale(new Vector3(1, 1, -1));
 
-        static FlightRig.Sampler Fly(ModelData d) => (s, into) =>
+        static FlightRig.Sampler Fly(ModelData d, System.Action<int, Vector3[]> change = null) => (s, into) =>
         {
             int tick = Mathf.RoundToInt(s * Rate);
-            return Pose(d, Locals(d, Turns(tick), BodyMove(tick)), ModelRoot, into);
+            var turns = Turns(tick);
+            change?.Invoke(tick, turns);
+            return Pose(d, Locals(d, turns, BodyMove(tick)), ModelRoot, into);
         };
 
         static FlightRig.Sampler Held(ModelData d, float z) => (s, into) =>
@@ -146,7 +150,6 @@ namespace OpenKingdomsUnity.Tests
                 matches |= shifted.SetEquals(keys);
             }
             Assert.IsTrue(matches, "the keys are the cycle's changes: " + string.Join(", ", keys));
-            Assert.IsNull(rig.Glide);
         }
 
         [Test]
@@ -165,10 +168,11 @@ namespace OpenKingdomsUnity.Tests
         // The animator shows a frame of the script's own cycle, whatever
         // frame the script is at, and the body, tail and head go with it.
         [Test]
-        public void EachKeyDrawsTheScriptsFrame()
+        public void EachKeyDrawsTheScriptsFrame() => KeysDrawFrames(FlightRig.Bake(Type(), Model(), Rate, Fly(Model()), null), Model());
+
+        static void KeysDrawFrames(FlightRig rig, ModelData d)
         {
-            var d = Model();
-            var rig = FlightRig.Bake(Type(), d, Rate, Fly(d), null);
+            Assert.IsNotNull(rig);
             int scriptTick = Rest + 5 * Cycle + 7;
             for (int k = 0; k < rig.Flap.Times.Length; k++)
             {
@@ -244,6 +248,108 @@ namespace OpenKingdomsUnity.Tests
             };
             Assert.IsNull(FlightRig.Bake(Type(), d, Rate, noise, null), "it never repeats");
             Assert.IsNull(FlightRig.Bake(Type(), d, Rate, (s, into) => 0, null), "the backend cannot pose it");
+        }
+
+        // Posed at rest, a script turns its other pieces home slowly, and the
+        // cycle is taken once they are there, however long that is.
+        [Test]
+        public void AFunctionThatSettlesSlowlyIsCutWhereItRepeats()
+        {
+            var d = Model();
+            var rig = FlightRig.Bake(Type(), d, Rate, Fly(d, (tick, t) => t[4].x += Mathf.Max(0, 700 - tick) * 0.02f), null, out string why);
+            Assert.IsNotNull(rig, why);
+            Assert.AreEqual(Cycle / Rate, rig.Flap.Seconds, 1e-5f);
+            KeysDrawFrames(rig, d);
+        }
+
+        // An idle the script plays between cycles is passed over.
+        [Test]
+        public void AnIdleBetweenCyclesIsPassedOver()
+        {
+            var d = Model();
+            var rig = FlightRig.Bake(Type(), d, Rate, Fly(d, (tick, t) => { if (tick >= 380 && tick < 470) t[7] = new Vector3(0, 0, (tick - 380) * 0.5f); }), null, out string why);
+            Assert.IsNotNull(rig, why);
+            Assert.AreEqual(Cycle / Rate, rig.Flap.Seconds, 1e-5f);
+            Assert.Less(rig.Channel[7], 0, "the idle's claw is no part of the flap");
+            KeysDrawFrames(rig, d);
+        }
+
+        // A soar that never repeats is held at the pose it keeps longest.
+        [Test]
+        public void ASoarThatNeverRepeatsIsHeld()
+        {
+            var d = Model();
+            // Holds that grow longer, each at its own turn.
+            float Z(int tick) { int k = (int)Mathf.Sqrt(tick); return (k * 37) % 50; }
+            FlightRig.Sampler soar = (s, into) =>
+            {
+                var t = new Vector3[8];
+                t[2] = new Vector3(0, 0, Z(Mathf.RoundToInt(s * Rate)));
+                t[6] = FlightTable.MirrorTurn(t[2]);
+                return Pose(d, Locals(d, t, 0f), ModelRoot, into);
+            };
+            var rig = FlightRig.Bake(Type(), d, Rate, Fly(d), soar);
+            Assert.AreEqual(GlideSource.HeldSoar, rig.GlideFrom);
+            Assert.AreEqual(1, rig.Glide.Times.Length, "a held soar is one key");
+            // The longest hold in the later half of what was sampled.
+            int most = Mathf.CeilToInt(FlightRig.LongestSample * Rate), best = -1, length = 0;
+            for (int t = most / 2, from = t; t < most; t++)
+            {
+                if (Z(t) != Z(from)) from = t;
+                if (t - from + 1 > length) { length = t - from + 1; best = from; }
+            }
+            var f = At(0.3f);
+            f.Mode = FlightMode.Glide;
+            f.Glide = 1f;
+            var m = Drawn(d, Rest + 2 * Cycle, Unit);
+            FlightPose.Apply(f, Type(), rig, d, m, m.Length, 0f, 0f);
+            Assert.Less(Quaternion.Angle(FlightTable.Cob(new Vector3(0, 0, Z(best))), Local(m, d, 2).rotation), 0.05f);
+        }
+
+        // With no soar, a flyer glides on its own flap, slowed.
+        [Test]
+        public void WithNoSoarTheFlapIsSlowed()
+        {
+            var d = Model();
+            var rig = FlightRig.Bake(Type(), d, Rate, Fly(d), null);
+            Assert.AreEqual(GlideSource.SlowedFlap, rig.GlideFrom);
+            Assert.AreEqual(rig.Flap.Seconds * FlightRig.SlowedFlap, rig.Glide.Seconds, 1e-5f);
+            Assert.AreEqual(rig.Flap.Times, rig.Glide.Times);
+            Assert.AreEqual(rig.KeepY, rig.GlideKeepY);
+        }
+
+        // A soar that turns the head about y with its own beat keeps that
+        // turn for the glide, while the flap, which never turns the head,
+        // leaves it to the script's head turner.
+        [Test]
+        public void TheFlapLeavesTheHeadToTheScriptWhenOnlyTheSoarTurnsIt()
+        {
+            var d = Model();
+            // The head turner happens to be still while each is sampled.
+            var fly = Fly(d, (tick, t) => t[5].y = 0f);
+            FlightRig.Sampler soar = (s, into) =>
+            {
+                int tick = Mathf.RoundToInt(s * Rate);
+                var t = new Vector3[8];
+                t[2] = new Vector3(0, 0, (tick % 40) < 20 ? 12f : 8f);
+                t[6] = FlightTable.MirrorTurn(t[2]);
+                t[5] = new Vector3(0, (tick % 40) < 20 ? 15f : -15f, 0);
+                return Pose(d, Locals(d, t, 0f), ModelRoot, into);
+            };
+            var rig = FlightRig.Bake(Type(), d, Rate, fly, soar);
+            Assert.AreEqual(GlideSource.Soar, rig.GlideFrom);
+            Assert.IsTrue(rig.KeepY[rig.Channel[5]], "the flap keeps the script's head turn");
+            Assert.IsFalse(rig.GlideKeepY[rig.Channel[5]], "the soar beats the head about y");
+            // On a frame where the head turner looks aside, the flap looks aside with it.
+            int scriptTick = Rest + 97 + 11;
+            Assert.AreEqual(25f, Turns(scriptTick)[5].y);
+            var m = Drawn(d, scriptTick, Unit);
+            var before = Local(m, d, 5);
+            float aside = Mathf.Atan2(before.m02, before.m22) * Mathf.Rad2Deg;
+            Assert.AreEqual(25f, Mathf.Abs(aside), 0.05f);
+            FlightPose.Apply(At(0.4f), Type(), rig, d, m, m.Length, 0f, 0f);
+            var head = Local(m, d, 5);
+            Assert.AreEqual(aside, Mathf.Atan2(head.m02, head.m22) * Mathf.Rad2Deg, 0.05f);
         }
 
         // The mock's flyer has a sine flap once a second and a slow rocking glide.

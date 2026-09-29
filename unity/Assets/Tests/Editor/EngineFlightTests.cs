@@ -3,8 +3,10 @@
 // altitude, speed and air state follow it through a takeoff and a landing,
 // its type's cruise height and top speed are learned, every winged flyer's
 // fly and soar functions bake into clips that replay the script's frames,
-// and neither reading flight nor baking moves the battle. Needs okengine
-// and the game files, and is ignored without them.
+// its glide coming from its soar, cut to a cycle or held, or from its flap
+// slowed when it has no soar, a clip carries a piece's turn about y only
+// where it beats it, and neither reading flight nor baking moves the
+// battle. Needs okengine and the game files, and is ignored without them.
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
@@ -132,11 +134,28 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsEmpty(missing, string.Join(", ", missing));
         }
 
-        // Each winged flyer's rig, baked from its script through the studio.
-        Dictionary<UnitDef, (FlightRig rig, FlightType type, int model, string fly)> BakeAll(List<string> report)
+        // A function's poses as the studio played them, each piece's turn and
+        // offset from its parent, a tick at a time.
+        sealed class Played
+        {
+            public readonly List<Matrix4x4[]> Frames = new List<Matrix4x4[]>();
+
+            public FlightRig.Sampler Record(EngineBackend backend, int model, string function, ModelData d) => (sec, into) =>
+            {
+                int n = backend.PoseModel(model, function, sec, into);
+                var l = new Matrix4x4[d.Pieces.Length];
+                Locals(d, into, l);
+                Frames.Add(l);
+                return n;
+            };
+        }
+
+        // Each winged flyer's rig, baked from its script through the studio,
+        // handed with the poses it was baked from to check, then let go.
+        int BakeAll(List<string> report, Action<UnitDef, FlightRig, FlightType, ModelData, string, Played, string, Played> check = null)
         {
             var table = FlightTableTests.Committed();
-            var rigs = new Dictionary<UnitDef, (FlightRig, FlightType, int, string)>();
+            int count = 0;
             foreach (var d in backend.UnitDefs)
             {
                 var t = table.Find(d.Name, d.ObjectName);
@@ -145,20 +164,21 @@ namespace OpenKingdomsUnity.Tests
                 string soar = Array.Find(d.Animations, a => string.Equals(a, t.Clip("glide", "soar"), StringComparison.OrdinalIgnoreCase));
                 int model = backend.LoadModel(d.ObjectName, 0);
                 var data = backend.GetModel(model);
+                Played flew = new Played(), soared = new Played();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 string why = "no fly function";
                 var rig = fly == null ? null : FlightRig.Bake(t, data, backend.TicksPerSecond,
-                    (sec, into) => backend.PoseModel(model, fly, sec, into),
-                    soar == null ? null : (FlightRig.Sampler)((sec, into) => backend.PoseModel(model, soar, sec, into)), out why);
+                    flew.Record(backend, model, fly, data), soar == null ? null : soared.Record(backend, model, soar, data), out why);
                 if (rig == null) { report.Add($"{d.Name}: no rig, {why}"); continue; }
                 int keepY = 0;
                 foreach (bool k in rig.KeepY) if (k) keepY++;
                 report.Add($"{d.Name}: flap {rig.Flap.Seconds:0.000} s in {rig.Flap.Times.Length} keys (table {t.Period}), glide " +
-                           (rig.Glide != null ? $"{rig.Glide.Seconds:0.000} s in {rig.Glide.Times.Length} keys" : "none") +
+                           (rig.Glide != null ? $"from {rig.GlideFrom}, {rig.Glide.Seconds:0.000} s in {rig.Glide.Times.Length} keys" : "none") +
                            $", {rig.Piece.Length} pieces, {keepY} keep y, top {rig.Top:0.00}, downstroke {rig.Downstroke:0.00} (table {t.Downstroke}), {sw.Elapsed.TotalMilliseconds:0} ms");
-                rigs[d] = (rig, t, model, fly);
+                count++;
+                check?.Invoke(d, rig, t, data, fly, flew, soar, soar != null ? soared : flew);
             }
-            return rigs;
+            return count;
         }
 
         static void Locals(ModelData d, PiecePose[] pose, Matrix4x4[] into)
@@ -175,71 +195,112 @@ namespace OpenKingdomsUnity.Tests
         public void EveryWingedFlyerPlaysItsScriptsFrames()
         {
             var report = new List<string>();
-            var rigs = BakeAll(report);
+            var wrong = new List<string>();
+            int rigs = BakeAll(report, (def, rig, t, d, fly, flew, soar, soared) =>
+            {
+                string name = def.Name;
+                if (Mathf.Abs(rig.Flap.Seconds - t.Period) > 0.2f * t.Period) wrong.Add($"{name} beats in {rig.Flap.Seconds:0.000} s, the table says {t.Period}");
+                // It glides on its soar, cut to a cycle or held, and on its flap slowed when it has none.
+                bool fits = soar != null ? rig.GlideFrom == GlideSource.Soar || rig.GlideFrom == GlideSource.HeldSoar : rig.GlideFrom == GlideSource.SlowedFlap;
+                if (rig.Glide == null || !fits) { wrong.Add($"{name} glides from {rig.GlideFrom} with {(soar != null ? "a" : "no")} soar"); return; }
+                string off = KeyOffScript(rig, t, d, flew, false);
+                if (off != null) wrong.Add($"{name}: flap {off} of {fly}");
+                off = KeyOffScript(rig, t, d, soared, true);
+                if (off != null) wrong.Add($"{name}: glide {off} of {soar ?? fly}");
+                // A clip carries a piece's turn about y only where it beats it:
+                // the flap where fly does, the glide where soar or fly does.
+                for (int j = 0; j < rig.Piece.Length; j++)
+                {
+                    bool flapTurns = TurnsAboutY(rig, rig.Flap, j), glideTurns = TurnsAboutY(rig, rig.Glide, j);
+                    string piece = d.Pieces[rig.Piece[j]].Name;
+                    if (!rig.KeepY[j] && !flapTurns) wrong.Add($"{name}: the flap holds {piece}'s turn about y, which fly never turns");
+                    if (!rig.GlideKeepY[j] && !glideTurns && !flapTurns) wrong.Add($"{name}: the glide holds {piece}'s turn about y, which neither turns");
+                }
+            });
             // The scripts move nothing in fly until BeginFlight has run. A
             // studio that does not run it poses no flyer, and the table stands in.
-            if (rigs.Count == 0 && report.Exists(r => r.EndsWith("moves nothing")))
+            if (rigs == 0 && report.Exists(r => r.EndsWith("moves nothing")))
                 Assert.Ignore("this okengine's studio does not begin a flyer's flight:\n" + string.Join("\n", report));
             Debug.Log("Flight rigs:\n" + string.Join("\n", report));
-            Assert.GreaterOrEqual(rigs.Count, 15, string.Join("\n", report));
-            var wrong = new List<string>();
-            var pose = new PiecePose[EntityRenderer.MaxPieces];
-            foreach (var kv in rigs)
-            {
-                var (rig, t, model, fly) = kv.Value;
-                var d = backend.GetModel(model);
-                if (Mathf.Abs(rig.Flap.Seconds - t.Period) > 0.2f * t.Period) wrong.Add($"{kv.Key.Name} beats in {rig.Flap.Seconds:0.000} s, the table says {t.Period}");
-                if (Array.Exists(kv.Key.Animations, a => string.Equals(a, "soar", StringComparison.OrdinalIgnoreCase)) && rig.Glide == null)
-                    wrong.Add($"{kv.Key.Name} has a soar but no glide clip");
-                // One settled cycle of the script's own frames.
-                int rate = backend.TicksPerSecond, cycle = Mathf.RoundToInt(rig.Flap.Seconds * rate), from = 12 * rate;
-                var frames = new List<Matrix4x4[]>();
-                for (int i = 0; i < cycle; i++)
-                {
-                    backend.PoseModel(model, fly, (from + i) / (float)rate, pose);
-                    var l = new Matrix4x4[d.Pieces.Length];
-                    Locals(d, pose, l);
-                    frames.Add(l);
-                }
-                var drawn = new Matrix4x4[d.Pieces.Length];
-                var local = new Matrix4x4[d.Pieces.Length];
-                var unscale = Matrix4x4.Scale(Vector3.one / d.Scale);
-                var start = new Matrix4x4[d.Pieces.Length];
-                backend.PoseModel(model, fly, (from + cycle / 3) / (float)rate, pose);
-                for (int p = 0; p < start.Length; p++) start[p] = pose[p].Matrix * unscale;
-                for (int k = 0; k < rig.Flap.Times.Length; k++)
-                {
-                    Array.Copy(start, drawn, drawn.Length);
-                    var f = new Flyer { Mode = FlightMode.Flap, Weight = 1f, Lift = 1f, PeriodScale = 1f, Phase = Mathf.Repeat(rig.Flap.Times[k] - rig.Top, 1f) };
-                    FlightPose.Apply(f, t, rig, d, drawn, drawn.Length, 0f, 0f);
-                    for (int p = 0; p < drawn.Length; p++)
-                    {
-                        int parent = d.Pieces[p].Parent;
-                        local[p] = parent < 0 || parent >= p ? Matrix4x4.identity : drawn[parent].inverse * drawn[p];
-                    }
-                    bool found = false;
-                    foreach (var frame in frames)
-                    {
-                        found = true;
-                        for (int j = 0; j < rig.Piece.Length && found; j++)
-                        {
-                            int p = rig.Piece[j];
-                            var a = local[p].rotation;
-                            var b = frame[p].rotation;
-                            if (rig.KeepY[j])
-                            {
-                                // The y turn is the script's at the posed frame; compare the rest.
-                                a = Quaternion.AngleAxis(-Mathf.Atan2(local[p].m02, local[p].m22) * Mathf.Rad2Deg, Vector3.up) * a;
-                                b = Quaternion.AngleAxis(-Mathf.Atan2(frame[p].m02, frame[p].m22) * Mathf.Rad2Deg, Vector3.up) * b;
-                            }
-                            found = Quaternion.Angle(a, b) < 0.1f && Vector3.Distance(local[p].GetColumn(3), frame[p].GetColumn(3)) < 2e-3f;
-                        }
-                        if (found) break;
-                    }
-                    if (!found) { wrong.Add($"{kv.Key.Name} key {k} of {rig.Flap.Times.Length} is none of the script's frames"); break; }
-                }
-            }
+            Assert.GreaterOrEqual(rigs, 15, string.Join("\n", report));
             Assert.IsEmpty(wrong, string.Join("\n", wrong));
+        }
+
+        // Whether a channel's turn about y changes through a clip's keys.
+        static bool TurnsAboutY(FlightRig rig, FlightRig.Clip clip, int j)
+        {
+            int c = rig.Piece.Length;
+            float first = 0f;
+            for (int k = 0; k < clip.Times.Length; k++)
+            {
+                var q = clip.Turns[k * c + j];
+                var m = Matrix4x4.Rotate(q);
+                float y = Mathf.Atan2(m.m02, m.m22) * Mathf.Rad2Deg;
+                if (k == 0) first = y;
+                else if (Mathf.Abs(Mathf.DeltaAngle(first, y)) > 0.05f) return true;
+            }
+            return false;
+        }
+
+        // The first key of the flap or glide clip that is none of the frames
+        // the function played while it was baked, or null. Posed at rest in
+        // the studio, a script's idles leave pieces turned a little
+        // differently from one run to the next, so the frames are that run's.
+        string KeyOffScript(FlightRig rig, FlightType t, ModelData d, Played played, bool glide)
+        {
+            var clip = glide ? rig.Glide : rig.Flap;
+            var keep = glide ? rig.GlideKeepY : rig.KeepY;
+            var frames = played.Frames;
+            var drawn = new Matrix4x4[d.Pieces.Length];
+            var local = new Matrix4x4[d.Pieces.Length];
+            var start = new Matrix4x4[d.Pieces.Length];
+            // Any settled frame will do to draw on: the world pose from its locals.
+            var at = frames[frames.Count - 1];
+            for (int p = 0; p < start.Length; p++)
+            {
+                int parent = d.Pieces[p].Parent;
+                start[p] = parent < 0 || parent >= p ? Matrix4x4.identity : start[parent] * at[p];
+            }
+            for (int k = 0; k < clip.Times.Length; k++)
+            {
+                Array.Copy(start, drawn, drawn.Length);
+                var f = new Flyer { Mode = FlightMode.Flap, Weight = 1f, Lift = 1f, PeriodScale = 1f, Phase = Mathf.Repeat(clip.Times[k] - rig.Top, 1f) };
+                if (glide) { f.Mode = FlightMode.Glide; f.Glide = 1f; f.GlidePhase = clip.Times[k]; }
+                FlightPose.Apply(f, t, rig, d, drawn, drawn.Length, 0f, 0f);
+                for (int p = 0; p < drawn.Length; p++)
+                {
+                    int parent = d.Pieces[p].Parent;
+                    local[p] = parent < 0 || parent >= p ? Matrix4x4.identity : drawn[parent].inverse * drawn[p];
+                }
+                // The nearest frame: the one with the fewest pieces apart.
+                string nearest = null;
+                int fewest = int.MaxValue;
+                foreach (var frame in frames)
+                {
+                    int apart = 0;
+                    string first = null;
+                    for (int j = 0; j < rig.Piece.Length && apart < fewest; j++)
+                    {
+                        int p = rig.Piece[j];
+                        var a = local[p].rotation;
+                        var b = frame[p].rotation;
+                        if (keep[j])
+                        {
+                            // The y turn is the script's at the posed frame; compare the rest.
+                            a = Quaternion.AngleAxis(-Mathf.Atan2(local[p].m02, local[p].m22) * Mathf.Rad2Deg, Vector3.up) * a;
+                            b = Quaternion.AngleAxis(-Mathf.Atan2(frame[p].m02, frame[p].m22) * Mathf.Rad2Deg, Vector3.up) * b;
+                        }
+                        float turn = Quaternion.Angle(a, b), move = Vector3.Distance(local[p].GetColumn(3), frame[p].GetColumn(3));
+                        if (turn < 0.1f && move < 2e-3f) continue;
+                        apart++;
+                        first = first ?? $"{d.Pieces[p].Name} {turn:0.00} deg {move:0.0000} off{(keep[j] ? " (y kept)" : "")}";
+                    }
+                    if (apart < fewest) { fewest = apart; nearest = first; }
+                    if (fewest == 0) break;
+                }
+                if (fewest > 0) return $"key {k} of {clip.Times.Length} is none of the frames: {fewest} pieces apart in the nearest, first {nearest}";
+            }
+            return null;
         }
 
         [Test, Order(3)]

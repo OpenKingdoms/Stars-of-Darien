@@ -2,10 +2,14 @@
 // script, as clips the animator plays on its own clock. Each function is
 // posed once per unit type a tick at a time, cut to one cycle and kept as
 // keyframes: the turn and offset from its parent of every piece it moves.
+// A soar that never settles into a cycle is held at the pose it keeps
+// longest, and a flyer with no soar glides on its flap slowed.
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
 {
+    public enum GlideSource { None, Soar, HeldSoar, SlowedFlap }
+
     public sealed class FlightRig
     {
         // The model posed by a function at a time in seconds, model space.
@@ -36,26 +40,37 @@ namespace OpenKingdomsUnity.Game.World
 
         public int[] Channel;       // per model piece, its channel or -1
         public int[] Piece;         // per channel, its model piece
-        // Per channel: neither clip turns it about y, so the script's y turn
-        // stays, and a head keeps looking about.
-        public bool[] KeepY;
-        public Clip Flap, Glide;    // Glide is null for a unit with no glide function
+        // Per channel and clip: the script's own y turn stays, since the clip
+        // does not beat the piece about y, and a head keeps looking about.
+        public bool[] KeepY, GlideKeepY;
+        public Clip Flap, Glide;    // Glide is null only on a rig built by hand
+        public GlideSource GlideFrom;
         public float Top;           // the flap clip's phase at the top of the stroke
         public float Downstroke;    // and the share of it spent going down
         public float GlideSeconds => Glide != null ? Glide.Seconds : 0f;
 
-        // A channel's turn and offset at a flap and a glide position, crossed by glide.
-        public void Sample(int ch, int fa, int fb, float fw, int ga, int gb, float gw, float glide, out Quaternion q, out Vector3 at)
+        // How much slower than the flap a flyer with no soar beats as it glides.
+        public const float SlowedFlap = 2.5f;
+
+        // A channel's turn and offset at a flap and a glide position, crossed
+        // by glide, with the script's own y turn where a clip keeps it.
+        public void Sample(int ch, int fa, int fb, float fw, int ga, int gb, float gw, float glide, in Quaternion scriptY, out Quaternion q, out Vector3 at)
         {
             int c = KeepY.Length;
             q = Nlerp(Flap.Turns[fa * c + ch], Flap.Turns[fb * c + ch], fw);
+            if (KeepY[ch]) q = scriptY * q;
             at = Lerp(Flap.Moves[fa * c + ch], Flap.Moves[fb * c + ch], fw);
             if (glide <= 0f || Glide == null) return;
             var gq = Nlerp(Glide.Turns[ga * c + ch], Glide.Turns[gb * c + ch], gw);
+            if (GlideKeepY == null || GlideKeepY[ch]) gq = scriptY * gq;
             var gm = Lerp(Glide.Moves[ga * c + ch], Glide.Moves[gb * c + ch], gw);
             q = Nlerp(q, gq, glide);
             at = Lerp(at, gm, glide);
         }
+
+        // Whether either clip in play keeps the script's y turn of a channel.
+        public bool KeepsY(int ch, float glide) =>
+            KeepY[ch] || (glide > 0f && Glide != null && (GlideKeepY == null || GlideKeepY[ch]));
 
         static Vector3 Lerp(in Vector3 a, in Vector3 b, float t) =>
             new Vector3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
@@ -72,12 +87,18 @@ namespace OpenKingdomsUnity.Game.World
 
         // The longest cycle looked for, in seconds, and how close two poses must be to count as one.
         public const float LongestCycle = 3f;
+        // The longest a function is sampled for a cycle. Posed at rest, a
+        // script restores its other pieces slowly and plays idles between
+        // its cycles, so the cycle is taken where it runs clean.
+        public const float LongestSample = 24f;
         const float TurnEps = 2e-5f, SameMove = 1e-3f;
 
         // One function sampled a tick at a time, with its cycle found.
         sealed class Run
         {
             public int Count, Pieces, Cycle, Start, Longest;
+            public int From, Verify;    // the stretch that repeats: its first tick and length
+            public bool Held;           // no cycle: Start is the pose it keeps longest, for Cycle ticks
             public Quaternion[] Q, Xz;  // each piece's turn from its parent, and that without its y turn
             public float[] Y;           // the y turn, radians
             public Vector3[] M;
@@ -95,95 +116,171 @@ namespace OpenKingdomsUnity.Game.World
             int n = Mathf.Min(d.Pieces.Length, EntityRenderer.MaxPieces);
             var f = Take(flap, d, n, rate, type.Period, out why);
             if (f == null) return null;
-            var g = glide != null ? Take(glide, d, n, rate, 0f, out string glideWhy) : null;
+            if (f.Cycle == 0) return null;
+            var g = glide != null ? Take(glide, d, n, rate, 0f, out _) : null;
+            if (g != null && g.Cycle == 0) Hold(g, d);
 
             var rig = new FlightRig { Channel = new int[d.Pieces.Length] };
             var pieces = new System.Collections.Generic.List<int>();
             var keepY = new System.Collections.Generic.List<bool>();
+            var glideKeepY = new System.Collections.Generic.List<bool>();
             bool flaps = false;
             for (int p = 0; p < rig.Channel.Length; p++)
             {
                 rig.Channel[p] = -1;
                 if (p >= n || d.Pieces[p].Parent < 0 || d.Pieces[p].Parent >= p) continue;
                 int fy = YKind(f, p), gy = g != null ? YKind(g, p) : 0;
-                float f0 = f.Y[f.At(f.Start, p)], g0 = g != null ? g.Y[g.At(g.Start, p)] : f0;
-                bool beats = fy == 1 || gy == 1 || (fy == 0 && gy == 0 && Mathf.Abs(Mathf.DeltaAngle(f0 * Mathf.Rad2Deg, g0 * Mathf.Rad2Deg)) > 0.05f);
-                bool moves = beats || Moves(f, p) || (g != null && (Moves(g, p) || !Same(f, f.Start, g, g.Start, p)));
-                if (!moves) continue;
-                flaps |= fy == 1 || Moves(f, p);
+                // A piece a clip moves is a channel. The studio's idles leave the
+                // rest differently each run, so they stay the script's, except
+                // where a held soar, which moves nothing, holds them apart from fly.
+                bool flapMoves = fy == 1 || Moves(f, p);
+                bool glideMoves = g != null && (gy == 1 || Moves(g, p) || (g.Held && !Same(f, f.Start, g, g.Start, p)));
+                if (!flapMoves && !glideMoves) continue;
+                // A clip carries the y turn it beats with its cycle, and the
+                // glide the y turn it holds still where fly beats it. Otherwise
+                // the script's y turn stays, and a head keeps looking about.
+                bool flapY = fy == 1, glideY = gy == 1 || (gy == 0 && fy == 1);
+                flaps |= flapMoves;
                 rig.Channel[p] = pieces.Count;
                 pieces.Add(p);
-                keepY.Add(!beats);
+                keepY.Add(!flapY);
+                glideKeepY.Add(!glideY);
             }
             if (!flaps) { why = "its flap function moves nothing"; return null; }
             rig.Piece = pieces.ToArray();
             rig.KeepY = keepY.ToArray();
-            rig.Flap = Keys(f, rig, rate);
-            if (g != null) rig.Glide = Keys(g, rig, rate);
+            rig.Flap = Keys(f, rig, rate, rig.KeepY);
+            if (g != null)
+            {
+                rig.GlideKeepY = glideKeepY.ToArray();
+                rig.Glide = Keys(g, rig, rate, rig.GlideKeepY);
+                rig.GlideFrom = g.Held ? GlideSource.HeldSoar : GlideSource.Soar;
+            }
+            else
+            {
+                // No glide of its own: the flap, slower.
+                rig.GlideKeepY = rig.KeepY;
+                rig.Glide = new Clip { Seconds = rig.Flap.Seconds * SlowedFlap, Times = rig.Flap.Times, Turns = rig.Flap.Turns, Moves = rig.Flap.Moves };
+                rig.GlideFrom = GlideSource.SlowedFlap;
+            }
             Stroke(rig, f, type, d);
             return rig;
         }
 
-        // Samples a function three of the longest cycles long and finds its
-        // cycle among the last two, where it has settled. Null when the
-        // backend cannot pose it or it never repeats.
+        // Samples a function until a stretch of it repeats over the longest
+        // cycle, the latest such stretch, where it has settled. Null when the
+        // backend cannot pose it, and Cycle 0 when it never repeats.
         static Run Take(Sampler s, ModelData d, int n, float rate, float period, out string why)
         {
             why = null;
             int longest = Mathf.CeilToInt(Mathf.Max(LongestCycle, 1.6f * period) * rate);
-            int count = 3 * longest + 2;
+            int most = Mathf.Max(3 * longest + 2, Mathf.CeilToInt(LongestSample * rate));
             var r = new Run
             {
-                Count = count, Pieces = n, Longest = longest,
-                Q = new Quaternion[count * n], Xz = new Quaternion[count * n], Y = new float[count * n], M = new Vector3[count * n],
+                Pieces = n, Longest = longest,
+                Q = new Quaternion[most * n], Xz = new Quaternion[most * n], Y = new float[most * n], M = new Vector3[most * n],
             };
             var buf = new PiecePose[EntityRenderer.MaxPieces];
             var world = new Matrix4x4[n];
             var unscale = Matrix4x4.Scale(Vector3.one / Mathf.Max(1e-12f, d.Scale));
-            for (int i = 0; i < count; i++)
+            int looked = 0;
+            for (int want = 3 * longest + 2; ; want = Mathf.Min(most, r.Count + longest))
             {
-                if (s(i / rate, buf) < n) { why = "the backend cannot pose it"; return null; }
-                for (int p = 0; p < n; p++) world[p] = buf[p].Matrix * unscale;
-                for (int p = 0; p < n; p++)
+                for (int i = r.Count; i < want; i++)
                 {
-                    int parent = d.Pieces[p].Parent;
-                    if (parent < 0 || parent >= p) continue;
-                    FlightPose.RigidInverse(world[parent], out var inv);
-                    FlightPose.Mul(inv, world[p], out var local);
-                    float y = Mathf.Atan2(local.m02, local.m22);
-                    var q = local.rotation;
-                    int k = r.At(i, p);
-                    r.Q[k] = q;
-                    r.Y[k] = y;
-                    r.Xz[k] = Quaternion.AngleAxis(-y * Mathf.Rad2Deg, Vector3.up) * q;
-                    r.M[k] = local.GetColumn(3);
+                    if (s(i / rate, buf) < n) { why = "the backend cannot pose it"; return null; }
+                    for (int p = 0; p < n; p++) world[p] = buf[p].Matrix * unscale;
+                    for (int p = 0; p < n; p++)
+                    {
+                        int parent = d.Pieces[p].Parent;
+                        if (parent < 0 || parent >= p) continue;
+                        FlightPose.RigidInverse(world[parent], out var inv);
+                        FlightPose.Mul(inv, world[p], out var local);
+                        float y = Mathf.Atan2(local.m02, local.m22);
+                        var q = local.rotation;
+                        int k = r.At(i, p);
+                        r.Q[k] = q;
+                        r.Y[k] = y;
+                        r.Xz[k] = Quaternion.AngleAxis(-y * Mathf.Rad2Deg, Vector3.up) * q;
+                        r.M[k] = local.GetColumn(3);
+                    }
                 }
+                r.Count = want;
+                var changes = Changes(r, d);
+                if (changes[r.Count] == 0) { why = "it moves nothing"; return r; }
+                if (Find(r, d, changes, looked, false)) return r;
+                looked = want;
+                if (want >= most) break;
             }
-            for (int cycle = 2; cycle <= longest; cycle++)
-            {
-                if (!Periodic(r, d, cycle)) continue;
-                r.Cycle = cycle;
-                // The cycle starts on a change of pose, where a key begins.
-                r.Start = count - 2 * cycle;
-                for (int t = count - 2 * cycle + 1; t <= count - cycle; t++)
-                    if (Changed(r, d, t)) { r.Start = t; break; }
-                return r;
-            }
-            why = $"its function never repeats within {longest / rate:0.#} s";
-            return null;
+            // Idles may leave no clean stretch that long: two passes alike will do.
+            if (Find(r, d, Changes(r, d), 0, true)) return r;
+            why = $"its function never repeats within {most / rate:0.#} s";
+            return r;
         }
 
-        // Checked over the longest cycle, so a hold is never taken for one.
-        static bool Periodic(Run r, ModelData d, int cycle)
+        // The smallest cycle with a stretch that repeats it and moves, the
+        // latest such stretch, among those ending after tick `after`. The
+        // stretch is the longest cycle long, so a hold is never taken for
+        // one, or with `twice` just one cycle, two passes alike.
+        static bool Find(Run r, ModelData d, int[] changes, int after, bool twice)
         {
-            int from = r.Count - r.Longest - cycle;
-            for (int t = from; t < r.Count - cycle; t++)
-                for (int p = 0; p < r.Pieces; p++)
+            for (int cycle = 2; cycle <= r.Longest; cycle++)
+            {
+                int verify = twice ? cycle : r.Longest;
+                int run = 0, low = Mathf.Max(1, after - verify - 2 * cycle);
+                for (int t = r.Count - cycle - 1; t >= low; t--)
                 {
-                    int parent = d.Pieces[p].Parent;
-                    if (parent >= 0 && parent < p && !SameXz(r, t, t + cycle, p)) return false;
+                    if (!Repeats(r, d, t, cycle)) { run = 0; continue; }
+                    if (++run < verify) continue;
+                    // The poses from t to the stretch's end plus a cycle agree,
+                    // and the cycle starts on a change of pose, where a key begins.
+                    int last = t + verify - cycle;
+                    if (changes[last + cycle + 1] == changes[last + 1]) continue;
+                    for (int u = last + 1; u <= last + cycle; u++)
+                    {
+                        if (changes[u + 1] == changes[u]) continue;
+                        r.Cycle = cycle;
+                        r.From = t;
+                        r.Verify = verify;
+                        r.Start = u;
+                        return true;
+                    }
                 }
+            }
+            return false;
+        }
+
+        // How many ticks before each tick change pose, so a stretch's changes count at once.
+        static int[] Changes(Run r, ModelData d)
+        {
+            var c = new int[r.Count + 1];
+            for (int t = 0; t < r.Count; t++) c[t + 1] = c[t] + (t > 0 && Changed(r, d, t) ? 1 : 0);
+            return c;
+        }
+
+        static bool Repeats(Run r, ModelData d, int t, int cycle)
+        {
+            for (int p = 0; p < r.Pieces; p++)
+            {
+                int parent = d.Pieces[p].Parent;
+                if (parent >= 0 && parent < p && !SameXz(r, t, t + cycle, p)) return false;
+            }
             return true;
+        }
+
+        // A function that never repeats is held at the pose it keeps for
+        // longest in its later half.
+        static void Hold(Run r, ModelData d)
+        {
+            int best = r.Count - 1, bestLength = 0;
+            for (int t = r.Count / 2, from = t; t < r.Count; t++)
+            {
+                if (t > from && Changed(r, d, t)) from = t;
+                if (t - from + 1 > bestLength) { best = from; bestLength = t - from + 1; }
+            }
+            r.Held = true;
+            r.Start = r.From = best;
+            r.Cycle = r.Verify = bestLength;
         }
 
         static bool Changed(Run r, ModelData d, int t)
@@ -229,18 +326,19 @@ namespace OpenKingdomsUnity.Game.World
         // cycle, 2 moving out of step with it, as a script's head turner does.
         static int YKind(Run r, int p)
         {
+            if (r.Held) return 0;
             bool moves = false;
             float y0 = r.Y[r.At(r.Start, p)];
             for (int t = r.Start + 1; t < r.Start + r.Cycle && !moves; t++)
                 moves = Mathf.Abs(Mathf.DeltaAngle(y0 * Mathf.Rad2Deg, r.Y[r.At(t, p)] * Mathf.Rad2Deg)) > 0.05f;
             if (!moves) return 0;
-            for (int t = r.Count - r.Longest - r.Cycle; t < r.Count - r.Cycle; t++)
+            for (int t = r.From; t < r.From + r.Verify; t++)
                 if (Mathf.Abs(Mathf.DeltaAngle(r.Y[r.At(t, p)] * Mathf.Rad2Deg, r.Y[r.At(t + r.Cycle, p)] * Mathf.Rad2Deg)) > 0.05f) return 2;
             return 1;
         }
 
         // A key wherever a channel's pose changes in the cycle.
-        static Clip Keys(Run r, FlightRig rig, float rate)
+        static Clip Keys(Run r, FlightRig rig, float rate, bool[] keepY)
         {
             int c = rig.Piece.Length;
             var ticks = new System.Collections.Generic.List<int> { r.Start };
@@ -250,7 +348,7 @@ namespace OpenKingdomsUnity.Game.World
                 for (int j = 0; j < c && !change; j++)
                 {
                     int p = rig.Piece[j], a = r.At(t, p), b = r.At(t - 1, p);
-                    change = !SameTurn(rig.KeepY[j] ? r.Xz[a] : r.Q[a], rig.KeepY[j] ? r.Xz[b] : r.Q[b]) ||
+                    change = !SameTurn(keepY[j] ? r.Xz[a] : r.Q[a], keepY[j] ? r.Xz[b] : r.Q[b]) ||
                              (r.M[a] - r.M[b]).sqrMagnitude > SameMove * SameMove;
                 }
                 if (change) ticks.Add(t);
@@ -266,7 +364,7 @@ namespace OpenKingdomsUnity.Game.World
                 for (int j = 0; j < c; j++)
                 {
                     int i = r.At(ticks[k], rig.Piece[j]);
-                    var q = rig.KeepY[j] ? r.Xz[i] : r.Q[i];
+                    var q = keepY[j] ? r.Xz[i] : r.Q[i];
                     // Each key on the same side as the last, so a blend takes the short way.
                     if (k > 0)
                     {
