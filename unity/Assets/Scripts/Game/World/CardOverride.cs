@@ -21,6 +21,8 @@ namespace OpenKingdomsUnity.Game.World
 
         public OverrideModel Model;
         public string ReplacesPiece = "", ReplacesTexture = "";
+        // A lodestone's crystal, which breathes light (LodestonePulse), or null.
+        public LodestoneGlow Glow;
 
         public bool Hides(string piece)
         {
@@ -58,6 +60,7 @@ namespace OpenKingdomsUnity.Game.World
                         ReplacesTexture = extras != null ? extras.ReplacesTexture ?? "" : "",
                     };
                     ReadSidecar(Path.ChangeExtension(path, ".json"), c);
+                    if (LodestonePulse.IsLodestone(objectName)) c.Glow = LodestoneGlow.Of(c.Model);
                 }
             }
             cache[objectName] = c;
@@ -76,6 +79,9 @@ namespace OpenKingdomsUnity.Game.World
             }
             catch (Exception e) { Debug.LogWarning($"Unit override sidecar {path} was not read: {e.Message}"); }
         }
+
+        // Puts a model in place for an object name, as a test's stand-in.
+        public static void Use(string objectName, CardOverride c) => cache[objectName] = c;
 
         public static void Forget() => cache.Clear();
     }

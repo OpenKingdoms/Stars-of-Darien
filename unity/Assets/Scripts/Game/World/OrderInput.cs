@@ -8,7 +8,8 @@
 // arm move, attack, patrol and guard, S stops, a build armed from the
 // menu shows its ghost, green where it can stand, and Ctrl with a digit
 // makes a group that the digit brings back. A drag with the order button
-// lays out a formation (FormationInput).
+// lays out a formation (FormationInput). Ctrl on an order click, not a
+// drag, puts the order in place of the one in hand and keeps the queue.
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -54,6 +55,10 @@ namespace OpenKingdomsUnity.Game.World
         public HashSet<int> Selected => world.Entities.Selected;
         // Shift and Ctrl as this frame's pointer read them, a test's frame included.
         bool Shift, Ctrl;
+        // Ctrl went into a key chord (a group, Ctrl A) since it went down,
+        // so the click after it is a plain one.
+        bool ctrlChord;
+        bool Keep => Ctrl && !ctrlChord;
 
         // The facing a building is placed at, 0 to 3 clockwise, remembered
         // per building type for the next placement.
@@ -156,6 +161,7 @@ namespace OpenKingdomsUnity.Game.World
             var p = Formation.Frame(EventSystem.current != null && EventSystem.current.IsPointerOverGameObject());
             Shift = p.Shift;
             Ctrl = p.Ctrl;
+            if (!Ctrl) ctrlChord = false;
             // Shift shows where the selection's orders take it, as in BAR.
             world.Entities.ShowOrders = Shift;
             DropStaleArming();
@@ -281,7 +287,7 @@ namespace OpenKingdomsUnity.Game.World
                     if (Armed == CommandKind.Build && !GhostOk) return;
                     if (Armed == CommandKind.Build && Shift)
                         Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
-                    backend.Click(Armed == CommandKind.Build ? GhostAt : at, Armed == CommandKind.Build ? -1 : unit, Shift);
+                    backend.Click(Armed == CommandKind.Build ? GhostAt : at, Armed == CommandKind.Build ? -1 : unit, Shift, Keep);
                     // The engine disarms after a click, so a Shift placement arms again.
                     if (Armed == CommandKind.Build && Shift) backend.Arm(CommandKind.Build, ArmedDef, Facing);
                     if (Armed != null && !Shift) { DisarmHere(); Queued.Clear(); }
@@ -355,7 +361,7 @@ namespace OpenKingdomsUnity.Game.World
             for (int g = 0; g <= 9; g++)
             {
                 if (!Input.GetKeyDown(KeyCode.Alpha0 + g)) continue;
-                if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); }
+                if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); ctrlChord = true; }
                 else if (backend.RecallGroup(g) > 0) PullSelection();
             }
             // R or ] turns a building being placed clockwise, Shift R or [ back.
@@ -375,15 +381,16 @@ namespace OpenKingdomsUnity.Game.World
                     // W, A, S and D pan the camera, so their commands take Ctrl.
                     bool camKey = "wasd".IndexOf(c) >= 0;
                     if (camKey != Ctrl) continue;
+                    if (camKey) ctrlChord = true;
                     if (a.Target == ActionTarget.None || a.Kind == ActionKind.Spell) backend.DoAction(a.Id, Vector3.zero, -1, default, Shift);
                     else ArmAction(a);
                 }
                 return;
             }
             // A and S pan the camera, so attack and stop take Ctrl.
-            if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); }
+            if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); ctrlChord = true; }
             if (Input.GetKeyDown(KeyCode.M)) Arm(CommandKind.Move);
-            if (Input.GetKeyDown(KeyCode.A) && Ctrl) Arm(CommandKind.Attack);
+            if (Input.GetKeyDown(KeyCode.A) && Ctrl) { Arm(CommandKind.Attack); ctrlChord = true; }
             if (Input.GetKeyDown(KeyCode.P)) Arm(CommandKind.Patrol);
             if (Input.GetKeyDown(KeyCode.G)) Arm(CommandKind.Guard);
         }
@@ -411,7 +418,7 @@ namespace OpenKingdomsUnity.Game.World
             {
                 if (!GhostOk) return;
                 foreach (var h in Selected)
-                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Facing = Facing });
+                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Keep = Keep, Facing = Facing });
                 if (Shift) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
             }
             else
@@ -430,7 +437,7 @@ namespace OpenKingdomsUnity.Game.World
         void OrderAll(CommandKind kind, Vector3 at, int target)
         {
             foreach (var h in Selected)
-                backend.Command(new GameCommand { Kind = kind, Unit = h, Target = at, TargetUnit = target, BuildDef = -1, Queue = Shift });
+                backend.Command(new GameCommand { Kind = kind, Unit = h, Target = at, TargetUnit = target, BuildDef = -1, Queue = Shift, Keep = Keep });
         }
 
         // Moves in a square block around the point, turned with the camera.
@@ -439,7 +446,7 @@ namespace OpenKingdomsUnity.Game.World
             if (Classic && kind == CommandKind.Move)
             {
                 backend.Arm(CommandKind.Move);
-                backend.Click(at, -1, Shift);
+                backend.Click(at, -1, Shift, Keep);
                 return;
             }
             int k = 0, side = Mathf.CeilToInt(Mathf.Sqrt(Selected.Count));
@@ -448,6 +455,7 @@ namespace OpenKingdomsUnity.Game.World
                 var offset = new Vector3((k % side - (side - 1) * 0.5f) * 1.4f, 0, (k / side - (side - 1) * 0.5f) * 1.4f);
                 var c = GameCommand.To(kind, h, at + Quaternion.Euler(0, world.Camera.yaw, 0) * offset);
                 c.Queue = Shift;
+                c.Keep = Keep;
                 backend.Command(c);
                 k++;
             }

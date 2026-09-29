@@ -17,13 +17,14 @@ namespace OpenKingdomsUnity.Game.World
 
         public static bool On { get; private set; }
 
-        // Sets the shader globals, with the detail on or off.
+        // Sets the shader globals, with the detail on or off, cliffs' rock with it.
         public static void Apply(bool on)
         {
             if (tex == null) tex = Make();
             On = on;
             Shader.SetGlobalTexture("_OkuDetail", tex);
             Shader.SetGlobalVector("_OkuDetailParams", new Vector4(TileUnits, FadeStart, FadeEnd, on ? 1f : 0f));
+            CliffRock.Apply();
         }
 
         public static Texture2D Make()
@@ -62,20 +63,20 @@ namespace OpenKingdomsUnity.Game.World
             return t;
         }
 
-        static byte Byte(float f) => (byte)Mathf.Clamp(Mathf.RoundToInt(f * 255f), 0, 255);
+        internal static byte Byte(float f) => (byte)Mathf.Clamp(Mathf.RoundToInt(f * 255f), 0, 255);
 
         // Mean 0.5, spread to about a quarter either way.
-        static void Centre(float[] a)
+        internal static void Centre(float[] a, float spread = 0.12f)
         {
             double sum = 0, sq = 0;
             foreach (float f in a) { sum += f; sq += f * f; }
             float mean = (float)(sum / a.Length);
             float sd = Mathf.Sqrt(Mathf.Max(1e-6f, (float)(sq / a.Length) - mean * mean));
-            for (int i = 0; i < a.Length; i++) a[i] = Mathf.Clamp01(0.5f + (a[i] - mean) / sd * 0.12f);
+            for (int i = 0; i < a.Length; i++) a[i] = Mathf.Clamp01(0.5f + (a[i] - mean) / sd * spread);
         }
 
         // Value noise that tiles: a lattice of period cells across the picture.
-        static float Noise(float u, float v, int period, int seed)
+        internal static float Noise(float u, float v, int period, int seed)
         {
             float x = u * period, y = v * period;
             int x0 = Mathf.FloorToInt(x), y0 = Mathf.FloorToInt(y);
@@ -96,7 +97,7 @@ namespace OpenKingdomsUnity.Game.World
             return ((h ^ (h >> 16)) & 0xffff) / 65535f;
         }
 
-        static float Fbm(float u, float v, int period, int octaves, int seed)
+        internal static float Fbm(float u, float v, int period, int octaves, int seed)
         {
             float sum = 0, amp = 0.5f, norm = 0;
             for (int o = 0; o < octaves; o++)

@@ -50,6 +50,13 @@ namespace OpenKingdomsUnity.Game.World
         public double SimSeconds = double.NaN;
         double lastSim = double.NaN;
         float simDt, simNow;
+        // The clock lodestones breathe by, in seconds; NaN for real time,
+        // so they breathe on at any game speed and while paused.
+        public float PulseSeconds = float.NaN;
+        float pulseNow, viewCalm = 1f, lightCalm = 1f;
+        readonly LodestoneHalos halos = new LodestoneHalos();
+        // The lodestone rings drawn this frame.
+        public int HalosDrawn => halos.Count;
         // A unit whose drawn piece matrices are kept each frame, for tests.
         public int Watch = -1;
         public readonly Matrix4x4[] Watched = new Matrix4x4[MaxPieces];
@@ -373,6 +380,10 @@ namespace OpenKingdomsUnity.Game.World
             FlyersPosed = 0;
             haveFrustum = cam != null;
             if (haveFrustum) GeometryUtility.CalculateFrustumPlanes(cam, frustum);
+            pulseNow = float.IsNaN(PulseSeconds) ? Time.unscaledTime : PulseSeconds;
+            viewCalm = cam != null ? LodestonePulse.ViewCalm(Mathf.DeltaAngle(0f, cam.transform.eulerAngles.x)) : 1f;
+            lightCalm = LodestonePulse.LightCalm(LodestonePulse.SceneLight());
+            halos.Clear(cam);
 
             UnitCount = backend.ReadUnits(Units);
             ringVerts.Clear();
@@ -406,6 +417,7 @@ namespace OpenKingdomsUnity.Game.World
             DrawRising();
             billboards.Draw();
             overlay.Draw();
+            halos.Draw();
         }
 
         // Each unit drawn this frame and how big it is: height and radius in
@@ -469,6 +481,18 @@ namespace OpenKingdomsUnity.Game.World
 
         static float Surface(Vector2 p, float damp) => WaterWaves.Height(p.x, p.y, damp);
 
+        // A standing lodestone's breath: the lift to its crystal's light now,
+        // and its ring while one spreads.
+        float Breathe(Vector3 position, LodestoneGlow glow, in Matrix4x4 at)
+        {
+            float phase = LodestonePulse.Phase(position);
+            float age = LodestonePulse.RingAge(pulseNow, phase);
+            if (age >= 0f)
+                halos.Add(at.MultiplyPoint3x4(glow.Centre), LodestonePulse.RingRadius(age, glow.Radius, LodestonePulse.RingReach * viewCalm), glow.Colour,
+                    LodestonePulse.RingStrength(age) * LodestonePulse.RingAlpha * viewCalm * lightCalm);
+            return LodestonePulse.Gain(pulseNow, phase, lightCalm) - 1f;
+        }
+
         // ---- Frames under construction ----
         // The original draws nothing of a frame under half built. Here a
         // frame rises from the ground with its build, from nothing: solid
@@ -493,9 +517,9 @@ namespace OpenKingdomsUnity.Game.World
 
         // Where the next parts go: the instanced batch, or, for a frame
         // being built, its own draws with its cut.
-        void Put(Mesh mesh, int sub, Material mat, in Matrix4x4 m)
+        void Put(Mesh mesh, int sub, Material mat, in Matrix4x4 m, float lift = 0f)
         {
-            if (risingBlock < 0) { solid.Add(mesh, sub, mat, m); return; }
+            if (risingBlock < 0) { solid.Add(mesh, sub, mat, m, lift); return; }
             var mm = m;
             if (mm.determinant < 0) { mesh = InstancedDraws.Mirrored(mesh); mm = m * Matrix4x4.Scale(new Vector3(-1, 1, 1)); }
             rising.Add((mesh, sub, BuildMaterial(mat), mm, risingBlock));
@@ -589,7 +613,8 @@ namespace OpenKingdomsUnity.Game.World
                     var turn = ModelTurn(u.Heading, u.Pitch, u.Roll);
                     CardTurns[u.Handle] = turn;
                     var at = sway * Matrix4x4.TRS(u.Position + Vector3.up * (def.IsBuilding ? SiteLift(u.Position) : 0f), turn, Vector3.one);
-                    foreach (var part in card.Model.Parts) Put(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot);
+                    float lift = card.Glow != null && risingBlock < 0 && (u.Flags & UnitFlags.Dying) == 0 ? Breathe(u.Position, card.Glow, at) : 0f;
+                    foreach (var part in card.Model.Parts) Put(part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, lift);
                 }
                 for (int p = 0; p < n; p++)
                 {
@@ -1066,6 +1091,7 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Dispose()
         {
+            halos.Dispose();
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
             spriteMats.Clear();

@@ -233,6 +233,10 @@ namespace OpenKingdomsUnity.Engine
         public const int ApiVersion = 21;
         // In okx_command's arg: behind the orders the unit holds, as Shift.
         public const int Queue = 0x8000;
+        // In okx_command's arg: in place of the order in hand, keeping the queue, as Ctrl.
+        public const int Keep = 0x4000;
+        // okx_click's shift: bit 0 Shift, bit 1 Ctrl.
+        public const int ClickShift = 1, ClickCtrl = 2;
         public const int LegQueued = 1, LegFormation = 2, LegFace = 4, LegReturn = 8;
         public const int AllowQueueUnfinished = 1;
         public const int CmdTarget = 1, CmdInstant = 2, CmdChoice = 3;

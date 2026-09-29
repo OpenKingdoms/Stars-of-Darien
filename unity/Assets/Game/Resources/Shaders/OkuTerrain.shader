@@ -1,7 +1,7 @@
 // The ground: its picture, lit, taking shadows, with detail and bumps up
-// close, rock laid on three planes over cliffs, a wet darkening near the
-// water line, and under the sea a sandy bed with caustics, lit more evenly
-// and softer the deeper it lies.
+// close, rock laid on three planes over cliffs and more of the sky's light
+// on them, a wet darkening near the water line, and under the sea a sandy
+// bed with caustics, lit more evenly and softer the deeper it lies.
 Shader "OpenKingdoms/Presentation/Terrain"
 {
     Properties
@@ -42,6 +42,8 @@ Shader "OpenKingdoms/Presentation/Terrain"
             #include "../../Shaders/OkuWaterCommon.hlsl"
             TEXTURE2D(_OkuDetail); SAMPLER(sampler_OkuDetail);
             float4 _OkuDetailParams;    // tile size, fade start and end, on
+            TEXTURE2D(_OkuRock); SAMPLER(sampler_OkuRock);
+            float4 _OkuRockParams;      // tile size, sky light added at the steepest, bump strength
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
@@ -61,25 +63,36 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D_BIAS(_MainTex, sampler_MainTex, i.uv, OkuBedBlur(i.positionWS));
                 half3 n = normalize(i.normalWS);
+                half steep = 0;
                 if (_OkuDetailParams.w > 0)
                 {
                     float s = 1 / _OkuDetailParams.x;
-                    // The picture smears down steep faces, so there a blur of
-                    // it tints a rock pattern laid on three planes.
-                    half steep = smoothstep(0.25, 0.5, 1 - n.y);
+                    float dist = distance(GetCameraPositionWS(), i.positionWS);
+                    // Past about 40 degrees the picture smears down the face,
+                    // so there rock laid on three planes carries the detail
+                    // over the picture's own colour, and its bumps catch the
+                    // light. From afar more of the painting shows through, so
+                    // the classic view keeps the original's painted cliffs.
+                    steep = smoothstep(0.23, 0.45, 1 - n.y);
                     if (steep > 0)
                     {
-                        half3 macro = SAMPLE_TEXTURE2D_LOD(_MainTex, sampler_MainTex, i.uv, 5).rgb;
+                        half near = saturate((60 - dist) / 40);
+                        half3 macro = SAMPLE_TEXTURE2D_LOD(_MainTex, sampler_MainTex, i.uv, 4).rgb;
+                        float r = 1 / max(_OkuRockParams.x, 0.1);
                         float3 w = pow(abs(n), 4);
                         w /= w.x + w.y + w.z;
-                        half rock = SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.zy * s).a * w.x
-                                  + SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.xz * s).a * w.y
-                                  + SAMPLE_TEXTURE2D(_OkuDetail, sampler_OkuDetail, i.positionWS.xy * s).a * w.z;
-                        c.rgb = lerp(c.rgb, macro * rock * 2, steep);
+                        half4 rx = SAMPLE_TEXTURE2D(_OkuRock, sampler_OkuRock, i.positionWS.zy * r);
+                        half4 ry = SAMPLE_TEXTURE2D(_OkuRock, sampler_OkuRock, i.positionWS.xz * r);
+                        half4 rz = SAMPLE_TEXTURE2D(_OkuRock, sampler_OkuRock, i.positionWS.xy * r);
+                        half light = rx.r * w.x + ry.r * w.y + rz.r * w.z;
+                        half3 painted = lerp(macro, c.rgb, lerp(0.45, 0.2, near));
+                        c.rgb = lerp(c.rgb, painted * lerp(1, light * 2, lerp(0.6, 1, near)), steep);
+                        // Each plane's slopes along its own two axes.
+                        half3 bump = half3(0, rx.b - 0.5, rx.g - 0.5) * w.x + half3(ry.g - 0.5, 0, ry.b - 0.5) * w.y + half3(rz.g - 0.5, rz.b - 0.5, 0) * w.z;
+                        n = normalize(n - bump * 2 * steep * _OkuRockParams.z);
                     }
                     // Up close, lightness and bumps around the picture's own,
                     // from two scales so the tiling does not show.
-                    float dist = distance(GetCameraPositionWS(), i.positionWS);
                     half fade = saturate((_OkuDetailParams.z - dist) / (_OkuDetailParams.z - _OkuDetailParams.y));
                     if (fade > 0)
                     {
@@ -95,7 +108,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 n = normalize(lerp(n, half3(0, 1, 0), OkuBedFlat(i.positionWS)));
                 half shadow;
                 half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(_Glossiness, 0.6, wet), i.positionWS), 0,
-                    saturate(OkuUnder(i.positionWS) / 1.5), shadow);
+                    saturate(OkuUnder(i.positionWS) / 1.5), 1 + steep * _OkuRockParams.y, shadow);
                 float2 gx = ddx(i.positionWS.xz), gy = ddy(i.positionWS.xz);
                 if (i.positionWS.y < _OkuSeaLevel - 0.02 && _OkuWaterSigma.a > 0)
                     rgb += c.rgb * _MainLightColor.rgb * (OkuCaustics(i.positionWS, _MainLightPosition.xyz, gx, gy) * shadow);

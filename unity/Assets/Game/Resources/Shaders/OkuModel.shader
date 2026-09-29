@@ -1,6 +1,7 @@
 // Models, features and sprites: texture times vertex colour times an
 // instanced tint, alpha tested, lit, casting and taking shadows, with a
-// faint rim of sky light and an optional self light (_Emission).
+// faint rim of sky light and an optional self light (_Emission), which an
+// instance may raise or lower (_PulseLift, a lodestone's breath).
 Shader "OpenKingdoms/Presentation/Model"
 {
     Properties
@@ -53,6 +54,10 @@ Shader "OpenKingdoms/Presentation/Model"
         float _BuildGlow;       // how strong the glow is
         half4 _BuildTint;       // the team colour
         float _OkuBuildGhost;   // how much of the ghost shows, 0 to 1
+        // The self light is 1 + _PulseLift times its rest, per instance.
+        UNITY_INSTANCING_BUFFER_START(OkuPulse)
+            UNITY_DEFINE_INSTANCED_PROP(float, _PulseLift)
+        UNITY_INSTANCING_BUFFER_END(OkuPulse)
         // A 4 by 4 ordered pattern, 0 to 1, by screen pixel.
         float OkuBayer(float2 px)
         {
@@ -142,7 +147,8 @@ Shader "OpenKingdoms/Presentation/Model"
             #else
                 half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, _Glossiness, _Rim);
             #endif
-                rgb += c.rgb * _Emission;
+                half breath = 1 + UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _PulseLift);
+                rgb += c.rgb * _Emission * breath;
             #if defined(_OKU_BUILD)
                 // The glow rides the walls at the cut, not floors lying in it.
                 half edge = saturate(1 + above / max(_BuildBand, 1e-3));
@@ -150,7 +156,7 @@ Shader "OpenKingdoms/Presentation/Model"
             #endif
             #if defined(_EMISSION)
                 // Light the surface gives off itself, bright enough to bloom.
-                rgb += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, i.uv).rgb * _EmissionColor.rgb;
+                rgb += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, i.uv).rgb * _EmissionColor.rgb * breath;
             #endif
                 rgb *= OkuFogLight(i.positionWS);
                 return half4(MixFog(rgb, i.fog), _Surface > 0.5 ? c.a : 1);

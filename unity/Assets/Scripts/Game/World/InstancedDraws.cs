@@ -1,5 +1,6 @@
 // InstancedDraws.cs - collects matrices per mesh, submesh and material
 // over a frame, then draws each group with GPU instancing, 1023 at a time.
+// An instance may carry a lift to its self light, a lodestone's breath.
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -20,19 +21,32 @@ namespace OpenKingdomsUnity.Game.World
             public override bool Equals(object o) => o is Key k && Equals(k);
         }
 
-        readonly Dictionary<Key, List<Matrix4x4>> groups = new Dictionary<Key, List<Matrix4x4>>();
+        sealed class Group
+        {
+            public readonly List<Matrix4x4> Matrices = new List<Matrix4x4>();
+            public readonly List<float> Lifts = new List<float>();
+            public bool Lifted;
+        }
+
+        readonly Dictionary<Key, Group> groups = new Dictionary<Key, Group>();
         readonly Matrix4x4[] chunk = new Matrix4x4[1023];
+        readonly float[] liftChunk = new float[1023];
+        // One block per lifted draw in a frame, since a draw keeps the block it was given.
+        readonly List<MaterialPropertyBlock> blocks = new List<MaterialPropertyBlock>();
+        int blocksUsed;
+        static readonly int LiftId = Shader.PropertyToID("_PulseLift");
         public bool CastShadows = true;
         public int Count { get; private set; }
         public int DrawCalls { get; private set; }
 
         public void Clear()
         {
-            foreach (var g in groups.Values) g.Clear();
+            foreach (var g in groups.Values) { g.Matrices.Clear(); g.Lifts.Clear(); g.Lifted = false; }
             Count = 0;
         }
 
-        public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m)
+        // lift: the instance's self light is 1 + lift times its rest.
+        public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m, float lift = 0f)
         {
             var matrix = m;
             // Instancing cannot flip culling per instance, so a mirrored
@@ -44,8 +58,10 @@ namespace OpenKingdomsUnity.Game.World
                 matrix = m * FlipX;
             }
             var k = new Key { Mesh = mesh, Submesh = submesh, Material = material };
-            if (!groups.TryGetValue(k, out var list)) groups[k] = list = new List<Matrix4x4>();
-            list.Add(matrix);
+            if (!groups.TryGetValue(k, out var g)) groups[k] = g = new Group();
+            g.Matrices.Add(matrix);
+            g.Lifts.Add(lift);
+            if (lift != 0f) g.Lifted = true;
             Count++;
         }
 
@@ -82,12 +98,22 @@ namespace OpenKingdomsUnity.Game.World
             mirrors.Clear();
         }
 
+        MaterialPropertyBlock Block()
+        {
+            if (blocksUsed == blocks.Count) blocks.Add(new MaterialPropertyBlock());
+            var b = blocks[blocksUsed++];
+            b.Clear();
+            return b;
+        }
+
         public void Draw(int layer = 0)
         {
             DrawCalls = 0;
+            blocksUsed = 0;
             foreach (var kv in groups)
             {
-                var list = kv.Value;
+                var g = kv.Value;
+                var list = g.Matrices;
                 if (list.Count == 0) continue;
                 var rp = new RenderParams(kv.Key.Material)
                 {
@@ -99,7 +125,11 @@ namespace OpenKingdomsUnity.Game.World
                 if (!kv.Key.Material.enableInstancing)
                 {
                     // A drop-in model's own material may not instance.
-                    foreach (var m in list) Graphics.RenderMesh(rp, kv.Key.Mesh, kv.Key.Submesh, m);
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (g.Lifted) { rp.matProps = Block(); rp.matProps.SetFloat(LiftId, g.Lifts[i]); }
+                        Graphics.RenderMesh(rp, kv.Key.Mesh, kv.Key.Submesh, list[i]);
+                    }
                     DrawCalls += list.Count;
                     continue;
                 }
@@ -107,6 +137,12 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     int n = Mathf.Min(chunk.Length, list.Count - start);
                     list.CopyTo(start, chunk, 0, n);
+                    if (g.Lifted)
+                    {
+                        g.Lifts.CopyTo(start, liftChunk, 0, n);
+                        rp.matProps = Block();
+                        rp.matProps.SetFloatArray(LiftId, liftChunk);
+                    }
                     Graphics.RenderMeshInstanced(rp, kv.Key.Mesh, kv.Key.Submesh, chunk, n);
                     DrawCalls++;
                 }

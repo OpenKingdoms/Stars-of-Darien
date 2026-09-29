@@ -120,7 +120,8 @@ namespace OpenKingdomsUnity.Game
         // disarms an armed command, or else deselects.
         void Select(int[] handles, bool add);
         int ReadSelection(int[] into);
-        void Click(Vector3 at, int unit, bool shift);
+        // keep is Ctrl: the order replaces the one in hand and keeps the queue.
+        void Click(Vector3 at, int unit, bool shift, bool keep = false);
         void Cancel();
         // The pointer the original shows at a ground point or over `unit`
         // (-1 for ground), from the selection and any armed command, as the
@@ -658,6 +659,7 @@ namespace OpenKingdomsUnity.Game
         public int BuildDef;        // for Build, else -1
         public int Arg;
         public bool Queue;          // add after current orders
+        public bool Keep;           // replace the order in hand, keep the queue (Ctrl)
         public int Facing;          // for Build, 0 to 3
 
         public static GameCommand To(CommandKind kind, int unit, Vector3 at) =>

@@ -962,8 +962,10 @@ namespace OpenKingdomsUnity.Game
 
         // ---- Orders and economy ----
 
-        // Shift's Queue waits behind what the unit is doing, anything else
-        // replaces it. A factory keeps its own queue and rally point.
+        // Shift's Queue waits behind what the unit is doing, Ctrl's Keep
+        // replaces the order in hand and leaves the queue behind it, and
+        // anything else replaces them all. A factory keeps its own queue
+        // and rally point.
         public bool Command(in GameCommand c)
         {
             if (Status != GameStatus.Running || !byHandle.TryGetValue(c.Unit, out var u) || u.Dying) return false;
@@ -974,6 +976,14 @@ namespace OpenKingdomsUnity.Game
                 if (!CanTake(u, c)) return false;
                 Enqueue(u.Handle, new Pending { Command = c });
                 return true;
+            }
+            if (c.Keep && c.Kind != CommandKind.Stop && pending.TryGetValue(c.Unit, out var kept) && kept.Count > 0)
+            {
+                var rest = new List<Pending>(kept);
+                LetGo(c.Unit);
+                bool ok = Apply(u, c);
+                pending[c.Unit] = rest;
+                return ok;
             }
             LetGo(c.Unit);
             return Apply(u, c);
@@ -1088,7 +1098,7 @@ namespace OpenKingdomsUnity.Game
             return mockSelection.Count;
         }
 
-        public void Click(Vector3 at, int unit, bool shift)
+        public void Click(Vector3 at, int unit, bool shift, bool keep = false)
         {
             byHandle.TryGetValue(unit, out var hit);
             bool friend = hit != null && hit.Player == 0;
@@ -1097,7 +1107,7 @@ namespace OpenKingdomsUnity.Game
             {
                 mockIsArmed = false;
                 foreach (int h in mockSelection.ToArray())
-                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef, Facing = mockArmedFacing, Queue = shift });
+                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef, Facing = mockArmedFacing, Queue = shift, Keep = keep });
                 return;
             }
             if (friend)
@@ -1113,6 +1123,7 @@ namespace OpenKingdomsUnity.Game
                     ? new GameCommand { Kind = CommandKind.Attack, Unit = h, TargetUnit = unit, BuildDef = -1 }
                     : GameCommand.To(CommandKind.Move, h, at);
                 c.Queue = shift;
+                c.Keep = keep;
                 Command(c);
             }
         }

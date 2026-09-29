@@ -706,15 +706,24 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Orders ─────────────────────────────────────────────────────
 
-        // A build order's arg is its facing, and Queue puts the order behind
-        // the ones the unit holds, as Shift does.
+        // A build order's arg is its facing, Queue puts the order behind
+        // the ones the unit holds, as Shift does, and Keep puts it in place
+        // of the one in hand and keeps the rest, as Ctrl does.
         public bool Command(in GameCommand c)
         {
             float x = c.Target.x / S, z = -c.Target.z / S;
+            return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, CommandArg(c)) == 0;
+        }
+
+        public static int CommandArg(in GameCommand c)
+        {
             int arg = c.Kind == CommandKind.Build ? (c.Facing & 3) : c.Arg;
             if (c.Queue) arg |= OkEngine.Queue;
-            return OkEngine.okx_command((int)c.Kind, c.Unit, (int)x, (int)z, c.TargetUnit, c.BuildDef, arg) == 0;
+            if (c.Keep) arg |= OkEngine.Keep;
+            return arg;
         }
+
+        public static int ClickFlags(bool shift, bool keep) => (shift ? OkEngine.ClickShift : 0) | (keep ? OkEngine.ClickCtrl : 0);
 
         // One order for them all, points in pixels as Command sends them and
         // the heading in engine radians, as Heading() reads them back.
@@ -966,7 +975,7 @@ namespace OpenKingdomsUnity.Engine
             return n;
         }
 
-        public void Click(Vector3 at, int unit, bool shift) => OkEngine.okx_click(at.x / S, -at.z / S, unit, shift ? 1 : 0);
+        public void Click(Vector3 at, int unit, bool shift, bool keep = false) => OkEngine.okx_click(at.x / S, -at.z / S, unit, ClickFlags(shift, keep));
 
         public void Cancel() => OkEngine.okx_cancel();
 

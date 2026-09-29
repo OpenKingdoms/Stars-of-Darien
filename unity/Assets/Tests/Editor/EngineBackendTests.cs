@@ -599,6 +599,58 @@ namespace OpenKingdomsUnity.Tests
             backend.Cancel();
         }
 
+        // Ctrl on an order, by command and by the game's own click: the new
+        // order goes in place of the one in hand and the queue stays.
+        [Test, Order(10)]
+        public void CtrlReplacesTheOrderInHandAndKeepsTheQueue()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units), me = backend.LocalPlayer, pick = -1;
+            for (int i = 0; i < n && pick < 0; i++)
+                if (units[i].Player == me && (units[i].Flags & UnitFlags.Active) != 0 && !backend.UnitDefs[units[i].Def].IsBuilding) pick = i;
+            Assert.GreaterOrEqual(pick, 0);
+            var u = units[pick];
+            Vector3 At(float x, float z)
+            {
+                var p = u.Position + new Vector3(x, 0f, z);
+                p.y = backend.GroundHeight(p.x, p.z);
+                return p;
+            }
+            var legs = new OrderLeg[16];
+            backend.Cancel();
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, u.Handle, At(8f, 0f))));
+            var b = GameCommand.To(CommandKind.Move, u.Handle, At(8f, 8f));
+            b.Queue = true;
+            Assert.IsTrue(backend.Command(b));
+            var c = GameCommand.To(CommandKind.Move, u.Handle, At(0f, 8f));
+            c.Queue = true;
+            Assert.IsTrue(backend.Command(c));
+            backend.Advance(2);
+            Assert.AreEqual(3, backend.ReadOrderQueue(u.Handle, legs), "two moves queued behind the first");
+
+            var d = GameCommand.To(CommandKind.Move, u.Handle, At(-8f, 0f));
+            d.Keep = true;
+            Assert.IsTrue(backend.Command(d));
+            backend.Advance(2);
+            Assert.AreEqual(3, backend.ReadOrderQueue(u.Handle, legs), "Keep leaves the queue");
+            Assert.AreEqual(d.Target.x, legs[0].Target.x, 1.5f, "the new move is the one in hand");
+            Assert.AreEqual(b.Target.z, legs[1].Target.z, 1.5f, "and the queued ones follow");
+            Assert.AreEqual(c.Target.x, legs[2].Target.x, 1.5f);
+
+            backend.Select(new[] { u.Handle }, false);
+            var e = At(-8f, -8f);
+            backend.Click(e, -1, false, true);
+            backend.Advance(2);
+            Assert.AreEqual(3, backend.ReadOrderQueue(u.Handle, legs), "a Ctrl-click leaves the queue");
+            Assert.AreEqual(e.z, legs[0].Target.z, 1.5f, "and its move is the one in hand");
+
+            backend.Click(e, -1, false);
+            backend.Advance(2);
+            Assert.AreEqual(1, backend.ReadOrderQueue(u.Handle, legs), "a plain click replaces them all");
+            backend.Command(GameCommand.To(CommandKind.Stop, u.Handle, Vector3.zero));
+            backend.Cancel();
+        }
+
         // A ship the engine builds is drawn with its origin just under the
         // surface, and posed there too: the engine reports a floater at the
         // sea but poses it on the floor.
@@ -659,6 +711,27 @@ namespace OpenKingdomsUnity.Tests
             var pose = new PiecePose[128];
             Assert.Greater(backend.ReadUnitPose(u.Handle, pose), 0);
             Assert.AreEqual(u.Position.y, pose[0].Matrix.m13, 0.3f, "and its pose stands there, not on the floor");
+        }
+    }
+
+    // How Ctrl reaches the engine, which needs no engine to check.
+    public class EngineOrderBitsTests
+    {
+        [Test]
+        public void CtrlIsTheKeepBitOnAnOrderAndTheSecondBitOnAClick()
+        {
+            var c = GameCommand.To(CommandKind.Move, 1, Vector3.zero);
+            Assert.AreEqual(0, EngineBackend.CommandArg(c));
+            c.Keep = true;
+            Assert.AreEqual(0x4000, EngineBackend.CommandArg(c));
+            c.Queue = true;
+            Assert.AreEqual(0xC000, EngineBackend.CommandArg(c));
+            var build = new GameCommand { Kind = CommandKind.Build, Facing = 3, Keep = true };
+            Assert.AreEqual(0x4003, EngineBackend.CommandArg(build));
+            Assert.AreEqual(0, EngineBackend.ClickFlags(false, false));
+            Assert.AreEqual(1, EngineBackend.ClickFlags(true, false));
+            Assert.AreEqual(2, EngineBackend.ClickFlags(false, true));
+            Assert.AreEqual(3, EngineBackend.ClickFlags(true, true));
         }
     }
 }
