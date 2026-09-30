@@ -241,20 +241,20 @@ namespace OpenKingdomsUnity.Tests
         public void ABreathIsToldFromLightningByItsFlames()
         {
             // The source 12 pixels over the ground without a firing piece,
-            // and a dragon's head well above its flames with one.
-            foreach (int piece in new[] { 0, 1 })
+            // a dragon's head with one, and a staff at the feet (piece 2).
+            foreach (int piece in new[] { 0, 1, 2 })
             foreach (bool breath in new[] { true, false })
             {
                 var fx = new EngineFx(Size);
                 var shots = new ProjectileState[8];
                 ProjectileState last = default;
-                float fromY = piece == 1 ? 70f : 28f;
+                float fromY = piece == 1 ? 70f : piece == 2 ? 18f : 28f;
                 for (uint t = 0; t < 12; t++)
                 {
                     var beam = new OkxProjectile { id = 1, kind = OkEngine.ProjBeam, model = -1, x = 400, y = 16, z = 600,
-                        fromX = 400, fromY = fromY, fromZ = 300, fromPiece = piece };
-                    // A flame leaves 12 pixels over the ground under the piece, every tick.
-                    var flame = new[] { Record(OkEngine.EffectImpact, (int)t, 3, 0, 12, 36, 34, 400, 28, 300) };
+                        fromX = 400, fromY = fromY, fromZ = 300, fromPiece = piece == 0 ? 0 : 1 };
+                    // A flame leaves the piece, never below 12 pixels over the ground, every tick.
+                    var flame = new[] { Record(OkEngine.EffectImpact, (int)t, 3, 0, 12, 36, 34, 400, Mathf.Max(fromY, 28f), 300) };
                     fx.Update(t, Tps, flame, breath ? 1 : 0, new[] { beam }, 1);
                     int n = fx.Projectiles(shots);
                     if (!breath && t < EngineFx.BreathWait) { Assert.AreEqual(0, n, "a beam waits a tick for its first flames"); continue; }

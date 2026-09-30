@@ -470,8 +470,8 @@ namespace OpenKingdomsUnity.Engine
             outShots.Add(shot);
         }
 
-        // The flames start 12 pixels over the ground under the firing piece,
-        // so they may sit well below a source at a dragon's head.
+        // The flames start at the firing piece, or 12 pixels over the ground
+        // when the piece is lower, so up to 12 pixels above the source.
         bool Breath(Vector3 source)
         {
             foreach (var at in flameSpawns)
