@@ -74,6 +74,7 @@ ABOUT
 
 Darien Reforged is free software under the GNU General Public License,
 version 3, with an extra permission for the Unity engine. See LICENSE.txt.
+The game's source code is available from the developer on request.
 The libraries and fonts it uses are listed with their licenses in
 THIRD-PARTY-NOTICES.txt. Total Annihilation: Kingdoms and its files belong
 to their owners, and this project is not made by or connected with them.
