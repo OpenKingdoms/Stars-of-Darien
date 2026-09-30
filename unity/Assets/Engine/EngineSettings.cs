@@ -10,14 +10,50 @@ namespace OpenKingdomsUnity.Engine
     {
         // The install to read. OK_GAME_DIR and OK_DATA_DIR override these,
         // and the data folder is optional loose files that win over the
-        // archives.
+        // archives, read only in the editor unless OK_DATA_DIR names one.
         public const string DefaultGameDir = "C:/GOG Games/Total Annihilation Kingdoms";
         public const string DefaultDataDir = "C:/Projects/TAK-RE/data/extracted";
 
         // OpenKingdoms > Settings in the editor can name another folder, and
-        // OK_GAME_DIR still wins over it.
+        // OK_GAME_DIR still wins over it. A built player looks for the game
+        // itself (FindForPlayer) and is empty when it found none.
         public const string GameDirPref = "oku.gameDir";
-        public static string GameDir => FromEnv("OK_GAME_DIR", EditorGameDir() ?? DefaultGameDir);
+        public static string GameDir => Application.isEditor ? FromEnv("OK_GAME_DIR", EditorGameDir() ?? DefaultGameDir) : PlayerGameDir();
+
+        static string found;
+        static bool searched;
+        public static GameFolder.Source FoundBy { get; private set; }
+
+        static string PlayerGameDir()
+        {
+            if (!searched) FindForPlayer();
+            return found ?? "";
+        }
+
+        // The player's saved choice, OK_GAME_DIR, then where Windows and the
+        // usual installs put the game. Remembered for the session.
+        public static string FindForPlayer()
+        {
+            searched = true;
+            found = GameFolder.Find(PlayerPrefs.GetString(GameDirPref, ""), Environment.GetEnvironmentVariable("OK_GAME_DIR"),
+                GameFolder.FromRegistry(), GameFolder.UsualPlaces(), out var by);
+            FoundBy = by;
+            return found;
+        }
+
+        // Keeps the player's pick for this and every later start.
+        public static void ChooseGameDir(string dir)
+        {
+            dir = GameFolder.Clean(dir);
+#if UNITY_EDITOR
+            if (Application.isEditor) { UnityEditor.EditorPrefs.SetString(GameDirPref, dir ?? ""); return; }
+#endif
+            PlayerPrefs.SetString(GameDirPref, dir ?? "");
+            PlayerPrefs.Save();
+            found = dir;
+            searched = true;
+            FoundBy = GameFolder.Source.Saved;
+        }
 
         static string EditorGameDir()
         {
@@ -37,7 +73,7 @@ namespace OpenKingdomsUnity.Engine
         {
             get
             {
-                string d = FromEnv("OK_DATA_DIR", DefaultDataDir);
+                string d = FromEnv("OK_DATA_DIR", Application.isEditor ? DefaultDataDir : "");
                 return Directory.Exists(d) ? d : "";
             }
         }
@@ -60,6 +96,8 @@ namespace OpenKingdomsUnity.Engine
                 if (Blocked != null) return Blocked;
                 if (!File.Exists(Path.Combine(PluginDir, "okengine.dll")))
                     return "The game's engine is not installed. Get the latest project, which carries it in the engine folder, and open it in Unity again.";
+                if (!Application.isEditor && GameDir.Length == 0)
+                    return "The game did not find your Total Annihilation: Kingdoms. " + GameFolder.Hint;
                 if (!Directory.Exists(GameDir))
                     return $"Your Total Annihilation: Kingdoms files are not at {GameDir}. Pick your game folder in OpenKingdoms, then Settings, and press Play again.";
                 return null;

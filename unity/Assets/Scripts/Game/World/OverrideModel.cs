@@ -19,7 +19,10 @@ namespace OpenKingdomsUnity.Game.World
         static readonly Dictionary<string, OverrideModel> plain = new Dictionary<string, OverrideModel>();
         static readonly Dictionary<string, GameObject> templates = new Dictionary<string, GameObject>();
 
-        public static string ProjectDir => System.IO.Path.GetDirectoryName(Application.dataPath);
+        // The folder that Assets/Overrides paths start from: the project in
+        // the editor, and in a built player its StreamingAssets, where the
+        // build copies the hand-built models.
+        public static string ProjectDir => Application.isEditor ? System.IO.Path.GetDirectoryName(Application.dataPath) : Application.streamingAssetsPath;
 
         public static void Reset(OverrideIndex index = null)
         {

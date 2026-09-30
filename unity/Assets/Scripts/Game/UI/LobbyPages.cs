@@ -40,15 +40,23 @@ namespace OpenKingdomsUnity.Game.UI
                     title.name = "Title";
                     p.Label(p.Root, "A remaster of Total Annihilation: Kingdoms", 60, 112, 520, 20, 11f, HudArt.Ink, TextAnchor.MiddleCenter, LobbyInk.Caps);
                 }
+                // A skirmish-only build keeps the other doors in the art and
+                // marks them for later.
+                bool closed = BuildStamp.SkirmishOnly;
                 Action[] open =
                 {
                     () => root.Flow.Fire(FlowEvent.OpenSkirmish),
                     () => p.ShowHelp("The Adventure comes after skirmish and multiplayer."),
-                    () => root.Flow.Fire(FlowEvent.OpenMultiplayer),
+                    closed ? (Action)(() => p.ShowHelp(MultiplayerLater)) : () => root.Flow.Fire(FlowEvent.OpenMultiplayer),
                 };
                 string[] names = { "Skirmish", "Adventure", "Multiplayer" };
                 for (int i = 0; i < DoorArt.Length; i++)
-                    Doors.Add(Door.Make(p, names[i], DoorArt[i], open[i]));
+                {
+                    var d = DoorArt[i];
+                    if (closed && i > 0) d.help += ", coming later";
+                    Doors.Add(Door.Make(p, names[i], d, open[i]));
+                    if (closed && i > 0) Later(p, d.gui);
+                }
                 Doors[0].Sound = "skirmish.wav";
 
                 ArtButton.Make(p, "Quit", "mainscreen.gaf", "ExitButton", 68, 407, 39, 51, "Quit", () => root.Flow.Fire(FlowEvent.Exit), "Leave the game");
@@ -61,6 +69,35 @@ namespace OpenKingdomsUnity.Game.UI
                 var version = p.Label(p.Root, GameRoot.Title + ", free and open, played with your own game files", 172, 442, 296, 13, 8.5f, HudArt.GoldHi, TextAnchor.MiddleCenter);
                 version.name = "Version";
                 l.HelpLine(p, 172, 455, 296, 17, Resting(root));
+                if (BuildStamp.Version != null) Stamp(p, BuildStamp.Version);
+            }
+
+            public const string MultiplayerLater = "Multiplayer comes in a later alpha.";
+
+            // "Coming later" across the foot of a closed door, in a dark well
+            // that lets clicks through to the door.
+            static void Later(GuiPage p, Rect gui)
+            {
+                float w = 96f, h = 14f, x = gui.x + (gui.width - w) / 2f, y = gui.y + gui.height - h - 14f;
+                var well = Well(p, p.Root, x, y, w, h);
+                well.name = "Coming later plaque";
+                well.raycastTarget = false;
+                var t = p.Label(well.transform, "Coming later", 0, 0, w, h, 9f, HudArt.GoldHi, TextAnchor.MiddleCenter, LobbyInk.Caps);
+                t.name = "Coming later";
+            }
+
+            // The build's version on a dark plaque in the screen's bottom
+            // right corner, over the margin or the art.
+            static void Stamp(GuiPage p, string text)
+            {
+                float k = p.K, pad = 5f * k, h = 16f * k;
+                var back = UiKit.Picture(p.Screen, "Build version plaque", UiKit.White, new Color(0.05f, 0.035f, 0.02f, 0.85f));
+                back.raycastTarget = false;
+                var t = UiKit.Label(back.transform, text, p.Font(10f), HudArt.GoldHi, TextAnchor.MiddleCenter);
+                t.name = "Build version";
+                t.rectTransform.Fill();
+                float w = t.preferredWidth + 14f * k;
+                back.rectTransform.Place(1, 0, 1, 0, -(w + pad), pad, pad, -(h + pad));
             }
 
             static string Resting(GameRoot root)

@@ -35,3 +35,7 @@ Captures/
 
 # Grids read off the original pictures, remade by the kits that use them
 tools/sprite-replace/hand/**/*.npy
+
+# Written by the alpha build for the player, and removed after it
+unity/Assets/Game/Resources/BuildStamp.txt
+unity/Assets/Game/Resources/BuildStamp.txt.meta

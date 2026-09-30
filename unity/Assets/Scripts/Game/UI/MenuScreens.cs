@@ -277,9 +277,26 @@ namespace OpenKingdomsUnity.Game.UI
                 o.Fullscreen = i == 0;
                 if (!Application.isEditor) UnityEngine.Screen.fullScreen = o.Fullscreen;
             });
+            if (GameRoot.ChangeGameFolder != null) GameFolderRow(rows, o);
             var back = UiKit.MakeButton(p, "Back", () => { o.Save(); root.Flow.Fire(FlowEvent.Back); }, 32);
             back.name = "Back";
             back.GetComponent<RectTransform>().Place(0.5f, 0, 0.5f, 0, -180, 34, -180, -114);
+        }
+
+        // Where the player's Total Annihilation: Kingdoms is, and a button to
+        // pick another. The game starts again on the new folder.
+        static void GameFolderRow(Transform rows, GameOptions o)
+        {
+            var row = UiKit.Rect(rows, "Game folder").Size(0, 54);
+            UiKit.Row(row, 16);
+            var l = UiKit.Label(row, "Game folder", 27, UiKit.Pale, TextAnchor.MiddleLeft);
+            l.rectTransform.Size(260, 0);
+            var change = UiKit.MakeButton(row, "Change", () => { o.Save(); GameRoot.ChangeGameFolder?.Invoke(); }, 24);
+            change.name = "Change game folder";
+            change.GetComponent<RectTransform>().Size(260, 0);
+            var where = UiKit.Label(rows, GameRoot.GameFolder?.Invoke() ?? "", 21, UiKit.Dim, TextAnchor.UpperLeft);
+            where.name = "Game folder path";
+            where.rectTransform.Size(0, 30);
         }
 
         void BuildLoading()

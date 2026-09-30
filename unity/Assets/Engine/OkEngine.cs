@@ -433,14 +433,21 @@ namespace OpenKingdomsUnity.Engine
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
         [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
         static extern IntPtr LoadLibraryW(string path);
+        [DllImport("kernel32", CharSet = CharSet.Unicode)]
+        static extern IntPtr GetModuleHandleW(string name);
 #endif
 
         // okengine.dll needs SDL2.dll, which Windows only finds next to
         // the executable or on PATH. Loading it by full path first makes
-        // the one beside the plugin the one in use.
+        // the one beside the plugin the one in use. Both need the Visual C++
+        // runtime, and a built player carries a copy for a Windows without it.
         public static void PreloadDependencies(string pluginDir)
         {
 #if UNITY_EDITOR_WIN || UNITY_STANDALONE_WIN
+            string vc = Path.Combine(pluginDir, "vcruntime140.dll");
+            if (File.Exists(vc) && GetModuleHandleW("vcruntime140.dll") == IntPtr.Zero &&
+                !File.Exists(Path.Combine(Environment.SystemDirectory, "vcruntime140.dll")))
+                LoadLibraryW(vc);
             string sdl = Path.Combine(pluginDir, "SDL2.dll");
             if (File.Exists(sdl)) LoadLibraryW(sdl);
 #endif

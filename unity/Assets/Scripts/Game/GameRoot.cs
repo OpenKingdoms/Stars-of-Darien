@@ -16,6 +16,10 @@ namespace OpenKingdomsUnity.Game
         // The engine binding sets this when the engine and game files are
         // there. Without it, the mock runs.
         public static Func<IGameBackend> BackendFactory;
+        // The binding sets these in a built player: the game folder in use,
+        // and the way Options picks another.
+        public static Func<string> GameFolder;
+        public static Action ChangeGameFolder;
 
         public IGameBackend Backend { get; private set; }
         public GameFlow Flow { get; } = new GameFlow();
@@ -119,6 +123,11 @@ namespace OpenKingdomsUnity.Game
 
         void Start()
         {
+            if (SmokeRun.Seconds(Environment.GetCommandLineArgs()) is float smoke)
+            {
+                SmokeRun.Begin(this, smoke);
+                return;
+            }
             string map = PlayerPrefs.GetString(AutoStartKey, "");
             if (map.Length == 0) return;
             PlayerPrefs.DeleteKey(AutoStartKey);
