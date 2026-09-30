@@ -167,7 +167,8 @@ namespace OpenKingdomsUnity
         {
             string head = Git("rev-parse --short HEAD");
             if (string.IsNullOrEmpty(head)) return "unknown";
-            string dirty = Git("status --porcelain --untracked-files=no");
+            // Unity writes its .asset settings back on its own, so they do not count.
+            string dirty = Git("status --porcelain --untracked-files=no -- . \":(exclude)*.asset\"");
             return string.IsNullOrEmpty(dirty) ? head : head + "+changes";
         }
 
