@@ -240,15 +240,20 @@ namespace OpenKingdomsUnity.Tests
         [Test]
         public void ABreathIsToldFromLightningByItsFlames()
         {
+            // The source 12 pixels over the ground without a firing piece,
+            // and a dragon's head well above its flames with one.
+            foreach (int piece in new[] { 0, 1 })
             foreach (bool breath in new[] { true, false })
             {
                 var fx = new EngineFx(Size);
                 var shots = new ProjectileState[8];
                 ProjectileState last = default;
+                float fromY = piece == 1 ? 70f : 28f;
                 for (uint t = 0; t < 12; t++)
                 {
-                    var beam = new OkxProjectile { id = 1, kind = OkEngine.ProjBeam, model = -1, x = 400, y = 16, z = 600, fromX = 400, fromY = 16, fromZ = 300 };
-                    // A flame leaves the muzzle, 12 pixels up, every tick.
+                    var beam = new OkxProjectile { id = 1, kind = OkEngine.ProjBeam, model = -1, x = 400, y = 16, z = 600,
+                        fromX = 400, fromY = fromY, fromZ = 300, fromPiece = piece };
+                    // A flame leaves 12 pixels over the ground under the piece, every tick.
                     var flame = new[] { Record(OkEngine.EffectImpact, (int)t, 3, 0, 12, 36, 34, 400, 28, 300) };
                     fx.Update(t, Tps, flame, breath ? 1 : 0, new[] { beam }, 1);
                     int n = fx.Projectiles(shots);
@@ -256,12 +261,115 @@ namespace OpenKingdomsUnity.Tests
                     Assert.AreEqual(1, n);
                     last = shots[0];
                 }
-                Assert.AreEqual(breath ? BeamKind.Fire : BeamKind.Lightning, last.Beam);
+                Assert.AreEqual(breath ? BeamKind.Fire : BeamKind.Lightning, last.Beam, $"piece {piece}");
                 Assert.AreEqual(ShotKind.Beam, last.Kind);
-                var src = EngineSettings.ToUnity(400, 28, 300);
-                Assert.Less((last.Source - src).magnitude, 1e-3f, "the source is the body, 12 pixels over the ground");
+                var src = EngineSettings.ToUnity(400, fromY, 300);
+                Assert.Less((last.Source - src).magnitude, 1e-3f, "the source is where the engine says, the piece or 12 pixels up");
                 Assert.AreEqual(EngineSettings.ToUnity(400, 16, 600).y + 0.5f, last.Position.y, 1e-3f, "the end is raised to the body");
             }
+        }
+
+        [Test]
+        public void TheShotAndEffectRecordsMatchTheEnginesLayout()
+        {
+            // ok_embed.h API 23: OkxProjectile ends in from_piece, OkxEffect in follow.
+            Assert.AreEqual(76, System.Runtime.InteropServices.Marshal.SizeOf<OkxProjectile>());
+            Assert.AreEqual(80, System.Runtime.InteropServices.Marshal.SizeOf<OkxEffect>());
+        }
+
+        [Test]
+        public void ABreathIsNotMadeByFlamesAboveItsSource()
+        {
+            var fx = new EngineFx(Size);
+            var shots = new ProjectileState[8];
+            for (uint t = 0; t < 4; t++)
+            {
+                var beam = new OkxProjectile { id = 1, kind = OkEngine.ProjBeam, model = -1, x = 400, y = 16, z = 600, fromX = 400, fromY = 28, fromZ = 300 };
+                var flame = new[] { Record(OkEngine.EffectImpact, (int)t, 3, 0, 12, 36, 34, 400, 80, 300) };
+                fx.Update(t, Tps, flame, 1, new[] { beam }, 1);
+            }
+            Assert.AreEqual(1, fx.Projectiles(shots));
+            Assert.AreEqual(BeamKind.Lightning, shots[0].Beam, "a flame far over the source is another unit's");
+        }
+
+        [Test]
+        public void ANimbusRidesItsCasterAtTheEnginesPaceAndEndsWithIt()
+        {
+            // nimbus_aramon: 11 frames of 52 by 47, 6 ticks each at 60 Hz. An
+            // impact holds engine slot 0 as well.
+            var fx = new EngineFx(s => s == 6 ? new Vector2Int(52 * 11, 47) : Size(s));
+            var effects = new EffectState[16];
+            const int tpf = 6, frames = 11;
+            int nimbusId = 0;
+            for (uint t = 0; t < frames * tpf; t++)
+            {
+                float x = 320 + t * 2f;
+                var glow = Record(OkEngine.EffectNimbus, 0, 6, (int)t / tpf, frames, 52, 47, x, 40, 500);
+                glow.follow = 7; glow.age = (int)t; glow.ticksPerFrame = tpf; glow.frameCount = frames;
+                var blast = Record(OkEngine.EffectImpact, 0, 1, (int)t / 2, 30, 95, 72);
+                blast.follow = -1;
+                fx.Update(t, Tps, new[] { glow, blast }, 2, new OkxProjectile[0], 0);
+                int n = fx.Effects(effects);
+                EffectState? found = null;
+                for (int i = 0; i < n; i++) if (effects[i].Follow == 7) found = effects[i];
+                Assert.IsTrue(found.HasValue, $"the nimbus shows at tick {t}");
+                var e = found.Value;
+                if (t == 0) nimbusId = e.Id;
+                Assert.AreEqual(nimbusId, e.Id, "one nimbus through the cast");
+                Assert.Less((e.Position - EngineSettings.ToUnity(x, 40, 500)).magnitude, 1e-4f, "it stands where its caster is");
+                Assert.AreEqual((int)t / tpf, e.Frame);
+                Assert.AreEqual((t % tpf) / (float)tpf, e.Phase, 1e-5f);
+                Assert.IsFalse(e.Loops);
+                Assert.IsTrue(e.Additive, "the nimbus adds light");
+                for (int i = 0; i < n; i++)
+                    if (effects[i].Follow != 7) Assert.AreNotEqual(nimbusId, effects[i].Id, "the blast in slot 0 is apart");
+            }
+            // The engine drops it once played, and nothing of it plays on.
+            fx.Update(frames * tpf, Tps, new OkxEffect[0], 0, new OkxProjectile[0], 0);
+            int left = fx.Effects(effects);
+            for (int i = 0; i < left; i++) Assert.AreNotEqual(7, effects[i].Follow, "no nimbus after the engine's last");
+        }
+
+        [Test]
+        public void ACastAgainIsANewNimbus()
+        {
+            var fx = new EngineFx(s => new Vector2Int(52 * 11, 47));
+            var effects = new EffectState[4];
+            int first = 0;
+            for (uint t = 0; t < 20; t++)
+            {
+                int age = t < 10 ? (int)t : (int)t - 10;
+                var glow = Record(OkEngine.EffectNimbus, 3, 6, age / 6, 11, 52, 47);
+                glow.follow = 2; glow.age = age; glow.ticksPerFrame = 6; glow.frameCount = 11;
+                fx.Update(t, Tps, new[] { glow }, 1, new OkxProjectile[0], 0);
+                Assert.AreEqual(1, fx.Effects(effects));
+                if (t == 0) first = effects[0].Id;
+                if (t < 10) Assert.AreEqual(first, effects[0].Id);
+                else Assert.AreNotEqual(first, effects[0].Id, "the second cast starts a new one");
+            }
+        }
+
+        [Test]
+        public void TheWarmListIsWhatTheMapsUnitsAndTheirBuildsCanShow()
+        {
+            var builds = new Dictionary<int, int[]> { [1] = new[] { 2, 3 }, [2] = new[] { 3, 4 }, [3] = new int[0], [4] = new[] { 1 }, [9] = new[] { 1 } };
+            var many = new int[70];
+            for (int i = 0; i < many.Length; i++) many[i] = 200 + i;
+            var strips = new Dictionary<int, int[]> { [1] = new[] { 10, 11 }, [2] = new[] { 11, 12 }, [3] = new int[0], [4] = many, [9] = new[] { 99 } };
+            var asked = new List<int>();
+            int StripsOf(int def, int[] into, int cap)
+            {
+                asked.Add(def);
+                if (!strips.TryGetValue(def, out var s)) return -1;
+                for (int i = 0; i < s.Length && i < cap; i++) into[i] = s[i];
+                return s.Length;
+            }
+            var warm = EngineFx.StripsToWarm(new[] { 1, 1, 5 }, d => builds.TryGetValue(d, out var b) ? b : null, StripsOf);
+            var want = new List<int> { 10, 11, 12 };
+            want.AddRange(many);
+            CollectionAssert.AreEqual(want, warm, "each strip once, the long list whole, nothing from a def no one can build");
+            Assert.IsFalse(asked.Contains(9));
+            Assert.AreEqual(1, asked.FindAll(d => d == 1).Count, "each def asked once, but for a longer list");
         }
 
         [Test]

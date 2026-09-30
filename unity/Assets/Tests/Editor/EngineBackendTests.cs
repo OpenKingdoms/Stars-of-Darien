@@ -87,6 +87,33 @@ namespace OpenKingdomsUnity.Tests
             Assert.Less(Mathf.Abs(-at.z - want.y), 4f, "south of " + want + ": " + at);
         }
 
+        // A game warms what its armies can show, each side's own nimbus among
+        // them, and not every strip the engine holds.
+        [Test, Order(22)]
+        public void AGameWarmsTheStripsItsArmiesCanShow()
+        {
+            backend.StartSkirmish(TwoCastles());
+            LoadProgress p = default;
+            for (int i = 0; i < 20000 && !p.Done && !p.Failed; i++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            var warm = backend.WarmEffectStrips();
+            int all = 0, nimbuses = 0;
+            for (int i = 0, misses = 0; i < 1024 && misses < 32; i++)
+            {
+                if (OkEngine.okx_effect_strip(i, null, 0, out _, out _) > 0) { all++; misses = 0; }
+                else misses++;
+            }
+            foreach (int s in warm)
+            {
+                Assert.Greater(OkEngine.okx_effect_strip(s, null, 0, out int w, out int h), 0, $"strip {s}");
+                // A nimbus is 11 frames of 52 by 47.
+                if (w == 52 * 11 && h == 47) nimbuses++;
+            }
+            Assert.Greater(warm.Count, 0);
+            Assert.Less(warm.Count, all, "not every strip the engine holds");
+            Assert.AreEqual(2, nimbuses, "the Aramon and Taros nimbuses");
+        }
+
         // The HUD's build row shows every option of every builder in the
         // player's game at once, in one row at the default size. The
         // catalogue is whole once a game has loaded.

@@ -55,7 +55,10 @@ namespace OpenKingdomsUnity.Engine
     {
         // lightmap is the weapon's ground glow, OkEngine.Lightmap*.
         public int id, player, color, kind, model, lightmap;
+        // A beam's source is its firing piece when fromPiece is 1, else the
+        // ground under the shooter plus 12 pixels.
         public float x, y, z, vx, vy, vz, heading, pitch, roll, fromX, fromY, fromZ;
+        public int fromPiece;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -167,6 +170,8 @@ namespace OpenKingdomsUnity.Engine
         // The weapon's ground glow, OkEngine.Lightmap*, and the pace: ticks
         // since it began, ticks a picture, the strip's pictures, repeats.
         public int lightmap, age, ticksPerFrame, frameCount, loops;
+        // The unit handle it rides with, as a nimbus does its caster, else -1.
+        public int follow;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -237,7 +242,7 @@ namespace OpenKingdomsUnity.Engine
     public static class OkEngine
     {
         const string Lib = "okengine";
-        public const int ApiVersion = 22;
+        public const int ApiVersion = 23;
         // In okx_command's arg: behind the orders the unit holds, as Shift.
         public const int Queue = 0x8000;
         // In okx_command's arg: in place of the order in hand, keeping the queue, as Ctrl.
@@ -253,7 +258,7 @@ namespace OpenKingdomsUnity.Engine
             NetPlaying = 5, NetRefused = 6, NetGone = 7;
         public const int ArmNone = 0, ArmMove = 1, ArmAttack = 2, ArmGuard = 3, ArmPatrol = 4,
             ArmLoad = 5, ArmUnload = 6, ArmHeal = 7, ArmClear = 8, ArmBuild = 200;
-        public const int EffectImpact = 0, EffectProjectile = 1;
+        public const int EffectImpact = 0, EffectProjectile = 1, EffectNimbus = 2;
         public const int LightmapNone = 0, LightmapSmall = 1, LightmapMedium = 2, LightmapLarge = 3;
         // TAK_EDIT_START and TAK_EDIT_MOVE_START.
         public const int EditStart = 8, EditMoveStart = 42;
@@ -288,6 +293,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_effects([Out] OkxEffect[] effects, int cap);
         [DllImport(Lib)] public static extern int okx_effect_strip(int sprite, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_effect_frames(int sprite, [Out] int[] geometry, int cap);
+        [DllImport(Lib)] public static extern int okx_def_effect_strips(int def, [Out] int[] strips, int cap);
         [DllImport(Lib)] public static extern int okx_build_site(int def, int x, int y, out int sx, out int sy);
         [DllImport(Lib)] public static extern int okx_factory_queue(int handle, int def);
         [DllImport(Lib)] public static extern int okx_factory_add(int factory, int def, int count);

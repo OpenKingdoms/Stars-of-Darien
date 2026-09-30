@@ -46,11 +46,19 @@ namespace OpenKingdomsUnity.Engine
             public bool Breath;
         }
 
+        // A nimbus by its engine slot, a new one for each cast.
+        sealed class Glow
+        {
+            public int OutId, Follow, Age;
+            public uint Seen;
+        }
+
         readonly System.Func<int, Vector2Int> stripSize;
         readonly Dictionary<int, StripInfo> strips = new Dictionary<int, StripInfo>();
         readonly Dictionary<int, Blast> live = new Dictionary<int, Blast>();
         readonly List<Blast> kept = new List<Blast>();
         readonly Dictionary<int, Flight> flights = new Dictionary<int, Flight>();
+        readonly Dictionary<int, Glow> glows = new Dictionary<int, Glow>();
         readonly Stack<Blast> spareBlasts = new Stack<Blast>();
         readonly Stack<Flight> spareFlights = new Stack<Flight>();
         readonly Dictionary<int, int> pictureStrip = new Dictionary<int, int>();
@@ -73,6 +81,7 @@ namespace OpenKingdomsUnity.Engine
             live.Clear(); kept.Clear();
             foreach (var f in flights.Values) spareFlights.Push(f);
             flights.Clear();
+            glows.Clear();
             outEffects.Clear(); outShots.Clear();
             nextId = 1;
         }
@@ -94,6 +103,7 @@ namespace OpenKingdomsUnity.Engine
             {
                 var e = fx[i];
                 if (e.kind == OkEngine.EffectProjectile) { pictureStrip[e.id] = e.sprite; continue; }
+                if (e.kind == OkEngine.EffectNimbus) continue;
                 SeeBlast(e);
             }
             // Blasts the engine has let go keep playing, and moving ones end with it.
@@ -116,6 +126,12 @@ namespace OpenKingdomsUnity.Engine
                 else Free(b);
             }
             kept.RemoveRange(w, kept.Count - w);
+
+            for (int i = 0; i < fxCount; i++)
+                if (fx[i].kind == OkEngine.EffectNimbus) EmitNimbus(fx[i]);
+            drop.Clear();
+            foreach (var kv in glows) if (kv.Value.Seen != tick) drop.Add(kv.Key);
+            foreach (int k in drop) glows.Remove(k);
 
             for (int i = 0; i < fxCount; i++)
                 if (fx[i].kind == OkEngine.EffectProjectile) EmitPicture(fx[i]);
@@ -149,6 +165,31 @@ namespace OpenKingdomsUnity.Engine
         }
 
         public int KeptCount => kept.Count;
+
+        // The strips to make ready while a game loads: what the defs on the
+        // map and all they can build in turn can show, each strip once in the
+        // order found. stripsOf is okx_def_effect_strips.
+        public static List<int> StripsToWarm(IEnumerable<int> onMap, System.Func<int, IReadOnlyList<int>> builds,
+            System.Func<int, int[], int, int> stripsOf)
+        {
+            var found = new List<int>();
+            var seenStrip = new HashSet<int>();
+            var seenDef = new HashSet<int>();
+            var todo = new Queue<int>();
+            foreach (int d in onMap) if (d >= 0 && seenDef.Add(d)) todo.Enqueue(d);
+            var buf = new int[64];
+            while (todo.Count > 0)
+            {
+                int def = todo.Dequeue();
+                int n = stripsOf(def, buf, buf.Length);
+                if (n > buf.Length) { buf = new int[Mathf.NextPowerOfTwo(n)]; n = stripsOf(def, buf, buf.Length); }
+                for (int i = 0; i < Mathf.Min(n, buf.Length); i++)
+                    if (buf[i] >= 0 && seenStrip.Add(buf[i])) found.Add(buf[i]);
+                var next = builds(def);
+                if (next != null) foreach (int b in next) if (b >= 0 && seenDef.Add(b)) todo.Enqueue(b);
+            }
+            return found;
+        }
 
         // ── Strips ────────────────────────────────────────────────────
 
@@ -318,6 +359,29 @@ namespace OpenKingdomsUnity.Engine
             };
         }
 
+        // A nimbus stands where the engine puts its caster this tick, at the
+        // engine's pace, and ends when the engine lets it go.
+        void EmitNimbus(in OkxEffect e)
+        {
+            // A new slot, another caster or an age gone back is a new cast.
+            if (!glows.TryGetValue(e.id, out var g) || g.Follow != e.follow || e.age < g.Age)
+            {
+                if (g == null) glows[e.id] = g = new Glow();
+                g.OutId = nextId++;
+                if (nextId == int.MaxValue) nextId = 1;
+            }
+            g.Follow = e.follow; g.Age = e.age; g.Seen = tick;
+            int tpf = Mathf.Max(1, e.ticksPerFrame);
+            outEffects.Add(new EffectState
+            {
+                Id = g.OutId, Strip = e.sprite, IsProjectile = false, Position = EngineSettings.ToUnity(e.x, e.y, e.z),
+                Top = (e.top - e.y) * S, Bottom = (e.bottom - e.y) * S, OffsetX = e.offX * S, Width = e.w * S,
+                UvMin = new Vector2(e.u0, 0f), UvMax = new Vector2(e.u1, e.v1),
+                Frame = e.frame, Phase = (e.age % tpf) / (float)tpf, Loops = e.loops != 0,
+                Additive = Strip(e.sprite).Rule.Additive, Light = LightOf(e.lightmap), Follow = e.follow, Struck = -1, Age = e.age,
+            });
+        }
+
         // The weapon's lightmap key as the presentation's light.
         static FxLight LightOf(int lightmap) => lightmap >= OkEngine.LightmapSmall && lightmap <= OkEngine.LightmapLarge
             ? (FxLight)(lightmap + 1) : FxLight.None;
@@ -378,9 +442,10 @@ namespace OpenKingdomsUnity.Engine
             };
             if (p.kind == OkEngine.ProjBeam)
             {
-                // The engine gives the ground under the shooter and under the
-                // aim, and the 3D view raises them to the body.
-                shot.Source = EngineSettings.ToUnity(p.fromX, p.fromY + 12f, p.fromZ);
+                // The source is the firing piece, or 12 pixels over the
+                // shooter's ground without one. The end is the ground under
+                // the aim, raised to the body.
+                shot.Source = EngineSettings.ToUnity(p.fromX, p.fromY, p.fromZ);
                 shot.Position = at + Vector3.up * (8f * S);
                 var f = FlightOf(p.id, shot.Source);
                 shot.Age = (int)(tick - f.Born);
@@ -405,12 +470,14 @@ namespace OpenKingdomsUnity.Engine
             outShots.Add(shot);
         }
 
+        // The flames start 12 pixels over the ground under the firing piece,
+        // so they may sit well below a source at a dragon's head.
         bool Breath(Vector3 source)
         {
             foreach (var at in flameSpawns)
             {
                 var d = at - source;
-                if (d.x * d.x + d.z * d.z < 0.64f * 0.64f && Mathf.Abs(d.y) < 1.2f) return true;
+                if (d.x * d.x + d.z * d.z < 0.64f * 0.64f && d.y < 1.2f) return true;
             }
             return false;
         }
