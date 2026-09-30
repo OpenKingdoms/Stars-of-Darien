@@ -116,7 +116,7 @@ namespace OpenKingdomsUnity.Studio
             }
             Stage = stage;
             lastTick = 0;
-            Stage.SetMonarch(MonarchModel(b), Team);
+            Stage.SetMonarch(MonarchModel(b));
             RefreshOriginal();
             if (Model != null) Stage.SetModel(Model, Fix, Tweaks, Team);
             Recheck();
@@ -162,8 +162,8 @@ namespace OpenKingdomsUnity.Studio
             finally { if (progress) EditorUtility.ClearProgressBar(); }
         }
 
-        // A real monarch from the game, or null for the 4-cell stand-in, which
-        // the stand-in world always gets since its units are not to scale.
+        // A real monarch from the game, or null on the stand-in world, whose
+        // units are not to scale.
         internal static PresentedModel MonarchModel(IGameBackend b)
         {
             if (b == null || b.Name == "Mock") return null;
@@ -407,7 +407,7 @@ namespace OpenKingdomsUnity.Studio
         {
             TeamColour = colour;
             var b = StudioBackend.Get();
-            Stage?.SetMonarch(MonarchModel(b), Team);
+            Stage?.SetMonarch(MonarchModel(b));
             Stage?.SetTweaks(Tweaks, Team);
             RefreshOriginal();
             Notify();

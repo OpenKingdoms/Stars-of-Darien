@@ -78,7 +78,7 @@ namespace OpenKingdomsUnity.Studio
                 sized = true;
             }
             else if (t != null && t.Kind != TargetKind.None && !t.ToScale)
-                Add(Level.Note, $"It is {across:0.#} cells across and {tall:0.#} tall. The stand-in world's things are not to scale, so judge the size by the 4-cell monarch.");
+                Add(Level.Note, $"It is {across:0.#} cells across and {tall:0.#} tall. The stand-in world's things are not to scale, so the size is not judged. A monarch in the game stands 4 cells tall.");
             else if (expected > 0 && tall > 0)
             {
                 float r = tall / expected;

@@ -164,7 +164,7 @@ namespace OpenKingdomsUnity.Tests
         static void AssertNoOverlaps(StudioGallery g)
         {
             var rects = g.Shown.Select(WorldRect).ToList();
-            rects.Add(g.MonarchRect);
+            if (g.MonarchRect is Rect m) rects.Add(m);
             for (int i = 0; i < rects.Count; i++)
                 for (int j = i + 1; j < rects.Count; j++)
                     Assert.IsFalse(rects[i].Overlaps(rects[j]), $"plinths {i} and {j} overlap: {rects[i]} {rects[j]}");
@@ -196,7 +196,7 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void EveryModelStandsOnItsOwnPlinthWithItsNameAndTheMonarch()
+        public void EveryModelStandsOnItsOwnPlinthWithItsName()
         {
             for (int i = 1; i <= 12; i++) Put($"Well{i:00}", Well(i == 5 ? 4f : 0.6f + i * 0.1f, i % 4));
             File.WriteAllText(Path.Combine(models, "Broken.glb"), "not a model");
@@ -228,11 +228,10 @@ namespace OpenKingdomsUnity.Tests
             view.Release();
             UnityEngine.Object.DestroyImmediate(view);
 
-            // The monarch for scale, west of the first row.
-            Assert.IsNotNull(g.Monarch);
-            Assert.IsTrue(g.MonarchIsStandIn, "the stand-in world's 4-cell monarch");
-            Assert.Less(g.MonarchRect.xMax, WorldRect(g.Shown[0]).xMin, "west of the first plinth");
-            Assert.AreEqual(WorldRect(g.Shown[0]).center.y, g.MonarchRect.center.y, 0.01f, "in the first row");
+            // The stand-in world has no monarch to stand beside them.
+            Assert.IsNull(g.Monarch);
+            Assert.IsNull(g.MonarchRect);
+            Assert.IsNull(g.Root.transform.Find("Monarch for scale"));
 
             // Next and previous step in the grid's order and wrap round.
             g.Step(1);

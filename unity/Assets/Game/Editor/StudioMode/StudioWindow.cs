@@ -315,7 +315,7 @@ namespace OpenKingdomsUnity.Studio
         {
             var s = StudioSession.Stage;
             EditorGUI.BeginChangeCheck();
-            s.ShowMonarch = EditorGUILayout.ToggleLeft("Monarch for scale", s.ShowMonarch);
+            if (s.HasMonarch) s.ShowMonarch = EditorGUILayout.ToggleLeft("Monarch for scale", s.ShowMonarch);
             s.ShowGrid = EditorGUILayout.ToggleLeft("Footprint grid", s.ShowGrid);
             s.ShowAnchor = EditorGUILayout.ToggleLeft("Anchor and front arrow", s.ShowAnchor);
             s.ShowOriginal = EditorGUILayout.ToggleLeft("Original beside it", s.ShowOriginal);

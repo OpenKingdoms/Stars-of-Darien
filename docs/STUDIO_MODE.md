@@ -32,7 +32,7 @@ Nothing you do in the studio changes the scenes you were working in. If you open
 
 ## What is on the stage
 
-Your model stands in the middle on a turntable. A monarch stands to its left for scale. With the game installed it is a real monarch from the game. Without it, a plain figure 4 cells tall stands in, the height of the game's monarchs, labelled as a stand-in. The original, the thing your model replaces, stands to the right once you have picked it.
+Your model stands in the middle on a turntable. With the game installed, a monarch from the game stands to its left for scale. The original, the thing your model replaces, stands to the right once you have picked it.
 
 On the ground, white lines mark the map's cells around the model and a yellow outline marks the footprint, the cells the original takes up on the map. An orange pin marks the anchor, the point the game stands the model on, and an orange arrow points south, the way the model's front must face.
 
@@ -75,7 +75,7 @@ If your file is named like a feature or unit, for example `AraTree01.glb` or `AR
 
 Type it in, under the list, is for anything the list doesn't have, which on the stand-in world is everything from the real game. For a feature, type its name as the game has it (such as `AraTree01`), the cells it covers on the map, and how tall it stands in the game in cells. For a unit, type its model name (such as `ARAKING`). Then press Use this. The checks go by the numbers you typed, and Use in game writes the model under that name.
 
-The stand-in world's own features and units are made up and not to scale, so the studio doesn't judge your model's size against them. Judge it by the 4-cell monarch instead.
+The stand-in world's own features and units are made up and not to scale, so the studio doesn't judge your model's size against them. A monarch in the game stands 4 cells tall, and the footprint grid's lines are a cell apart.
 
 ## Checks and fixes
 
@@ -133,7 +133,7 @@ The Show part turns the monarch, the grid, the anchor, the original and the ghos
 
 The gallery shows every model in a folder at once, on the studio's ground and in its light and weather. Press Gallery on the Studio panel or on the Studio View's toolbar, or pick OpenKingdoms, then Studio, then Gallery. It opens as a tab beside the Studio View.
 
-Each model stands at game scale on a small plinth of its own with its name floating over it. The plinths run in rows by name, left to right and then toward the camera. Each row and each column is as wide as its biggest model, so nothing overlaps however big one of them is. A monarch stands on a plinth at the start of the first row for scale, a real one with the game installed and the 4-cell stand-in without it.
+Each model stands at game scale on a small plinth of its own with its name floating over it. The plinths run in rows by name, left to right and then toward the camera. Each row and each column is as wide as its biggest model, so nothing overlaps however big one of them is. With the game installed, a monarch from the game stands on a plinth at the start of the first row for scale.
 
 Folder, at the left of the toolbar, picks what to show. It starts on `Overrides/Generated/Units` and offers `Overrides/Generated`, `Overrides/Features` and `Overrides/Units`, or any folder through Pick a folder, and it remembers the last one. The search box beside it narrows the grid to the models whose names contain what you type, in any case.
 

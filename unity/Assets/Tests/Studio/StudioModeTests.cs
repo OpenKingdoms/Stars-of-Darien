@@ -751,7 +751,6 @@ namespace OpenKingdomsUnity.Tests
                 StudioSession.SetTarget(knight);
                 Assert.Greater(StudioSession.OriginalPieces.Length, 0, "the original model's pieces, for naming parts");
                 Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Original"));
-                Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Monarch"), "the 4-cell stand-in monarch for scale");
             }
             finally
             {
@@ -862,7 +861,7 @@ namespace OpenKingdomsUnity.Tests
                 var free = StudioView.FreeDefault;
                 free.Distance = 12f;
                 File.WriteAllBytes(Path.Combine(dir, "engine-unit-free.png"), StudioSession.Stage.Screenshot(free, 1280, 720));
-                Assert.IsFalse(StudioSession.Stage.MonarchIsStandIn, "a real monarch, not the stand-in");
+                Assert.IsNotNull(GameObject.Find(StudioStage.RootName + "/Monarch"), "the game's monarch for scale");
 
                 // A sprite feature the loaded map lacks is still shown as the game draws it.
                 var feats = new FeatureState[16384];

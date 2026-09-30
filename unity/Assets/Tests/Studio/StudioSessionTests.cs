@@ -239,14 +239,26 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void OnTheStandInWorldTheMonarchIsFourCellsTall()
+        public void TheStudioBuildsNoStandInMonarch()
+        {
+            int team = StudioSession.TeamColour;
+            try
+            {
+                Assert.IsTrue(StudioMode.Open(false), StudioSession.Status);
+                StudioSession.SetTeam(team + 1);
+                Assert.IsFalse(StudioSession.Stage.HasMonarch);
+                Assert.IsNull(GameObject.Find(StudioStage.RootName + "/Monarch"));
+                Assert.IsFalse(StudioSession.Stage.Labels().Any(l => l.label.StartsWith("Monarch")));
+                var shapes = StudioSession.Stage.Root.GetComponentsInChildren<MeshFilter>(true).Where(f => f.sharedMesh != null && (f.sharedMesh.name == "Capsule" || f.sharedMesh.name == "Sphere"));
+                Assert.IsEmpty(shapes.Select(f => f.name), "no capsule and sphere figure");
+            }
+            finally { StudioSession.TeamColour = team; }
+        }
+
+        [Test]
+        public void OnTheStandInWorldOnlyATypedNameIsJudgedForSize()
         {
             Assert.IsTrue(StudioMode.Open(false), StudioSession.Status);
-            var monarch = GameObject.Find(StudioStage.RootName + "/Monarch");
-            Assert.IsNotNull(monarch);
-            Assert.IsTrue(StudioSession.Stage.MonarchIsStandIn, "not the stand-in world's small monarch");
-            float top = monarch.GetComponentsInChildren<Renderer>().Max(r => r.bounds.max.y) - monarch.transform.position.y;
-            Assert.AreEqual(StudioTargets.MonarchHeight, top, 0.1f);
             Assert.IsTrue(StudioSession.LoadModel(Sample), StudioSession.Status);
             StudioSession.SetTarget(StudioTargets.Units(StudioBackend.Get(), false).First(t => t.Name == "aramon_knight"));
             Assert.IsFalse(StudioSession.Issues.Any(i => i.Fix == FixKind.MatchSize || i.Fix == FixKind.TurnQuarter), string.Join("\n", StudioSession.Issues));

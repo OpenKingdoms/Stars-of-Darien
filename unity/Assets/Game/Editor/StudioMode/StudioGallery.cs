@@ -1,5 +1,5 @@
 // StudioGallery.cs - every .glb in a folder on its own plinth at game scale,
-// named, in a grid spaced by footprint, with a monarch for scale and the
+// named, in a grid spaced by footprint, with the game's monarch for scale and the
 // originals beside them on request, far west of the stage in its light and
 // weather. Models load nearest the camera first within a time and memory
 // budget each editor frame, and reload where they stand when they change.
@@ -141,7 +141,6 @@ namespace OpenKingdomsUnity.Studio
         public GameObject Root { get; private set; }
         public Camera Camera { get; private set; }
         public GameObject Monarch => monarch;
-        public bool MonarchIsStandIn { get; private set; }
         public long LoadedBytes => loadedBytes;
         public int LoadedCount => Entries.Count(e => e.Loaded);
         // The longest editor frame the gallery has taken, in seconds.
@@ -169,7 +168,7 @@ namespace OpenKingdomsUnity.Studio
         Task<List<Entry>> scan;
         int scanned, scanTotal, resolved, resolveTotal, waiting;
         GameObject monarch, monarchNode, monarchLabel, ground;
-        float monarchWidth = 2f, monarchHeight = StudioTargets.MonarchHeight;
+        float monarchWidth, monarchHeight;
         Mesh cube, cardQuad;
         Material plinthMat, placeholderMat, failedMat, groundMat;
         Texture2D groundTex;
@@ -528,31 +527,22 @@ namespace OpenKingdomsUnity.Studio
 
         // ---- The monarch ----
 
+        // The game's monarch on a plinth, or none on the stand-in world.
         void BuildMonarch()
         {
             if (monarchNode != null) Object.DestroyImmediate(monarchNode);
+            monarch = monarchNode = monarchLabel = null;
+            var pm = StudioSession.MonarchModel(backend);
+            if (pm == null) return;
             monarchNode = Child(Root.transform, "Monarch for scale");
             var plinth = Child(monarchNode.transform, "Plinth");
             plinth.AddComponent<MeshFilter>().sharedMesh = cube;
             plinth.AddComponent<MeshRenderer>().sharedMaterial = plinthMat;
-            var pm = StudioSession.MonarchModel(backend);
-            MonarchIsStandIn = pm == null;
-            if (pm != null)
-            {
-                monarch = StudioStage.Rest(pm, "Monarch", null, null);
-                monarchWidth = Mathf.Max(pm.RestBounds.size.x, pm.RestBounds.size.z);
-                monarchHeight = pm.RestBounds.max.y;
-                monarch.transform.SetParent(monarchNode.transform, false);
-                monarch.transform.localPosition = new Vector3(-pm.RestBounds.center.x, PlinthHeight, -pm.RestBounds.center.z);
-            }
-            else
-            {
-                monarch = StudioStage.Marker(StudioSession.Team, owned);
-                monarchWidth = 2f;
-                monarchHeight = StudioTargets.MonarchHeight;
-                monarch.transform.SetParent(monarchNode.transform, false);
-                monarch.transform.localPosition = new Vector3(0f, PlinthHeight, 0f);
-            }
+            monarch = StudioStage.Rest(pm, "Monarch", null, null);
+            monarchWidth = Mathf.Max(pm.RestBounds.size.x, pm.RestBounds.size.z);
+            monarchHeight = pm.RestBounds.max.y;
+            monarch.transform.SetParent(monarchNode.transform, false);
+            monarch.transform.localPosition = new Vector3(-pm.RestBounds.center.x, PlinthHeight, -pm.RestBounds.center.z);
             float w = monarchWidth + 2 * Margin;
             plinth.transform.localPosition = new Vector3(0f, PlinthHeight * 0.5f, 0f);
             plinth.transform.localScale = new Vector3(w, PlinthHeight, w);
@@ -564,7 +554,7 @@ namespace OpenKingdomsUnity.Studio
             tm.anchor = TextAnchor.LowerCenter;
             tm.alignment = TextAlignment.Center;
             tm.color = new Color(0.8f, 0.9f, 1f);
-            tm.text = MonarchIsStandIn ? "Monarch (stand-in, 4 cells)" : "Monarch";
+            tm.text = "Monarch";
             monarchLabel.GetComponent<MeshRenderer>().sharedMaterial = labelFont.material;
             monarchLabel.transform.localPosition = new Vector3(0f, PlinthHeight + monarchHeight + 0.35f, 0f);
             foreach (var t in monarchNode.GetComponentsInChildren<Transform>(true)) t.gameObject.hideFlags = HideFlags.HideAndDontSave;
@@ -580,12 +570,14 @@ namespace OpenKingdomsUnity.Studio
             monarchNode.transform.position = Origin + new Vector3(-(GalleryLayout.Gap * 1.5f + w * 0.5f), 0f, z);
         }
 
-        public Rect MonarchRect
+        // The monarch's plinth, or null when there is no monarch.
+        public Rect? MonarchRect
         {
             get
             {
+                if (monarchNode == null) return null;
                 float w = monarchWidth + 2 * Margin;
-                var p = monarchNode != null ? monarchNode.transform.position - Origin : Vector3.zero;
+                var p = monarchNode.transform.position - Origin;
                 return new Rect(p.x - w * 0.5f, p.z - w * 0.5f, w, w);
             }
         }
@@ -1033,8 +1025,8 @@ namespace OpenKingdomsUnity.Studio
         public GalleryView OverviewView(bool classic)
         {
             var r = Layout.Slots.Count > 0 ? Layout.Bounds : new Rect(-5, -5, 10, 10);
-            var m = MonarchRect;
-            r = Rect.MinMaxRect(Mathf.Min(r.xMin, m.xMin), Mathf.Min(r.yMin, m.yMin), Mathf.Max(r.xMax, m.xMax), Mathf.Max(r.yMax, m.yMax));
+            if (MonarchRect is Rect m)
+                r = Rect.MinMaxRect(Mathf.Min(r.xMin, m.xMin), Mathf.Min(r.yMin, m.yMin), Mathf.Max(r.xMax, m.xMax), Mathf.Max(r.yMax, m.yMax));
             float pitch = classic ? GameCamera.ClassicPitch : 45f;
             float half = StudioView.ClassicFov * 0.5f * Mathf.Deg2Rad;
             float hHalf = Mathf.Atan(Mathf.Tan(half) * aspect);

@@ -33,8 +33,8 @@ namespace OpenKingdomsUnity.Studio
         public bool RealGround => terrain != null;
         public float TurntableYaw;
         public GameObject ModelObject => model;
+        public bool HasMonarch => monarch != null;
         public IGameBackend Backend => backend;
-        public bool MonarchIsStandIn { get; private set; }
 
         public bool ShowMonarch = true, ShowGrid = true, ShowAnchor = true, ShowOriginal = true, ShowGhost = true;
 
@@ -52,7 +52,7 @@ namespace OpenKingdomsUnity.Studio
         bool sea = true;
         public string ClimateName => climate;
         Bounds modelBounds = new Bounds(Vector3.up * 0.5f, Vector3.one);
-        float originalWidth = 1f, monarchWidth = 1f, monarchHeight = StudioTargets.MonarchHeight;
+        float originalWidth = 1f, monarchWidth = 1f, monarchHeight;
         Vector2Int footprint = Vector2Int.one;
         TimeOfDay time;
         bool shadows = true;
@@ -467,58 +467,18 @@ namespace OpenKingdomsUnity.Studio
             Hide(Root);
         }
 
-        public void SetMonarch(PresentedModel pm, Color team)
+        // The game's monarch for scale, or none when pm is null.
+        public void SetMonarch(PresentedModel pm)
         {
             if (monarch != null) Object.DestroyImmediate(monarch);
-            MonarchIsStandIn = pm == null;
-            if (pm != null)
-            {
-                monarch = Rest(pm, "Monarch", null, null);
-                monarchWidth = Mathf.Max(pm.RestBounds.size.x, pm.RestBounds.size.z);
-                monarchHeight = pm.RestBounds.max.y;
-            }
-            else
-            {
-                monarch = Marker(team);
-                monarchWidth = 2f;
-                monarchHeight = StudioTargets.MonarchHeight;
-            }
+            monarch = null;
+            if (pm == null) return;
+            monarch = Rest(pm, "Monarch", null, null);
+            monarchWidth = Mathf.Max(pm.RestBounds.size.x, pm.RestBounds.size.z);
+            monarchHeight = pm.RestBounds.max.y;
             monarch.transform.SetParent(Root.transform, false);
             Place();
             Hide(Root);
-        }
-
-        // A stand-in monarch: a figure 4 cells tall on a two by two cell base,
-        // the size of the game's monarchs.
-        GameObject Marker(Color team) => Marker(team, owned);
-
-        // The stand-in monarch with its materials and mesh kept in owned.
-        internal static GameObject Marker(Color team, List<Object> owned)
-        {
-            T Own<T>(T o) where T : Object { o.hideFlags = HideFlags.DontSave; owned.Add(o); return o; }
-            var go = new GameObject("Monarch");
-            var mat = Own(Looks.Model(null));
-            mat.color = Color.Lerp(team, Color.white, 0.25f);
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            Object.DestroyImmediate(body.GetComponent<Collider>());
-            body.name = "Body";
-            body.transform.SetParent(go.transform, false);
-            body.transform.localPosition = new Vector3(0, 1.65f, 0);
-            body.transform.localScale = new Vector3(0.9f, 1.65f, 0.9f);
-            body.GetComponent<MeshRenderer>().sharedMaterial = mat;
-            var head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            Object.DestroyImmediate(head.GetComponent<Collider>());
-            head.name = "Head";
-            head.transform.SetParent(go.transform, false);
-            head.transform.localPosition = new Vector3(0, 3.65f, 0);
-            head.transform.localScale = Vector3.one * 0.7f;
-            head.GetComponent<MeshRenderer>().sharedMaterial = mat;
-            var baseMat = Own(Looks.Overlay(new Color(team.r, team.g, team.b, 0.45f)));
-            var plate = new GameObject("Base");
-            plate.transform.SetParent(go.transform, false);
-            plate.AddComponent<MeshFilter>().sharedMesh = Own(Quad(new Vector3(-1, 0.03f, -1), new Vector3(1, 0.03f, 1)));
-            plate.AddComponent<MeshRenderer>().sharedMaterial = baseMat;
-            return go;
         }
 
         static Shader GhostShader => Shader.Find("OpenKingdoms/Studio/Ghost") ?? Looks.Find("OkuGhost", "Sprites/Default");
@@ -613,16 +573,6 @@ namespace OpenKingdomsUnity.Studio
             return m;
         }
 
-        static Mesh Quad(Vector3 a, Vector3 b)
-        {
-            var m = new Mesh { name = "quad" };
-            m.vertices = new[] { new Vector3(a.x, a.y, a.z), new Vector3(a.x, a.y, b.z), new Vector3(b.x, a.y, b.z), new Vector3(b.x, a.y, a.z) };
-            m.triangles = new[] { 0, 1, 2, 0, 2, 3 };
-            m.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
-            m.RecalculateBounds();
-            return m;
-        }
-
         // The monarch west of the model and the original east of it, clear
         // of both, on the ground.
         void Place()
@@ -638,7 +588,7 @@ namespace OpenKingdomsUnity.Studio
         {
             float top = fixedBounds.max.y + 0.4f;
             yield return ("New model", Spot + Vector3.up * top);
-            if (monarch != null && monarch.activeSelf) yield return (MonarchIsStandIn ? "Monarch (stand-in, 4 cells)" : "Monarch", monarch.transform.position + Vector3.up * (monarchHeight + 0.4f));
+            if (monarch != null && monarch.activeSelf) yield return ("Monarch", monarch.transform.position + Vector3.up * (monarchHeight + 0.4f));
             if (original != null && original.activeSelf) yield return ("Original", original.transform.position + Vector3.up * Mathf.Max(1f, top));
         }
 

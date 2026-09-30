@@ -21,9 +21,6 @@ namespace OpenKingdomsUnity.Studio
             set => EditorPrefs.SetString(CatalogKey, value ?? "");
         }
 
-        // A monarch stands 4 cells tall (araking.3do, tools/sprite-replace/handkit.py).
-        public const float MonarchHeight = 4f;
-
         // The units that are mostly a painted card: the model, the piece a
         // card model stands in for, that piece's texture, and a name for it.
         public static readonly (string obj, string piece, string texture, string what)[] Cards =
