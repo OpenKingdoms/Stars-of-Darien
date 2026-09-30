@@ -34,7 +34,7 @@ namespace OpenKingdomsUnity.Engine
             Debug.Log(dir != null ? $"Game folder: {dir} ({Describe(EngineSettings.FoundBy)})" : "Game folder: not found, the player will be asked");
             OpenKingdomsUnity.Game.GameRoot.GameFolder = () => GameFolderScreen.Shown(EngineSettings.GameDir);
             OpenKingdomsUnity.Game.GameRoot.ChangeGameFolder = () => GameFolderScreen.Show(EngineSettings.GameDir, Restart, () => { });
-            bool library = System.IO.File.Exists(System.IO.Path.Combine(EngineSettings.PluginDir, "okengine.dll"));
+            bool library = System.IO.File.Exists(System.IO.Path.Combine(EngineSettings.PluginDir, EngineSettings.LibraryFile));
             askForFolder = dir == null && library && EngineSettings.Blocked == null;
             if (!library) Debug.LogWarning(OpenKingdomsUnity.Game.GameRoot.Title + ": " + EngineSettings.Problem);
         }

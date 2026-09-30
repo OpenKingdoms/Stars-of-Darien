@@ -30,7 +30,9 @@ namespace OpenKingdomsUnity.Engine
                 if (File.Exists(dir)) return $"{shown} is a file. {Hint}";
                 if (!Directory.Exists(dir)) return $"There is no folder at {shown}. {Hint}";
                 var have = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var f in Directory.GetFiles(dir, "*.hpi")) have.Add(Path.GetFileName(f));
+                // By hand, since a pattern matches case on Linux and DATA.HPI is the game's too.
+                foreach (var f in Directory.GetFiles(dir))
+                    if (f.EndsWith(".hpi", StringComparison.OrdinalIgnoreCase)) have.Add(Path.GetFileName(f));
                 if (have.Count == 0)
                 {
                     string name = Path.GetFileName(dir.TrimEnd('/', '\\'));
@@ -190,7 +192,8 @@ namespace OpenKingdomsUnity.Engine
                 int dot = command.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
                 exe = dot > 0 ? command.Substring(0, dot + 4) : command;
             }
-            try { return Clean(Path.GetDirectoryName(exe)); }
+            // Forward slashes first, which every platform splits on.
+            try { return Clean(Path.GetDirectoryName(exe.Replace('\\', '/'))); }
             catch (ArgumentException) { return null; }
         }
 

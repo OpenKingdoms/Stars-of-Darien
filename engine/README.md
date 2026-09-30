@@ -18,6 +18,8 @@ This folder holds the engine libraries a fresh clone needs, so nobody has to bui
 - A library built on that machine is left alone when its version matches, or when its version can't be read, as with a Debug build. The binding checks the version itself when the engine starts.
 - A library the project no longer uses, such as the old `okcore.dll`, is removed when the installer put it there.
 
+On Linux the same rules apply to `libokengine.so`, published here as `okengine-api<N>.so`, and SDL comes from the system rather than from this folder. No Linux build is published yet, so `scripts/cloud-unity-test.sh` builds one and puts it in the plugin folder, where the installer reads its version from the file and leaves it alone.
+
 Unity cannot unload a native library once it has used it. If a pull brings a new binding while the editor still has the old engine loaded, the installer puts the new file in place for the next start, turns the engine off for this session so nothing calls the old one with the new binding, and asks for a restart. The studio and the game run on the stand-in world until then, and Play in a scene without the game says what is wrong. A new build of the same version is also put in place for the next start, and the loaded one keeps working until then.
 
 ## Publishing a new engine

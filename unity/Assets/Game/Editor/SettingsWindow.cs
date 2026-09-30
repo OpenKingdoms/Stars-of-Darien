@@ -77,7 +77,7 @@ namespace OpenKingdomsUnity.Studio
             string blocked = Read<string>("Blocked", null);
             if (blocked != null) return blocked;
             var lib = EngineInstaller.Engine;
-            bool installed = File.Exists(Path.Combine(EngineInstaller.PluginDir, "okengine.dll"));
+            bool installed = File.Exists(Path.Combine(EngineInstaller.PluginDir, EngineInstaller.Names.Current.Engine));
             if (!installed) return EngineInstaller.Describe(lib);
             string dir = GameDir;
             if (!Directory.Exists(dir)) return $"Your game files are not at {dir}, so the stand-in world runs, with made-up maps and boxy soldiers. {where}";

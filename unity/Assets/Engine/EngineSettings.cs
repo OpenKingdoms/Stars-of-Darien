@@ -79,6 +79,9 @@ namespace OpenKingdomsUnity.Engine
         }
 
         public static string PluginDir => Path.Combine(Application.dataPath, "Plugins", "x86_64");
+        // The engine's file in PluginDir. DllImport("okengine") finds either.
+        public static string LibraryFile => IsLinux ? "libokengine.so" : "okengine.dll";
+        static bool IsLinux => Application.platform == RuntimePlatform.LinuxEditor || Application.platform == RuntimePlatform.LinuxPlayer;
         public static string OverrideDir => Path.Combine(Application.streamingAssetsPath, "Overrides");
         // The player's own folder: saved maps (under maps/) and anything
         // else the player adds, mounted over the game's files.
@@ -86,7 +89,7 @@ namespace OpenKingdomsUnity.Engine
 
         // The engine can run when its library and the game files are here.
         public static bool EngineAvailable =>
-            Blocked == null && File.Exists(Path.Combine(PluginDir, "okengine.dll")) && Directory.Exists(GameDir);
+            Blocked == null && File.Exists(Path.Combine(PluginDir, LibraryFile)) && Directory.Exists(GameDir);
 
         // Why the engine cannot run and what to do about it, or null.
         public static string Problem
@@ -94,7 +97,7 @@ namespace OpenKingdomsUnity.Engine
             get
             {
                 if (Blocked != null) return Blocked;
-                if (!File.Exists(Path.Combine(PluginDir, "okengine.dll")))
+                if (!File.Exists(Path.Combine(PluginDir, LibraryFile)))
                     return "The game's engine is not installed. Get the latest project, which carries it in the engine folder, and open it in Unity again.";
                 if (!Application.isEditor && GameDir.Length == 0)
                     return "The game did not find your Total Annihilation: Kingdoms. " + GameFolder.Hint;

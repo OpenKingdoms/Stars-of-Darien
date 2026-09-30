@@ -59,6 +59,17 @@ namespace OpenKingdomsUnity.Studio
             public readonly List<string> Log = new List<string>();
         }
 
+        // One platform's file names: the engine in the plugin folder, the
+        // extension of its published copies in engine/, and the SDL beside
+        // it. Linux takes SDL from the system, so it has none.
+        public sealed class Names
+        {
+            public string Engine, Extension, Sdl;
+            public static readonly Names Windows = new Names { Engine = "okengine.dll", Extension = ".dll", Sdl = "SDL2.dll" };
+            public static readonly Names Linux = new Names { Engine = "libokengine.so", Extension = ".so", Sdl = null };
+            public static Names Current => Application.platform == RuntimePlatform.LinuxEditor ? Linux : Windows;
+        }
+
         public static Library Engine { get; private set; }
         public static string Message { get; private set; }
 
@@ -71,7 +82,7 @@ namespace OpenKingdomsUnity.Studio
 
         static EngineInstaller()
         {
-            try { Apply(Run(PluginDir, ReleaseDir, KeepDir, LoadedVersion)); }
+            try { Apply(Run(PluginDir, ReleaseDir, KeepDir, LoadedVersion, names: Names.Current)); }
             catch (Exception e) { Debug.LogWarning("Engine installer: " + e.Message); }
         }
 
@@ -87,12 +98,14 @@ namespace OpenKingdomsUnity.Studio
         // Looks at every library and installs, replaces or stages it. loaded
         // gives the version of a library Unity has loaded (file, export), -1
         // for a loaded one with no version, or null when it is not loaded.
-        public static Report Run(string pluginDir, string releaseDir, string keepDir, Func<string, string, int?> loaded, int engineApi = int.MinValue)
+        // names defaults to Windows'.
+        public static Report Run(string pluginDir, string releaseDir, string keepDir, Func<string, string, int?> loaded, int engineApi = int.MinValue, Names names = null)
         {
+            names = names ?? Names.Windows;
             var r = new Report();
             var record = ReadRecord(Path.Combine(keepDir, "installed.json"));
-            r.Engine = Check(pluginDir, releaseDir, record, loaded, "okengine.dll", "okengine-api", "okx_api_version", engineApi == int.MinValue ? BindingApi() : engineApi);
-            r.Sdl = CheckPlain(pluginDir, releaseDir, record, loaded, "SDL2.dll");
+            r.Engine = Check(pluginDir, releaseDir, record, loaded, names.Engine, "okengine-api", names.Extension, "okx_api_version", engineApi == int.MinValue ? BindingApi() : engineApi);
+            r.Sdl = names.Sdl != null ? CheckPlain(pluginDir, releaseDir, record, loaded, names.Sdl) : null;
             foreach (var lib in new[] { r.Engine, r.Sdl })
             {
                 if (lib == null) continue;
@@ -124,11 +137,11 @@ namespace OpenKingdomsUnity.Studio
             else if (Engine.Outcome == Outcome.Restart) Debug.LogWarning($"{Message} (API {Engine.Loaded} loaded, {Engine.Expected} expected)");
         }
 
-        static Library Check(string pluginDir, string releaseDir, Dictionary<string, string> record, Func<string, string, int?> loaded, string file, string prefix, string export, int expected)
+        static Library Check(string pluginDir, string releaseDir, Dictionary<string, string> record, Func<string, string, int?> loaded, string file, string prefix, string extension, string export, int expected)
         {
             var lib = new Library { File = file, Prefix = prefix, Export = export, Expected = expected };
             string installed = Path.Combine(pluginDir, file);
-            string published = Path.Combine(releaseDir, prefix + expected + ".dll");
+            string published = Path.Combine(releaseDir, prefix + expected + extension);
             lib.Published = expected > 0 && File.Exists(published) ? published : null;
             if (File.Exists(installed))
             {
@@ -327,13 +340,51 @@ namespace OpenKingdomsUnity.Studio
         // ---- Reading a library's version ----
 
         // The version a library's export returns, read from the file without
-        // loading it: the function is "mov eax, N; ret" in a release build.
+        // loading it: the function is "mov eax, N; ret" in a release build,
+        // after an endbr64 where the compiler adds one, as GCC on Linux does.
         public static int? ReadVersion(byte[] dll, string export)
         {
             int at = ExportOffset(dll, export);
+            if (at < 0) at = ElfExportOffset(dll, export);
+            if (at >= 0 && at + 4 <= dll.Length && dll[at] == 0xF3 && dll[at + 1] == 0x0F && dll[at + 2] == 0x1E && dll[at + 3] == 0xFA) at += 4;
             if (at < 0 || at + 6 > dll.Length) return null;
             if (dll[at] == 0xB8 && dll[at + 5] == 0xC3) return BitConverter.ToInt32(dll, at + 1);
             return null;
+        }
+
+        // The file offset of an exported function in a 64-bit little-endian
+        // ELF shared library, from its dynamic symbol table, or -1.
+        public static int ElfExportOffset(byte[] d, string name)
+        {
+            try
+            {
+                if (d.Length < 0x40 || d[0] != 0x7F || d[1] != 'E' || d[2] != 'L' || d[3] != 'F' || d[4] != 2 || d[5] != 1) return -1;
+                long shoff = BitConverter.ToInt64(d, 0x28);
+                int shentsize = BitConverter.ToUInt16(d, 0x3A), shnum = BitConverter.ToUInt16(d, 0x3C);
+                long Section(int i) => shoff + (long)shentsize * i;
+                for (int i = 0; i < shnum; i++)
+                {
+                    long s = Section(i);
+                    if (BitConverter.ToUInt32(d, (int)s + 4) != 11) continue;   // SHT_DYNSYM
+                    long symOff = BitConverter.ToInt64(d, (int)s + 24), symSize = BitConverter.ToInt64(d, (int)s + 32);
+                    long strOff = BitConverter.ToInt64(d, (int)Section(BitConverter.ToInt32(d, (int)s + 40)) + 24);
+                    for (long e = symOff; e + 24 <= symOff + symSize; e += 24)
+                    {
+                        int n = (int)(strOff + BitConverter.ToUInt32(d, (int)e));
+                        int end = Array.IndexOf(d, (byte)0, n);
+                        if (end - n != name.Length || System.Text.Encoding.ASCII.GetString(d, n, end - n) != name) continue;
+                        int shndx = BitConverter.ToUInt16(d, (int)e + 6);
+                        if (shndx == 0 || shndx >= shnum) return -1;
+                        long value = BitConverter.ToInt64(d, (int)e + 8), home = Section(shndx);
+                        long addr = BitConverter.ToInt64(d, (int)home + 16), offset = BitConverter.ToInt64(d, (int)home + 24);
+                        long at = value - addr + offset;
+                        return at >= 0 && at < d.Length ? (int)at : -1;
+                    }
+                }
+            }
+            catch (ArgumentException) { }
+            catch (IndexOutOfRangeException) { }
+            return -1;
         }
 
         // The file offset of an exported function in a PE image, or -1.
@@ -384,6 +435,7 @@ namespace OpenKingdomsUnity.Studio
         // is not loaded.
         static int? LoadedVersion(string file, string export)
         {
+            if (Application.platform == RuntimePlatform.LinuxEditor) return LoadedVersionLinux(file, export);
             if (Application.platform != RuntimePlatform.WindowsEditor) return null;
             IntPtr module = GetModuleHandleW(file);
             if (module == IntPtr.Zero) return null;
@@ -393,8 +445,32 @@ namespace OpenKingdomsUnity.Studio
             return Marshal.GetDelegateForFunctionPointer<VersionFn>(fn)();
         }
 
+        // RTLD_NOLOAD finds a library already loaded under that soname and
+        // never loads one.
+        static int? LoadedVersionLinux(string file, string export)
+        {
+            const int Lazy = 0x1, NoLoad = 0x4;
+            try
+            {
+                IntPtr module = dlopen(file, Lazy | NoLoad);
+                if (module == IntPtr.Zero) return null;
+                try
+                {
+                    if (export == null) return -1;
+                    IntPtr fn = dlsym(module, export);
+                    if (fn == IntPtr.Zero) return -1;
+                    return Marshal.GetDelegateForFunctionPointer<VersionFn>(fn)();
+                }
+                finally { dlclose(module); }
+            }
+            catch (Exception e) when (e is DllNotFoundException || e is EntryPointNotFoundException) { return null; }
+        }
+
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int VersionFn();
         [DllImport("kernel32", CharSet = CharSet.Unicode)] static extern IntPtr GetModuleHandleW(string name);
         [DllImport("kernel32", CharSet = CharSet.Ansi)] static extern IntPtr GetProcAddress(IntPtr module, string name);
+        [DllImport("libdl.so.2", CharSet = CharSet.Ansi)] static extern IntPtr dlopen(string file, int mode);
+        [DllImport("libdl.so.2", CharSet = CharSet.Ansi)] static extern IntPtr dlsym(IntPtr module, string name);
+        [DllImport("libdl.so.2")] static extern int dlclose(IntPtr module);
     }
 }

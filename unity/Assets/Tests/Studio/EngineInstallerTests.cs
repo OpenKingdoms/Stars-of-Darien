@@ -162,8 +162,46 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsNotNull(Engine, "the installer ran when scripts loaded");
             Assert.AreEqual(BindingApi(), Engine.Expected);
             Assert.That(Engine.Outcome, Is.EqualTo(Outcome.Ready).Or.EqualTo(Outcome.Restart).Or.EqualTo(Outcome.Update).Or.EqualTo(Outcome.Local));
-            Assert.IsTrue(File.Exists(Path.Combine(PluginDir, "okengine.dll")));
-            Assert.IsTrue(File.Exists(Path.Combine(PluginDir, "SDL2.dll")));
+            Assert.IsTrue(File.Exists(Path.Combine(PluginDir, Names.Current.Engine)));
+            if (Names.Current.Sdl != null) Assert.IsTrue(File.Exists(Path.Combine(PluginDir, Names.Current.Sdl)));
+        }
+
+        [Test]
+        public void TheVersionIsReadFromALinuxLibraryToo()
+        {
+            Assert.AreEqual(42, ReadVersion(FakeElf("okx_api_version", new byte[] { 0xB8, 42, 0, 0, 0, 0xC3 }), "okx_api_version"));
+            var cet = FakeElf("okx_api_version", new byte[] { 0xF3, 0x0F, 0x1E, 0xFA, 0xB8, 23, 0, 0, 0, 0xC3 });
+            Assert.AreEqual(23, ReadVersion(cet, "okx_api_version"), "after the endbr64 GCC puts first");
+            Assert.IsNull(ReadVersion(cet, "ok_sim_abi_version"), "no such export");
+            var odd = FakeElf("okx_api_version", new byte[] { 0x55, 0x48, 0x89, 0xE5, 0xB8, 1 });
+            Assert.IsNull(ReadVersion(odd, "okx_api_version"), "code that is not mov eax, N; ret is not guessed at");
+        }
+
+        [Test]
+        public void OnLinuxTheEngineIsASharedObjectWithoutSdl()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "oku-installer-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            string plugins = Path.Combine(root, "Plugins"), release = Path.Combine(root, "engine"), keep = Path.Combine(root, "keep");
+            Directory.CreateDirectory(release);
+            try
+            {
+                File.WriteAllBytes(Path.Combine(release, "okengine-api17.dll"), Lib("okx_api_version", 17, 1));
+                File.WriteAllBytes(Path.Combine(release, "SDL2.dll"), new byte[] { 1, 2, 3 });
+                var r = Run(plugins, release, keep, (f, e) => null, 17, Names.Linux);
+                Assert.AreEqual(Outcome.NotPublished, r.Engine.Outcome, "a Windows library is not a Linux one");
+                Assert.IsNull(r.Sdl, "Linux takes SDL from the system");
+                Assert.IsFalse(Directory.Exists(plugins) && Directory.GetFiles(plugins).Length > 0, "nothing of Windows' is copied");
+
+                File.WriteAllBytes(Path.Combine(release, "okengine-api17.so"), FakeElf("okx_api_version", new byte[] { 0xB8, 17, 0, 0, 0, 0xC3 }));
+                r = Run(plugins, release, keep, (f, e) => null, 17, Names.Linux);
+                Assert.AreEqual(Outcome.Ready, r.Engine.Outcome);
+                Assert.IsTrue(File.Exists(Path.Combine(plugins, "libokengine.so")), "a published Linux build is installed under the name DllImport finds");
+                Assert.IsFalse(File.Exists(Path.Combine(plugins, "SDL2.dll")));
+
+                File.WriteAllBytes(Path.Combine(plugins, "libokengine.so"), FakeElf("okx_api_version", new byte[] { 0xF3, 0x0F, 0x1E, 0xFA, 0xB8, 17, 0, 0, 0, 0xC3, 9 }));
+                Assert.AreEqual(Outcome.Ready, Run(plugins, release, keep, (f, e) => null, 17, Names.Linux).Engine.Outcome, "a local build of the right API stays");
+            }
+            finally { try { Directory.Delete(root, true); } catch (IOException) { } }
         }
 
         // A PE32+ image with one section holding an export table with one
@@ -201,6 +239,46 @@ namespace OpenKingdomsUnity.Tests
             var n = Encoding.ASCII.GetBytes(export);
             Array.Copy(n, 0, d, raw + 52, n.Length);
             Array.Copy(code, 0, d, raw + 96, code.Length);
+            return d;
+        }
+
+        // A 64-bit ELF shared object with a null section, .text holding the
+        // code at an address other than its file offset, .dynsym with one
+        // function, and .dynstr.
+        static byte[] FakeElf(string export, byte[] code)
+        {
+            var d = new byte[0x400];
+            void U16(int at, int v) { d[at] = (byte)v; d[at + 1] = (byte)(v >> 8); }
+            void U32(int at, int v) { U16(at, v & 0xFFFF); U16(at + 2, (v >> 16) & 0xFFFF); }
+            void U64(int at, long v) { U32(at, (int)(v & 0xFFFFFFFF)); U32(at + 4, (int)(v >> 32)); }
+            d[0] = 0x7F; d[1] = (byte)'E'; d[2] = (byte)'L'; d[3] = (byte)'F'; d[4] = 2; d[5] = 1; d[6] = 1;
+            U16(0x10, 3);
+            U16(0x12, 0x3E);
+            const int shoff = 0x40, text = 0x200, textAddr = 0x1200, dynsym = 0x280, dynstr = 0x2C0;
+            U64(0x28, shoff);
+            U16(0x3A, 64);
+            U16(0x3C, 4);
+            void Header(int i, int type, long addr, long offset, long size, int link)
+            {
+                int s = shoff + 64 * i;
+                U32(s + 4, type);
+                U64(s + 16, addr);
+                U64(s + 24, offset);
+                U64(s + 32, size);
+                U32(s + 40, link);
+            }
+            Header(1, 1, textAddr, text, code.Length, 0);
+            Header(2, 11, 0, dynsym, 48, 3);
+            Header(3, 3, 0, dynstr, 0x40, 0);
+            // Symbol 0 is the null one; symbol 1 names the function in .text.
+            U32(dynsym + 24, 1);
+            d[dynsym + 24 + 4] = 0x12;
+            U16(dynsym + 24 + 6, 1);
+            U64(dynsym + 24 + 8, textAddr);
+            U64(dynsym + 24 + 16, code.Length);
+            var n = Encoding.ASCII.GetBytes(export);
+            Array.Copy(n, 0, d, dynstr + 1, n.Length);
+            Array.Copy(code, 0, d, text, code.Length);
             return d;
         }
     }
