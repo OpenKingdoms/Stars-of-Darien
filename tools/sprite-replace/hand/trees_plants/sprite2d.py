@@ -10,8 +10,10 @@ import os
 
 import numpy as np
 
-SPRITES = "D:/OKReplace/sprites"
-CATALOG = "D:/OKReplace/catalog.json"
+# OK_REPLACE names the work folder on another machine than the owner's.
+ROOT = os.environ.get("OK_REPLACE", "D:/OKReplace")
+SPRITES = ROOT + "/sprites"
+CATALOG = ROOT + "/catalog.json"
 CELL = 16.0
 TILT = 0.5
 

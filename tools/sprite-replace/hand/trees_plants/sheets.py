@@ -14,13 +14,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import models  # noqa: E402
 
-OUT = "D:/OKReplace/hand/trees_plants"
+OUT = os.environ.get("OK_REPLACE", "D:/OKReplace") + "/hand/trees_plants"
 REN = os.path.join(OUT, "renders")
 COMPARE = os.path.normpath(os.path.join(HERE, "..", "..", "handcompare.py"))
 
 
 def compare(name):
-    subprocess.run([sys.executable, COMPARE, REN, name, "D:/OKReplace/sprites/%s.png" % name, "2"],
+    subprocess.run([sys.executable, COMPARE, REN, name, os.environ.get("OK_REPLACE", "D:/OKReplace") + "/sprites/%s.png" % name, "2"],
                    check=True, stdout=subprocess.DEVNULL)
     return os.path.join(REN, name + "_compare.png")
 

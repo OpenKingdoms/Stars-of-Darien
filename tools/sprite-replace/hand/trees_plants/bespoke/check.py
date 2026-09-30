@@ -19,7 +19,7 @@ FAM = os.path.dirname(HERE)
 sys.path.insert(0, FAM)
 import measure  # noqa: E402
 
-OUT = "D:/OKReplace/hand/trees_plants"
+OUT = os.environ.get("OK_REPLACE", "D:/OKReplace") + "/hand/trees_plants"
 WORK = os.path.join(OUT, "work", "r5")
 COMPARE = os.path.normpath(os.path.join(FAM, "..", "..", "handcompare.py"))
 
@@ -32,7 +32,7 @@ def ratio(path):
 
 
 def sheet(name):
-    subprocess.run([sys.executable, COMPARE, os.path.join(OUT, "renders"), name, "D:/OKReplace/sprites/%s.png" % name, "2"],
+    subprocess.run([sys.executable, COMPARE, os.path.join(OUT, "renders"), name, os.environ.get("OK_REPLACE", "D:/OKReplace") + "/sprites/%s.png" % name, "2"],
                    check=True, stdout=subprocess.DEVNULL)
     comp = Image.open(os.path.join(OUT, "renders", name + "_compare.png")).convert("RGBA")
     vs = [Image.open(os.path.join(WORK, "views", "%s_%s.png" % (name, t))).convert("RGBA")

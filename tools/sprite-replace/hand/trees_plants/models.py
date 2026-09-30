@@ -245,6 +245,42 @@ MODELS.update({
 })
 
 
+# Creon, the Iron Plague's island: olive spire poplars, yellow-green and
+# dark green broadleaf crowns on root feet, the low leafy plants, a bare
+# spire snag and gnarled dead trees over black root balls. One bark for
+# the family, the grey-brown of the drawn trunks.
+CRE_BARK = (0.27, 0.24, 0.2)
+# the crowns stop above their drawn root feet, which the trunk's buttresses
+# take; the dark green ones are fine-leaved and flecked like the drawing
+CRE_FINE = {"card": 0.6, "flecks": [("bright", 0.4)]}
+# the plants are loose clumps: less closing, smaller cards, and deep
+# crevices between the clumps so gaps show as in the drawing
+CRE_PLANT = {"card": 0.4, "clumps": 5, "close": 1, "crevice": 0.9, "flecks": [("bright", 0.35)], "sturdy": (1.0, 0.95, 1.0)}
+CRE_BALL = {"spikes": 34, "spike_len": 1.35}
+MODELS.update({
+    # CreTree01-03 are built by their own scripts in bespoke/; these are the
+    # kit's first try, kept for reference
+    "CreTree01": tree(POPLAR, trunk=trunk(CRE_BARK, 0.09, 0.8, 4)),
+    "CreTree02": tree(POPLAR, trunk=trunk(CRE_BARK, 0.09, 0.8, 4)),
+    "CreTree03": tree(POPLAR, trunk=trunk(CRE_BARK, 0.09, 0.8, 4)),
+    "CreTree04": tree(OAK, crown_bottom=86, trunk=trunk(CRE_BARK, 0.42, 1.5, 5)),
+    "CreTree05": tree(OAK, crown_bottom=94, trunk=trunk(CRE_BARK, 0.42, 1.5, 5)),
+    "CreTree06": tree(OAK, crown_bottom=80, trunk=trunk(CRE_BARK, 0.42, 1.5, 5)),
+    "CreTree07": tree(OAK, crown_bottom=120, trunk=trunk(CRE_BARK, 0.45, 1.6, 6), **CRE_FINE),
+    "CreTree08": tree(OAK, crown_bottom=112, trunk=trunk(CRE_BARK, 0.45, 1.6, 6), **CRE_FINE),
+    "CreTree09": tree(OAK, crown_bottom=104, trunk=trunk(CRE_BARK, 0.45, 1.6, 6), **CRE_FINE),
+    "CreTree02a": dict(SNAG4, foot={"r": 0.26, "flare": 0.4, "h": 1.0}),
+    "CreTree07a": lifted(HUB, trunk_top=4.5, balls=[dict(CRE_BALL, at=((40, 73), -0.4, (1.15, 1.1, 1.1)))]),
+    "CreTree08a": lifted(HUB, trunk_top=4.5, balls=[dict(CRE_BALL, at=((50, 76), -0.4, (1.15, 1.1, 1.1)))]),
+    "CreTree09a": lifted(HUB, trunk_top=4.5, balls=[dict(CRE_BALL, at=((52, 76), -0.4, (1.15, 1.1, 1.1)))]),
+    "CrePlant01": tree(OAK, trunk=trunk(CRE_BARK, 0.06, 1.0, 3, top=0.3), **CRE_PLANT),
+    "CrePlant02": tree(OAK, trunk=trunk(CRE_BARK, 0.06, 1.0, 3, top=0.3), **CRE_PLANT),
+    "CrePlant03": tree(OAK, trunk=trunk(CRE_BARK, 0.06, 1.0, 3, top=0.3), **CRE_PLANT),
+})
+CREON = ("CreTree01", "CreTree02", "CreTree03", "CreTree04", "CreTree05", "CreTree06", "CreTree07", "CreTree08",
+         "CreTree09", "CreTree02a", "CreTree07a", "CreTree08a", "CreTree09a", "CrePlant01", "CrePlant02", "CrePlant03")
+
+
 # Round 5 builds AraTree03, VerTree01-03, AraTree07a, AraTree08a and
 # ZonTreeDead04-06 from their own scripts in bespoke/, which build.py hands
 # them to; their settings above are the kit's round-4 ones, kept for reference.

@@ -32,7 +32,7 @@ import kit  # noqa: E402
 import models  # noqa: E402
 import sprite2d as s2  # noqa: E402
 
-OUT = "D:/OKReplace/hand/trees_plants"
+OUT = os.environ.get("OK_REPLACE", "D:/OKReplace") + "/hand/trees_plants"
 WORK = os.path.join(OUT, "work", "calib")
 
 

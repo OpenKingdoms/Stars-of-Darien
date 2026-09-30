@@ -32,6 +32,8 @@ WORLD_PALETTE = {
     "aramon": "aramon_features.pcx", "veruna": "veruna_features.pcx",
     "zhon": "zhon_features.pcx", "taros": "taros_features.pcx",
     "all worlds": "aramon_features.pcx", "": "aramon_features.pcx",
+    # The Iron Plague's, from IPData.hpi
+    "creon": "creon_features.pcx", "volcano": "volcano_features.pcx", "caves": "caves_features.pcx",
 }
 
 

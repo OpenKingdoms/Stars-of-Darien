@@ -31,7 +31,7 @@ import handkit as hk  # noqa: E402
 import kit  # noqa: E402
 import sprite2d as s2  # noqa: E402
 
-OUT = "D:/OKReplace/hand/trees_plants"
+OUT = os.environ.get("OK_REPLACE", "D:/OKReplace") + "/hand/trees_plants"
 WORK = os.path.join(OUT, "work", "r5")
 LUMA = np.array([0.299, 0.587, 0.114])
 

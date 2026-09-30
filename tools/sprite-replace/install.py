@@ -4,13 +4,16 @@ feature in unity/Assets/Overrides/Features, and lodestone cards as
 <OBJECT>.glb with <OBJECT>.json in unity/Assets/Overrides/Units.
 
     python tools/sprite-replace/install.py [--tool batch.py] <models dir> ...
+    python tools/sprite-replace/install.py --hand <models dir> ...
     python tools/sprite-replace/install.py --cards <models dir>
 
 Every model must pass okpaint.check: geometry and recipes only. Each
 feature model is stamped okCarved (with the tool that made it) in its
 root node's extras, so a later install can replace it. A model already in
-Features without that stamp is hand-built and wins: it is left alone. A
-card's JSON takes replacesPiece and replacesTexture from its glb.
+Features without that stamp is hand-built and wins: it is left alone.
+--hand installs hand-built models: unstamped, over a carved model or an
+earlier hand-built one of the same name. A card's JSON takes
+replacesPiece and replacesTexture from its glb.
 """
 import argparse
 import json
@@ -48,7 +51,7 @@ def carved(path):
     return any(CARVED in n.get("extras", {}) for n in j.get("nodes", []))
 
 
-def install_features(dirs, tool, dest):
+def install_features(dirs, tool, dest, hand=False):
     added = replaced = kept = 0
     for d in dirs:
         for f in sorted(os.listdir(d)):
@@ -62,7 +65,7 @@ def install_features(dirs, tool, dest):
             same = [g for g in os.listdir(dest) if g.lower() == f.lower()]
             if same:
                 out = os.path.join(dest, same[0])
-                if not carved(out):
+                if not hand and not carved(out):
                     kept += 1
                     continue
                 replaced += 1
@@ -71,7 +74,11 @@ def install_features(dirs, tool, dest):
             j, rest = read_glb(src)
             roots = j.get("scenes", [{}])[j.get("scene", 0)].get("nodes", [0])
             for i in roots:
-                j["nodes"][i].setdefault("extras", {})[CARVED] = tool
+                extras = j["nodes"][i].setdefault("extras", {})
+                if hand:
+                    extras.pop(CARVED, None)
+                else:
+                    extras[CARVED] = tool
             write_glb(out, j, rest)
     print("INSTALL features: %d added, %d replaced, %d hand-built kept" % (added, replaced, kept))
 
@@ -106,12 +113,13 @@ def main():
     ap.add_argument("dirs", nargs="+")
     ap.add_argument("--tool", default="batch.py")
     ap.add_argument("--cards", action="store_true")
+    ap.add_argument("--hand", action="store_true")
     ap.add_argument("--overrides", default=OVERRIDES)
     a = ap.parse_args()
     if a.cards:
         install_cards(a.dirs, os.path.join(a.overrides, "Units"))
     else:
-        install_features(a.dirs, a.tool, os.path.join(a.overrides, "Features"))
+        install_features(a.dirs, a.tool, os.path.join(a.overrides, "Features"), a.hand)
 
 
 if __name__ == "__main__":
