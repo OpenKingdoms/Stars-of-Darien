@@ -318,16 +318,25 @@ namespace OpenKingdomsUnity.Game.UI
             img.material = null;
         }
 
+        // The dark well a field or a filter sits in, gold along its foot.
+        public static readonly Color WellInk = new Color(HudArt.Purple.r * 0.5f, HudArt.Purple.g * 0.5f, HudArt.Purple.b * 0.5f, 0.94f);
+
+        public static Image Well(GuiPage p, Transform parent, float x, float y, float w, float h)
+        {
+            var bg = p.Wash(parent, x, y, w, h, WellInk);
+            p.Wash(bg.transform, 0, h - 0.9f, w, 0.9f, new Color(HudArt.Gold.r, HudArt.Gold.g, HudArt.Gold.b, 0.85f)).raycastTarget = false;
+            return bg;
+        }
+
         public static InputField Field(GuiPage p, Transform parent, float x, float y, float w, float h, string hint, float sizeCp)
         {
-            var bg = p.Wash(parent, x, y, w, h, new Color(HudArt.Purple.r * 0.5f, HudArt.Purple.g * 0.5f, HudArt.Purple.b * 0.5f, 0.88f));
+            var bg = Well(p, parent, x, y, w, h);
             bg.name = "Field";
-            p.Wash(bg.transform, 0, h - 0.9f, w, 0.9f, new Color(HudArt.Gold.r, HudArt.Gold.g, HudArt.Gold.b, 0.85f)).raycastTarget = false;
             var field = bg.gameObject.AddComponent<InputField>();
             var text = p.Label(bg.transform, "", 3, 0, w - 6, h, sizeCp, LobbyInk.Text);
             text.supportRichText = false;
             text.horizontalOverflow = HorizontalWrapMode.Overflow;
-            var place = p.Label(bg.transform, hint, 3, 0, w - 6, h, sizeCp, new Color(LobbyInk.Text.r, LobbyInk.Text.g, LobbyInk.Text.b, 0.45f));
+            var place = p.Label(bg.transform, hint, 3, 0, w - 6, h, sizeCp, new Color(LobbyInk.Text.r, LobbyInk.Text.g, LobbyInk.Text.b, 0.8f));
             place.fontStyle = FontStyle.Italic;
             field.textComponent = text;
             field.placeholder = place;

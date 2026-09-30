@@ -63,7 +63,7 @@ namespace OpenKingdomsUnity.Game.UI
             foreach (var m in root.Backend.Maps)
             {
                 var id = m.Id;
-                UiKit.MakeButton(setupItems, m.Name, () => Choose(id), 28).GetComponent<RectTransform>().Size(0, 62);
+                UiKit.MakeButton(setupItems, MapCatalog.DisplayName(m), () => Choose(id), 28).GetComponent<RectTransform>().Size(0, 62);
             }
             if (chosenMap == null && root.Backend.Maps.Count > 0) Choose(root.Backend.Maps[0].Id);
         }
@@ -74,7 +74,7 @@ namespace OpenKingdomsUnity.Game.UI
             var tex = screens.PreviewFor(id);
             setupPreview.texture = tex;
             if (tex != null) setupPreview.GetComponent<AspectRatioFitter>().aspectRatio = (float)tex.width / tex.height;
-            foreach (var m in root.Backend.Maps) if (m.Id == id) setupTitle.text = m.Name;
+            foreach (var m in root.Backend.Maps) if (m.Id == id) setupTitle.text = MapCatalog.DisplayName(m);
         }
 
         // Opens the chosen map in the editor through the usual loading screen.

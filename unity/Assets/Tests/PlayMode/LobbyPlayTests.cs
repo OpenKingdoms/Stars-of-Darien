@@ -1,5 +1,5 @@
 // LobbyPlayTests.cs - the lobby's screens draw and fit at 720p, 1080p and
-// 4K, a click on a start jewel takes that start and the battle begins
+// 4K, the map filters read clearly at each, a click on a start jewel takes that start and the battle begins
 // there, the map browser narrows and orders the list, and a room's host
 // moves another seat's start from the seat row.
 using System.Collections;
@@ -149,6 +149,85 @@ namespace OpenKingdomsUnity.Tests
                 root.Flow.Fire(FlowEvent.ChooseMap);
                 yield return ViewAt(s.x, s.y);
                 CheckFits("MapChoice", s.x, s.y);
+                Object.Destroy(root.gameObject);
+                root = null;
+                yield return null;
+            }
+        }
+
+        // WCAG's contrast ratio of text over a well drawn on white, the
+        // lightest page it could sit on, blended in linear light.
+        static float Contrast(Color text, Color well)
+        {
+            Color back = well.linear * well.a + Color.white * (1f - well.a);
+            Color front = text.linear * text.a + back * (1f - text.a);
+            float a = Luma(front) + 0.05f, b = Luma(back) + 0.05f;
+            return Mathf.Max(a, b) / Mathf.Min(a, b);
+        }
+
+        static float Luma(Color c) => 0.2126f * c.r + 0.7152f * c.g + 0.0722f * c.b;
+
+        void CheckReadable(Text t, Color well, string at)
+        {
+            float px = t.fontSize * root.Screens.Canvas.scaleFactor;
+            Assert.GreaterOrEqual(px, 15f, $"{at}: '{t.text}' is {px:0.0} px");
+            Assert.AreNotSame(LobbyInk.Caps, t.font, $"{at}: '{t.text}' is in mixed case, not small capitals");
+            Assert.LessOrEqual(t.preferredWidth, t.rectTransform.rect.width, $"{at}: '{t.text}' fits on one line");
+            Assert.LessOrEqual(t.preferredHeight, t.rectTransform.rect.height, $"{at}: '{t.text}' fits its height");
+            Assert.GreaterOrEqual(Contrast(t.color, well), 4.5f, $"{at}: '{t.text}' stands out from its well");
+        }
+
+        // Every choice of every filter and the search's hint, and no box
+        // over another or over the list.
+        void CheckFilters(LobbyScreens.MapBrowser b, string at)
+        {
+            var boxes = new List<(string name, Rect r)>();
+            var search = b.Search.GetComponent<Image>();
+            CheckReadable((Text)b.Search.placeholder, search.color, at);
+            boxes.Add(("Search", WorldRect(search.rectTransform)));
+            foreach (var (c, n) in new[] { (b.Players, 8), (b.Size, 5), (b.Sort, 6) })
+            {
+                var well = c.transform.parent.GetComponent<Image>();
+                Assert.IsNotNull(well, $"{at}: {c.name} sits in a well");
+                boxes.Add((c.name, WorldRect(well.rectTransform)));
+                for (int i = 0; i < n; i++)
+                {
+                    CheckReadable(c.Label, well.color, at);
+                    c.Step(1);
+                }
+            }
+            var list = WorldRect((RectTransform)b.List.transform);
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                Assert.IsFalse(boxes[i].r.Overlaps(list), $"{at}: {boxes[i].name} over the list");
+                for (int j = i + 1; j < boxes.Count; j++)
+                    Assert.IsFalse(boxes[i].r.Overlaps(boxes[j].r), $"{at}: {boxes[i].name} over {boxes[j].name}");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TheMapFiltersReadClearlyAtEverySize()
+        {
+            foreach (var s in Sizes)
+            {
+                yield return Boot(s.x, s.y);
+                root.Flow.Fire(FlowEvent.OpenSkirmish);
+                root.Screens.Show(FlowState.Skirmish);
+                yield return ViewAt(s.x, s.y);
+                CheckFilters(root.Screens.Lobby.Skirmish.Browser, $"skirmish at {s.x}x{s.y}");
+                root.Flow.Fire(FlowEvent.Back);
+                root.Flow.Fire(FlowEvent.OpenMultiplayer);
+                var rooms = root.Backend.Rooms;
+                rooms.Connect("mock://relay", "Zach");
+                yield return null;
+                yield return null;
+                Assert.IsTrue(rooms.CreateRoom("", "mock_marches", RoomRules.LineOfSight));
+                root.Flow.Fire(FlowEvent.EnterRoom);
+                yield return null;
+                yield return null;
+                root.Flow.Fire(FlowEvent.ChooseMap);
+                yield return ViewAt(s.x, s.y);
+                CheckFilters(root.Screens.Lobby.Choice.Browser, $"map choice at {s.x}x{s.y}");
                 Object.Destroy(root.gameObject);
                 root = null;
                 yield return null;

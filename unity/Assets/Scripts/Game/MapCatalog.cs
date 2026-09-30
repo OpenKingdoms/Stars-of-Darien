@@ -1,7 +1,8 @@
 // MapCatalog.cs - the lobby's map browser as plain rules: search, filters
 // for start positions and size, and sorting, over an index built once per
-// map list, and the start positions each seat takes. Pure C#, so the rules
-// are tested without a scene.
+// map list, the names in title case as the lobby shows them, and the
+// start positions each seat takes. Pure C#, so the rules are tested
+// without a scene.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -117,6 +118,51 @@ namespace OpenKingdomsUnity.Game
             $"{Mathf.Max(1, Mathf.RoundToInt(m.Size.x / CellsPerUnit))} x {Mathf.Max(1, Mathf.RoundToInt(m.Size.y / CellsPerUnit))}";
 
         public static readonly string[] SizeNames = { "Any size", "Small", "Medium", "Large", "Huge" };
+
+        // A map's name as the lobby shows it. The name itself, and so the
+        // map's key, its file and the search, stay as they are.
+        public static string DisplayName(MapInfo m) => m == null ? null : TitleCase(m.Name);
+
+        static readonly HashSet<string> JoiningWords = new HashSet<string> { "of", "the", "a", "an", "and", "in", "on", "at", "to", "by" };
+        static readonly System.Text.RegularExpressions.Regex Roman =
+            new System.Text.RegularExpressions.Regex("^(?=[ivx])x{0,3}(ix|iv|v?i{0,3})$");
+
+        // Each word, and each part of a hyphenated one, starts with a
+        // capital. Short joining words after the first stay small, as does a
+        // letter after an apostrophe, and roman numerals are all capitals. A
+        // word with a capital inside it is kept as written.
+        public static string TitleCase(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return name ?? "";
+            var b = new System.Text.StringBuilder(name.Length);
+            bool first = true;
+            for (int i = 0; i < name.Length;)
+            {
+                if (IsBreak(name[i])) { b.Append(name[i++]); continue; }
+                int end = i;
+                while (end < name.Length && !IsBreak(name[end])) end++;
+                b.Append(TitleWord(name.Substring(i, end - i), first));
+                first = false;
+                i = end;
+            }
+            return b.ToString();
+        }
+
+        static bool IsBreak(char c) => char.IsWhiteSpace(c) || c == '-';
+
+        static string TitleWord(string w, bool first)
+        {
+            for (int k = 1; k < w.Length; k++) if (char.IsUpper(w[k])) return w;
+            string lower = w.ToLowerInvariant();
+            if (!first && JoiningWords.Contains(lower)) return lower;
+            if (Roman.IsMatch(lower)) return lower.ToUpperInvariant();
+            // The first letter, past an opening bracket or quote but not past
+            // an apostrophe or a digit.
+            int at = 0;
+            while (at < w.Length && !char.IsLetterOrDigit(w[at]) && w[at] != '\'' && w[at] != '\u2019') at++;
+            if (at == w.Length || !char.IsLetter(w[at])) return w;
+            return w.Substring(0, at) + char.ToUpperInvariant(w[at]) + w.Substring(at + 1);
+        }
     }
 
     // Who starts where. A seat that took a start keeps it, and the others

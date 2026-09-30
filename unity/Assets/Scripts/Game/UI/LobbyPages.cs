@@ -172,6 +172,8 @@ namespace OpenKingdomsUnity.Game.UI
         public sealed class MapBrowser
         {
             static readonly string[] Sorts = { "Name, A to Z", "Name, Z to A", "Fewest players", "Most players", "Smallest", "Largest" };
+            // The search and the filters, in the list's letters.
+            const float FilterCp = 11f;
 
             readonly LobbyScreens l;
             readonly GuiPage p;
@@ -191,7 +193,7 @@ namespace OpenKingdomsUnity.Game.UI
                 this.q = q;
                 this.current = current;
                 this.pick = pick;
-                Search = Field(p, p.Root, r.SearchX, r.StripY + 1, r.SearchW, r.StripH - 2, "Search maps", 9f);
+                Search = Field(p, p.Root, r.SearchX, r.StripY + 1, r.SearchW, r.StripH - 2, "Search maps", FilterCp);
                 Search.name = "Search";
                 Search.text = q.Text;
                 Search.onValueChanged.AddListener(v => { q.Text = v; Refresh(true); });
@@ -218,7 +220,7 @@ namespace OpenKingdomsUnity.Game.UI
                 List.Bind = (i, row) =>
                 {
                     var m = Shown[i];
-                    GuiPage.Fit(row.Cells[0], m.Name);
+                    GuiPage.Fit(row.Cells[0], MapCatalog.DisplayName(m));
                     row.Cells[1].text = MapCatalog.PlayersOf(m).ToString();
                     if (row.Cells.Count > 2) row.Cells[2].text = MapCatalog.SizeLabel(m);
                 };
@@ -226,12 +228,14 @@ namespace OpenKingdomsUnity.Game.UI
                 ScrollRail.Make(p, List, r.RailX, r.ListY, r.RailW, r.RowH * r.Rows, r.Rail);
             }
 
+            // Light letters in a dark well like the search's, so they read on
+            // any parchment.
             Clicker Chooser(string name, float x, float y, float w, float h, Action<int> step, string help)
             {
-                var c = Clicker.Make(p, p.Root, name, x, y, w, h, 9f, step, help, TextAnchor.MiddleCenter, LobbyInk.Caps);
-                c.Rest = HudArt.Ink;
-                c.Paint();
-                return c;
+                var well = Well(p, p.Root, x, y + 1, w, h - 2);
+                well.name = name + " well";
+                well.raycastTarget = false;
+                return Clicker.Make(p, well.transform, name, 0, -1, w, h, FilterCp, step, help, TextAnchor.MiddleCenter, LobbyInk.Body);
             }
 
             static int Step(int players, int by)
@@ -552,7 +556,7 @@ namespace OpenKingdomsUnity.Game.UI
                 Map.Show(map, map != null ? l.Preview(map.Id) : null);
                 if (map != null)
                 {
-                    GuiPage.Fit(mapName, map.Name);
+                    GuiPage.Fit(mapName, MapCatalog.DisplayName(map));
                     string climate = string.IsNullOrEmpty(map.Climate) ? "" : ", " + map.Climate;
                     mapInfo.text = $"{MapCatalog.SizeLabel(map)}, {MapCatalog.PlayersOf(map)} players{climate}";
                     mapText.text = map.Description;
@@ -721,7 +725,7 @@ namespace OpenKingdomsUnity.Game.UI
                 var sel = on && List.Selected >= 0 ? r.Rooms[List.Selected] : null;
                 string[] vals = sel == null ? new string[6] : new[]
                 {
-                    sel.Name, sel.Host, l.MapById(sel.MapId)?.Name ?? sel.MapId, sel.Players + " of " + sel.MaxPlayers,
+                    sel.Name, sel.Host, MapCatalog.DisplayName(l.MapById(sel.MapId)) ?? sel.MapId, sel.Players + " of " + sel.MaxPlayers,
                     sel.Playing ? "In battle" : sel.Joinable ? "Waiting" : "Cannot join", sel.Code,
                 };
                 for (int k = 0; k < info.Length; k++) GuiPage.Fit(info[k], vals[k] ?? "");

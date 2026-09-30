@@ -1,6 +1,6 @@
 // MapCatalogTests.cs - the lobby's map browser finds maps by name, filters
-// them by start positions and size, sorts them, and stays quick with
-// thousands of maps.
+// them by start positions and size, sorts them, shows names in title case,
+// and stays quick with thousands of maps.
 using System.Collections.Generic;
 using System.Diagnostics;
 using NUnit.Framework;
@@ -91,6 +91,35 @@ namespace OpenKingdomsUnity.Tests
             CollectionAssert.AreEqual(new[] { "King of the Hill", "Iapur Narrows", "Angvir's Maze", "Two Castles", "Lake Ferrix", "Athri Cay", "Lake Lokken", "Great Steppe" },
                 Names(new MapQuery { Sort = MapSort.Size }));
             Assert.AreEqual("Great Steppe", Names(new MapQuery { Sort = MapSort.Size, Descending = true })[0]);
+        }
+
+        [Test]
+        public void NamesShowInTitleCase()
+        {
+            Assert.AreEqual("Abnar's Terrace", MapCatalog.TitleCase("abnar's terrace"));
+            Assert.AreEqual("The Fields of Garacus", MapCatalog.TitleCase("the fields of garacus"));
+            Assert.AreEqual("Map II", MapCatalog.TitleCase("map ii"));
+            Assert.AreEqual("Siege of Karnak XIV", MapCatalog.TitleCase("siege of karnak xiv"));
+            Assert.AreEqual("Mix and Dim", MapCatalog.TitleCase("mix and dim"), "words of roman letters are not numerals");
+            Assert.AreEqual("North-East Pass", MapCatalog.TitleCase("north-east pass"));
+            Assert.AreEqual("King-of-the-Hill", MapCatalog.TitleCase("king-of-the-hill"));
+            Assert.AreEqual("Angvir's Maze", MapCatalog.TitleCase("Angvir's Maze"));
+            Assert.AreEqual("The MacLeod Crossing of the Rivers", MapCatalog.TitleCase("the MacLeod crossing Of the rivers"));
+            Assert.AreEqual("2v2 Arena", MapCatalog.TitleCase("2v2 arena"));
+            Assert.AreEqual("", MapCatalog.TitleCase(""));
+        }
+
+        [Test]
+        public void TitleCaseChangesOnlyWhatTheLobbyShows()
+        {
+            var m = Map("abnar's terrace", 4, 9, 7);
+            var c = new MapCatalog();
+            c.Use(new List<MapInfo> { m });
+            Assert.AreEqual("Abnar's Terrace", MapCatalog.DisplayName(m));
+            Assert.AreEqual("abnar's terrace", m.Name);
+            Assert.AreEqual("abnar's terrace", m.Id);
+            Assert.AreEqual(1, c.Query(new MapQuery { Text = "Abnar's TERRACE" }).Count);
+            Assert.AreEqual(1, c.Query(new MapQuery { Text = "abnar" }).Count);
         }
 
         [Test]

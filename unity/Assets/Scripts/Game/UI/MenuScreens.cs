@@ -192,7 +192,7 @@ namespace OpenKingdomsUnity.Game.UI
             var map = root.CurrentMap();
             string why = null;
             if (humans == 0 || players < 2) why = "A game needs you and at least one computer player.";
-            else if (map != null && players > MapCatalog.PlayersOf(map)) why = $"{map.Name} holds {MapCatalog.PlayersOf(map)} players.";
+            else if (map != null && players > MapCatalog.PlayersOf(map)) why = $"{MapCatalog.DisplayName(map)} holds {MapCatalog.PlayersOf(map)} players.";
             lobby.Skirmish?.ShowError(why);
             if (why != null) return;
             root.Setup.Seed = (uint)Environment.TickCount;
@@ -306,7 +306,7 @@ namespace OpenKingdomsUnity.Game.UI
         void RefreshLoading()
         {
             var map = root.CurrentMap();
-            loadingTitle.text = map != null ? map.Name : "";
+            loadingTitle.text = MapCatalog.DisplayName(map) ?? "";
             var tex = map != null ? Preview(map.Id) : null;
             loadingBackdrop.texture = tex;
             loadingBackdrop.enabled = tex != null;
@@ -404,7 +404,7 @@ namespace OpenKingdomsUnity.Game.UI
             int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
             var map = root.CurrentMap();
             resultInfo.text = (won ? "Your enemies are vanquished" : "Your kingdom has fallen") +
-                $" on {(map != null ? map.Name : "the field")} after {secs / 60} min {secs % 60} s.";
+                $" on {MapCatalog.DisplayName(map) ?? "the field"} after {secs / 60} min {secs % 60} s.";
         }
 
         public void Dispose()

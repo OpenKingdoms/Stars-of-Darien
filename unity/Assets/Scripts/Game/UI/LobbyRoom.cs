@@ -274,7 +274,7 @@ namespace OpenKingdomsUnity.Game.UI
                 Map.Show(map, map != null ? l.Preview(map.Id) : null);
                 if (map != null)
                 {
-                    GuiPage.Fit(mapName, map.Name);
+                    GuiPage.Fit(mapName, MapCatalog.DisplayName(map));
                     mapInfo.text = $"{MapCatalog.SizeLabel(map)}, {MapCatalog.PlayersOf(map)} players";
                 }
                 choose.GetComponent<HelpHover>().Line = r.YouHost ? "Select Map" : "View Map";
@@ -347,7 +347,7 @@ namespace OpenKingdomsUnity.Game.UI
                 var map = l.MapById(chosen);
                 Map.Show(map, map != null ? l.Preview(map.Id) : null);
                 if (map == null) return;
-                GuiPage.Fit(name, map.Name);
+                GuiPage.Fit(name, MapCatalog.DisplayName(map));
                 string climate = string.IsNullOrEmpty(map.Climate) ? "" : ", " + map.Climate;
                 info.text = $"{MapCatalog.SizeLabel(map)}, {MapCatalog.PlayersOf(map)} players{climate}";
                 text.text = map.Description;
