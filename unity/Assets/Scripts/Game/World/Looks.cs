@@ -26,8 +26,12 @@ namespace OpenKingdomsUnity.Game.World
         public static Shader Find(string name, string fallback)
         {
             if (shaders.TryGetValue(name, out var s) && s != null) return s;
-            s = Resources.Load<Shader>("Shaders/" + name);
+            var own = Resources.Load<Shader>("Shaders/" + name);
+            s = own;
+            // A built player carries no fallback it never uses, and a batch
+            // run without graphics supports no shader, so ours stays then.
             if (s == null || !s.isSupported) s = Shader.Find(fallback);
+            if (s == null) s = own;
             shaders[name] = s;
             return s;
         }

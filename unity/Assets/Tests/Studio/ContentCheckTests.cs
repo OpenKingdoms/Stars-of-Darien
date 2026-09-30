@@ -111,6 +111,7 @@ namespace OpenKingdomsUnity.Studio.Tests
             Put("Game_Data/StreamingAssets/Assets/Overrides/Features/Tree.glb", Glb(Painted));
             Put("Game_Data/StreamingAssets/Assets/Overrides/Units/flight.json", Encoding.UTF8.GetBytes("{}"));
             Put("Game_Data/Plugins/x86_64/okengine.dll", new byte[] { 0 });
+            Put("Game_Data/StreamingAssets/" + ContentCheck.UnityServicesFile, Encoding.UTF8.GetBytes("{}"));
             var packed = new[]
             {
                 new ContentCheck.Packed { Type = "Texture2D", Source = "Packages/com.unity.render-pipelines.universal/Textures/BlueNoise.png", Bytes = 10 },
@@ -119,7 +120,7 @@ namespace OpenKingdomsUnity.Studio.Tests
             };
             var r = ContentCheck.Scan(temp, packed);
             CollectionAssert.IsEmpty(r.Problems);
-            Assert.AreEqual(3, r.Streaming.Count);
+            Assert.AreEqual(4, r.Streaming.Count);
             Assert.AreEqual(2, r.Assets.Count);
             StringAssert.Contains("RESULT: PASS", ContentCheck.Describe(r, "test"));
         }
@@ -141,6 +142,7 @@ namespace OpenKingdomsUnity.Studio.Tests
             Put("Game_Data/StreamingAssets/data.hpi", new byte[] { 0 });
             Put("Game_Data/StreamingAssets/Assets/Overrides/Features/Hut.png", new byte[] { 0 });
             Put("Game_Data/Resources/units.gaf", new byte[] { 0 });
+            Put("Game_Data/StreamingAssets/Assets/" + ContentCheck.UnityServicesFile, new byte[] { 0 });
             var packed = new[]
             {
                 new ContentCheck.Packed { Type = "Texture2D", Source = "Assets/Art/Stolen.png", Bytes = 10 },
@@ -150,6 +152,7 @@ namespace OpenKingdomsUnity.Studio.Tests
             Assert.IsTrue(r.Problems.Any(p => p.Contains("data.hpi") && p.Contains("original game's own files")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("units.gaf")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Hut.png") && p.Contains("not a hand-built model")));
+            Assert.IsTrue(r.Problems.Any(p => p.Contains("Assets/" + ContentCheck.UnityServicesFile)), "only at the top of StreamingAssets");
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Stolen.png")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Hut.fbx")));
             StringAssert.Contains("RESULT: FAIL", ContentCheck.Describe(r, "test"));

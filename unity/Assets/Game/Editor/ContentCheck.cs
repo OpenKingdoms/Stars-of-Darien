@@ -38,6 +38,9 @@ namespace OpenKingdomsUnity.Studio
 
         public enum Kind { Generated, PaintedAtLoad, Plain, Data, Problem }
 
+        // Unity writes this into StreamingAssets for its service packages.
+        public const string UnityServicesFile = "UnityServicesProjectConfiguration.json";
+
         public sealed class Entry
         {
             public string Path;
@@ -180,6 +183,11 @@ namespace OpenKingdomsUnity.Studio
                 e.Kind = Kind.Data;
                 e.Note = "numbers for the unit models (flight poses or a card's piece), no pictures";
             }
+            else if (string.Equals(rel, UnityServicesFile, StringComparison.OrdinalIgnoreCase))
+            {
+                e.Kind = Kind.Data;
+                e.Note = "Unity's own list of its service packages and their versions, written by the build";
+            }
             else
             {
                 e.Kind = Kind.Problem;
@@ -199,7 +207,7 @@ namespace OpenKingdomsUnity.Studio
             foreach (var p in r.Problems) sb.AppendLine("  PROBLEM " + p);
             sb.AppendLine();
 
-            sb.AppendLine("Models under StreamingAssets/Assets/Overrides:");
+            sb.AppendLine("Files under StreamingAssets, by kind:");
             foreach (var g in r.Streaming.GroupBy(e => e.Kind).OrderBy(g => g.Key))
                 sb.AppendLine($"  {Label(g.Key)}: {g.Count()} files, {g.Sum(e => e.Bytes) / 1048576.0:0.0} MB");
             sb.AppendLine();
@@ -216,7 +224,7 @@ namespace OpenKingdomsUnity.Studio
                     sb.AppendLine($"  {f.bytes,12:N0}  {f.path}");
             sb.AppendLine();
 
-            sb.AppendLine("Every model under StreamingAssets:");
+            sb.AppendLine("Every file under StreamingAssets:");
             foreach (var e in r.Streaming)
                 sb.AppendLine($"  {Label(e.Kind),-34} {e.Bytes,10:N0}  {e.Path}{(string.IsNullOrEmpty(e.Note) ? "" : "  (" + e.Note + ")")}");
             return sb.ToString();
