@@ -54,13 +54,12 @@ namespace OpenKingdomsUnity.Studio
 
         public sealed class Report
         {
-            public Library Engine, Core, Sdl;
+            public Library Engine, Sdl;
             public bool Copied;
             public readonly List<string> Log = new List<string>();
         }
 
         public static Library Engine { get; private set; }
-        public static Library Core { get; private set; }
         public static string Message { get; private set; }
 
         public static string ProjectDir => Path.GetDirectoryName(Application.dataPath);
@@ -88,19 +87,19 @@ namespace OpenKingdomsUnity.Studio
         // Looks at every library and installs, replaces or stages it. loaded
         // gives the version of a library Unity has loaded (file, export), -1
         // for a loaded one with no version, or null when it is not loaded.
-        public static Report Run(string pluginDir, string releaseDir, string keepDir, Func<string, string, int?> loaded, int engineApi = int.MinValue, int coreAbi = int.MinValue)
+        public static Report Run(string pluginDir, string releaseDir, string keepDir, Func<string, string, int?> loaded, int engineApi = int.MinValue)
         {
             var r = new Report();
             var record = ReadRecord(Path.Combine(keepDir, "installed.json"));
             r.Engine = Check(pluginDir, releaseDir, record, loaded, "okengine.dll", "okengine-api", "okx_api_version", engineApi == int.MinValue ? BindingApi() : engineApi);
-            r.Core = Check(pluginDir, releaseDir, record, loaded, "okcore.dll", "okcore-abi", "ok_sim_abi_version", coreAbi == int.MinValue ? OkNative.AbiVersion : coreAbi);
             r.Sdl = CheckPlain(pluginDir, releaseDir, record, loaded, "SDL2.dll");
-            foreach (var lib in new[] { r.Engine, r.Core, r.Sdl })
+            foreach (var lib in new[] { r.Engine, r.Sdl })
             {
                 if (lib == null) continue;
                 if (lib.Outcome == Outcome.Install) r.Copied |= Install(lib, pluginDir, keepDir, record, r.Log);
                 else if (lib.Outcome == Outcome.Restart || lib.Outcome == Outcome.Update) Stage(lib, pluginDir, keepDir, record, r.Log);
             }
+            r.Copied |= Retire(pluginDir, record, r.Log);
             WriteRecord(Path.Combine(keepDir, "installed.json"), record);
             return r;
         }
@@ -108,7 +107,6 @@ namespace OpenKingdomsUnity.Studio
         static void Apply(Report r)
         {
             Engine = r.Engine;
-            Core = r.Core;
             foreach (var line in r.Log) Debug.Log("OpenKingdoms: " + line);
             Message = Describe(Engine);
             if (Engine.Outcome == Outcome.Restart || Engine.Outcome == Outcome.Mismatch) Block(Message);
@@ -211,6 +209,33 @@ namespace OpenKingdomsUnity.Studio
                 log.Add($"put {Path.GetFileName(lib.Published)} in place for the next start");
             }
             catch (Exception e) { Debug.LogWarning($"Engine installer: {lib.File} stays until Unity restarts: {e.Message}"); }
+        }
+
+        // Libraries the project no longer uses. The installer's own copy of
+        // one goes, and one built on this machine stays.
+        public static readonly string[] Retired = { "okcore.dll" };
+
+        static bool Retire(string pluginDir, Dictionary<string, string> record, List<string> log)
+        {
+            bool removed = false;
+            foreach (var file in Retired)
+            {
+                if (!record.TryGetValue(file, out var mine)) continue;
+                string path = Path.Combine(pluginDir, file);
+                if (File.Exists(path) && Hash(path) == mine)
+                {
+                    try
+                    {
+                        File.Delete(path);
+                        if (File.Exists(path + ".meta")) File.Delete(path + ".meta");
+                        log.Add($"removed {file}, which the project no longer uses");
+                        removed = true;
+                    }
+                    catch (Exception e) { log.Add($"{file} stays until Unity restarts: {e.Message}"); continue; }
+                }
+                record.Remove(file);
+            }
+            return removed;
         }
 
         static string Unique(string dir, string stem, string file)

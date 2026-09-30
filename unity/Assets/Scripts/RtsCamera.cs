@@ -21,8 +21,6 @@ namespace OpenKingdomsUnity
         // The ground the focus may move over, x and z in world units.
         public Vector2 boundsMin = Vector2.zero;
         public Vector2 boundsMax = new Vector2(64, 64);
-        // Kept for the capsule demo, which sets a square map.
-        public float mapSize { set { boundsMin = Vector2.zero; boundsMax = new Vector2(value, value); } }
         // The ground height under a point, so the camera rides the hills.
         public Func<Vector3, float> groundHeight;
         public bool edgePan = true;

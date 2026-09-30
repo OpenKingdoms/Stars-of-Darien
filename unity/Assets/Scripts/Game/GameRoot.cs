@@ -87,17 +87,18 @@ namespace OpenKingdomsUnity.Game
         }
 
         // Another game view may have booted into the scene before this one
-        // (a test scene, or GameRoot.Boot after Play): the capsule demo or
-        // the engine's own view. Only one runs, so take them and what they
-        // built away, the engine's view first so its game ends before ours.
+        // (a test scene, or GameRoot.Boot after Play): the engine's own view
+        // or the notice that it cannot run. Only one runs, so take them and
+        // what they built away, the engine's view first so its game ends
+        // before ours.
         static void TakeOverScene()
         {
-            foreach (var name in new[] { "OpenKingdoms", "SimDriver" })
+            foreach (var name in new[] { "OpenKingdoms", "EngineNotice" })
             {
                 var go = GameObject.Find(name);
                 if (go != null) DestroyImmediate(go);
             }
-            foreach (var name in new[] { "Ground", "Obstacles", "Units", "Sun", "Terrain", "Features" })
+            foreach (var name in new[] { "Sun", "Terrain", "Features" })
             {
                 var go = GameObject.Find(name);
                 if (go != null && go.transform.parent == null) DestroyImmediate(go);

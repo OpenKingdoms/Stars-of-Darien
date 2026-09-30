@@ -12,7 +12,7 @@ unity/[Uu]ser[Ss]ettings/
 unity/*.csproj
 unity/*.sln
 unity/.vs/
-# The native plugin is built from core/, never committed
+# The editor copies the engine libraries in from engine/, never committed
 unity/Assets/Plugins/x86_64/
 unity/Assets/Plugins/WebGL/
 unity/*.slnx

@@ -52,6 +52,20 @@ namespace OpenKingdomsUnity.Engine
         public static bool EngineAvailable =>
             Blocked == null && File.Exists(Path.Combine(PluginDir, "okengine.dll")) && Directory.Exists(GameDir);
 
+        // Why the engine cannot run and what to do about it, or null.
+        public static string Problem
+        {
+            get
+            {
+                if (Blocked != null) return Blocked;
+                if (!File.Exists(Path.Combine(PluginDir, "okengine.dll")))
+                    return "The game's engine is not installed. Get the latest project, which carries it in the engine folder, and open it in Unity again.";
+                if (!Directory.Exists(GameDir))
+                    return $"Your Total Annihilation: Kingdoms files are not at {GameDir}. Pick your game folder in OpenKingdoms, then Settings, and press Play again.";
+                return null;
+            }
+        }
+
         // Destroy in play, DestroyImmediate in the editor.
         public static void Release(UnityEngine.Object o)
         {

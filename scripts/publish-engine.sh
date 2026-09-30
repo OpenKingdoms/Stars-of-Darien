@@ -3,8 +3,6 @@
 # okengine.dll into engine/ as okengine-api<N>.dll with SDL2.dll, where the
 # editor's EngineInstaller finds it, removes older ones and rewrites VERSION.
 # N is OkEngine.ApiVersion, and the library's own okx_api_version must agree.
-# An okcore.dll in the folder is published as okcore-abi<N>.dll the same way,
-# against OkNative.AbiVersion, and a folder may hold only one of the two.
 # A new build of the same version is fine: the installer replaces its own
 # copy on every clone. Commit engine/ with the binding change that needs it.
 #   bash scripts/publish-engine.sh [folder with the libraries] [note]
@@ -13,11 +11,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 src="${1:-D:/OKBuild/okengine-published}"
 note="${2:-}"
 dll="$src/okengine.dll"
-core_dll="$src/okcore.dll"
-[ -f "$dll" ] || [ -f "$core_dll" ] || { echo "no okengine.dll or okcore.dll in $src"; exit 1; }
-if [ -f "$dll" ] && [ ! -f "$src/SDL2.dll" ]; then echo "no SDL2.dll beside okengine.dll in $src"; exit 1; fi
+[ -f "$dll" ] || { echo "no okengine.dll in $src"; exit 1; }
+[ -f "$src/SDL2.dll" ] || { echo "no SDL2.dll beside okengine.dll in $src"; exit 1; }
 api=$(grep -o 'ApiVersion = [0-9]*' "$root/unity/Assets/Engine/OkEngine.cs" | grep -o '[0-9]*$')
-abi=$(grep -o 'AbiVersion = [0-9]*' "$root/unity/Assets/Scripts/OkSim.cs" | grep -o '[0-9]*$')
 
 py=""
 for p in python3 python py; do
@@ -49,49 +45,21 @@ for i in range(n):
 EOF
 }
 
-if [ -f "$dll" ]; then
-    own=$(version "$dll" okx_api_version)
-    if [ "$own" != "$api" ]; then
-        echo "okengine.dll reports API $own but OkEngine.ApiVersion is $api. Bump the binding, or build Release (a Debug build reads as ?)."
-        exit 1
-    fi
-fi
-core=""
-if [ -f "$core_dll" ]; then
-    core=$(version "$core_dll" ok_sim_abi_version)
-    if [ "$core" != "$abi" ]; then
-        echo "okcore.dll reports ABI $core but OkNative.AbiVersion is $abi. Bump the binding or pick the right build."
-        exit 1
-    fi
+own=$(version "$dll" okx_api_version)
+if [ "$own" != "$api" ]; then
+    echo "okengine.dll reports API $own but OkEngine.ApiVersion is $api. Bump the binding, or build Release (a Debug build reads as ?)."
+    exit 1
 fi
 
 mkdir -p "$root/engine"
-if [ -f "$dll" ]; then
-    rm -f "$root"/engine/okengine-api*.dll
-    cp "$dll" "$root/engine/okengine-api$api.dll"
-    cp "$src/SDL2.dll" "$root/engine/SDL2.dll"
-fi
-if [ -n "$core" ]; then
-    rm -f "$root"/engine/okcore-abi*.dll
-    cp "$core_dll" "$root/engine/okcore-abi$abi.dll"
-fi
+rm -f "$root"/engine/okengine-api*.dll
+cp "$dll" "$root/engine/okengine-api$api.dll"
+cp "$src/SDL2.dll" "$root/engine/SDL2.dll"
 head=$(git -C "$root" rev-parse --short HEAD)
 from=${note:-$(cat "$src/VERSION.txt" 2>/dev/null || echo "a local build")}
 {
-    if [ -f "$dll" ]; then
-        echo "okengine-api$api.dll  okengine API $api, $from, published at openkingdoms-unity $head"
-    else
-        grep '^okengine' "$root/engine/VERSION" 2>/dev/null || true
-    fi
-    if [ -n "$core" ]; then
-        echo "okcore-abi$abi.dll     okcore ABI $abi, $from, published at openkingdoms-unity $head"
-    else
-        grep '^okcore' "$root/engine/VERSION" 2>/dev/null || true
-    fi
+    echo "okengine-api$api.dll  okengine API $api, $from, published at openkingdoms-unity $head"
     echo "SDL2.dll            SDL 2, the build okengine links against (zlib license)"
 } > "$root/engine/VERSION.new"
 mv "$root/engine/VERSION.new" "$root/engine/VERSION"
-what=""
-[ -f "$dll" ] && what="engine/okengine-api$api.dll"
-[ -n "$core" ] && what="$what${what:+ and }engine/okcore-abi$abi.dll"
-echo "published $what. Commit engine/ with the binding change."
+echo "published engine/okengine-api$api.dll. Commit engine/ with the binding change."

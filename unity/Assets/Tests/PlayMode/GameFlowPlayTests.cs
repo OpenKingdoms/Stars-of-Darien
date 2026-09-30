@@ -39,7 +39,7 @@ namespace OpenKingdomsUnity.Tests
             yield return null;
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
             Assert.AreEqual("Menu", root.Screens.Visible);
-            Assert.IsNull(Object.FindAnyObjectByType<SimDriver>(), "the capsule demo stays out of the remaster");
+            Assert.IsNull(Object.FindAnyObjectByType<OpenKingdomsUnity.Engine.EngineNotice>(), "the engine notice stays out of the remaster");
 
             Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenSkirmish));
             yield return null;

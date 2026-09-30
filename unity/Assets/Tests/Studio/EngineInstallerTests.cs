@@ -47,7 +47,7 @@ namespace OpenKingdomsUnity.Tests
         {
             string root = Path.Combine(Path.GetTempPath(), "oku-installer-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             string plugins = Path.Combine(root, "Plugins"), release = Path.Combine(root, "engine"), keep = Path.Combine(root, "keep");
-            string engine = Path.Combine(plugins, "okengine.dll"), sdl = Path.Combine(plugins, "SDL2.dll"), core = Path.Combine(plugins, "okcore.dll");
+            string engine = Path.Combine(plugins, "okengine.dll"), sdl = Path.Combine(plugins, "SDL2.dll");
             Directory.CreateDirectory(release);
             Func<string, string, int?> none = (f, e) => null;
             void Publish(byte tag) => File.WriteAllBytes(Path.Combine(release, "okengine-api17.dll"), Lib("okx_api_version", 17, tag));
@@ -55,42 +55,71 @@ namespace OpenKingdomsUnity.Tests
             try
             {
                 Publish(1);
-                File.WriteAllBytes(Path.Combine(release, "okcore-abi2.dll"), Lib("ok_sim_abi_version", 2, 1));
                 File.WriteAllBytes(Path.Combine(release, "SDL2.dll"), new byte[] { 1, 2, 3 });
-                var r = Run(plugins, release, keep, none, 17, 2);
+                var r = Run(plugins, release, keep, none, 17);
                 Assert.AreEqual(1, Tag(engine), "a fresh clone gets the published engine");
-                Assert.AreEqual(1, Tag(core));
                 CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, File.ReadAllBytes(sdl));
                 Assert.AreEqual(Outcome.Ready, r.Engine.Outcome);
 
                 Publish(2);
                 File.WriteAllBytes(Path.Combine(release, "SDL2.dll"), new byte[] { 4, 5, 6 });
-                Run(plugins, release, keep, none, 17, 2);
+                Run(plugins, release, keep, none, 17);
                 Assert.AreEqual(2, Tag(engine), "a new build of the same API reaches the clone");
                 CollectionAssert.AreEqual(new byte[] { 4, 5, 6 }, File.ReadAllBytes(sdl), "and so does a new SDL2");
 
                 File.WriteAllBytes(engine, Lib("okx_api_version", 17, 9));
                 Publish(3);
-                Assert.AreEqual(Outcome.Ready, Run(plugins, release, keep, none, 17, 2).Engine.Outcome);
+                Assert.AreEqual(Outcome.Ready, Run(plugins, release, keep, none, 17).Engine.Outcome);
                 Assert.AreEqual(9, Tag(engine), "a local build of the right API stays");
 
                 var debug = FakeLibrary("okx_api_version", new byte[] { 0x55, 0x48, 0x89, 0xE5, 0xB8, 1 });
                 File.WriteAllBytes(engine, debug);
-                Assert.AreEqual(Outcome.Local, Run(plugins, release, keep, none, 17, 2).Engine.Outcome);
+                Assert.AreEqual(Outcome.Local, Run(plugins, release, keep, none, 17).Engine.Outcome);
                 CollectionAssert.AreEqual(debug, File.ReadAllBytes(engine), "so does one whose version cannot be read");
 
                 File.WriteAllBytes(engine, Lib("okx_api_version", 16, 5));
-                Run(plugins, release, keep, none, 17, 2);
+                Run(plugins, release, keep, none, 17);
                 Assert.AreEqual(3, Tag(engine), "an older API is replaced");
                 File.WriteAllBytes(engine, Lib("okx_api_version", 15, 6));
-                Run(plugins, release, keep, none, 17, 2);
+                Run(plugins, release, keep, none, 17);
                 var kept = Directory.GetFiles(keep, "replaced-*okengine.dll").Select(Tag).OrderBy(t => t).ToArray();
                 CollectionAssert.AreEqual(new byte[] { 5, 6 }, kept, "every local build it replaced is kept aside");
 
                 Publish(4);
-                r = Run(plugins, release, keep, (f, e) => f == "okengine.dll" ? 17 : (int?)null, 17, 2);
+                r = Run(plugins, release, keep, (f, e) => f == "okengine.dll" ? 17 : (int?)null, 17);
                 Assert.AreEqual(Outcome.Update, r.Engine.Outcome, "loaded, the new build waits for the next start");
                 Assert.AreEqual(4, Tag(engine), "in place for it");
+            }
+            finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        }
+
+        [Test]
+        public void ARetiredLibraryGoesOnlyWhenTheInstallerPutItThere()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "oku-installer-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            string plugins = Path.Combine(root, "Plugins"), release = Path.Combine(root, "engine"), keep = Path.Combine(root, "keep");
+            string core = Path.Combine(plugins, "okcore.dll");
+            Directory.CreateDirectory(plugins);
+            Directory.CreateDirectory(keep);
+            var ours = new byte[] { 1, 2, 3 };
+            string hash;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                hash = BitConverter.ToString(sha.ComputeHash(ours)).Replace("-", "").ToLowerInvariant();
+            void Record() => File.WriteAllText(Path.Combine(keep, "installed.json"), "{\"okcore.dll\": \"" + hash + "\"}");
+            try
+            {
+                CollectionAssert.Contains(Retired, "okcore.dll");
+                File.WriteAllBytes(core, new byte[] { 4, 5, 6 });
+                Record();
+                Run(plugins, release, keep, (f, e) => null, 17);
+                Assert.IsTrue(File.Exists(core), "a build made on this machine stays");
+
+                File.WriteAllBytes(core, ours);
+                File.WriteAllText(core + ".meta", "");
+                Record();
+                Run(plugins, release, keep, (f, e) => null, 17);
+                Assert.IsFalse(File.Exists(core), "the installer's own copy goes");
+                Assert.IsFalse(File.Exists(core + ".meta"));
             }
             finally { try { Directory.Delete(root, true); } catch (IOException) { } }
         }
@@ -123,9 +152,6 @@ namespace OpenKingdomsUnity.Tests
             string engine = Path.Combine(ReleaseDir, $"okengine-api{api}.dll");
             Assert.IsTrue(File.Exists(engine), "engine/ has the library for OkEngine.ApiVersion; run scripts/publish-engine.sh");
             Assert.AreEqual(api, ReadVersion(File.ReadAllBytes(engine), "okx_api_version"), "the published library reports the binding's API");
-            string core = Path.Combine(ReleaseDir, $"okcore-abi{OkNative.AbiVersion}.dll");
-            Assert.IsTrue(File.Exists(core));
-            Assert.AreEqual(OkNative.AbiVersion, ReadVersion(File.ReadAllBytes(core), "ok_sim_abi_version"));
             Assert.IsTrue(File.Exists(Path.Combine(ReleaseDir, "SDL2.dll")));
             Assert.IsTrue(File.Exists(Path.Combine(ReleaseDir, "VERSION")));
         }

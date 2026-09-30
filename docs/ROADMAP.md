@@ -4,8 +4,6 @@ The goal is a remaster of Total Annihilation: Kingdoms in Unity, running on the 
 
 The engine runs inside Unity as `okengine`, a native library built from OpenKingdoms with an embedding API (`include/ok_embed.h` on the OpenKingdoms branch `unity-embed`). Unity draws what the engine simulates, and every order goes back through the engine's own command queue.
 
-The small capsule demo from the first weeks stays in the project as a fallback scene. It runs on the separate core in `core/`.
-
 ## Milestones
 
 Status is one of: done, in progress, next, later.
