@@ -84,9 +84,11 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
             #pragma multi_compile_fog
             #pragma multi_compile_local _ _OKU_BUILD
-            #pragma shader_feature_local _EMISSION
-            #pragma shader_feature_local _OKU_PBR
-            #pragma shader_feature_local _CLEARCOAT
+            // multi_compile, since the materials are made at run time and a
+            // build keeps no shader_feature variant that no material asset uses.
+            #pragma multi_compile_local _ _EMISSION
+            #pragma multi_compile_local _ _OKU_PBR
+            #pragma multi_compile_local _ _CLEARCOAT
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
             struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };

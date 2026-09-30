@@ -77,7 +77,10 @@ namespace OpenKingdomsUnity.Tests
             page.Doors[2].Press();
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State, "multiplayer stays closed");
             Assert.AreEqual(LobbyScreens.MenuPage.MultiplayerLater, page.Page.Help.text);
-            Assert.IsTrue(menu.GetComponentsInChildren<Image>(true).Where(i => i.name == "Coming later plaque").All(i => !i.raycastTarget), "clicks reach the doors");
+            var plates = menu.GetComponentsInChildren<RawImage>(true).Where(i => i.name == "Coming later plate").ToList();
+            Assert.AreEqual(2, plates.Count);
+            Assert.IsTrue(plates.All(i => !i.raycastTarget), "clicks reach the doors");
+            Assert.AreEqual(plates[0].rectTransform.anchoredPosition.y, plates[1].rectTransform.anchoredPosition.y, 0.01f, "the plates hang level");
             page.Doors[0].Press();
             Assert.AreEqual(FlowState.Skirmish, root.Flow.State, "skirmish opens");
         }

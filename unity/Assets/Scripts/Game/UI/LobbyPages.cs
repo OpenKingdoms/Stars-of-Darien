@@ -55,7 +55,7 @@ namespace OpenKingdomsUnity.Game.UI
                     var d = DoorArt[i];
                     if (closed && i > 0) d.help += ", coming later";
                     Doors.Add(Door.Make(p, names[i], d, open[i]));
-                    if (closed && i > 0) Later(p, d.gui);
+                    if (closed && i > 0) Later(p, Doors[i], d.gui);
                 }
                 Doors[0].Sound = "skirmish.wav";
 
@@ -74,15 +74,24 @@ namespace OpenKingdomsUnity.Game.UI
 
             public const string MultiplayerLater = "Multiplayer comes in a later alpha.";
 
-            // "Coming later" across the foot of a closed door, in a dark well
-            // that lets clicks through to the door.
-            static void Later(GuiPage p, Rect gui)
+            // Where the closed doors' plates hang, in cp: the same height on
+            // both, low on the door leaves.
+            public const float LaterY = 352f, LaterW = 88f, LaterH = 20f;
+            public static readonly Color Shut = new Color(0.5f, 0.48f, 0.46f, 1f);
+
+            // A closed door: its art in shadow and still under the pointer,
+            // and a plate lettered like Load game and Map editor, which lets
+            // clicks through to the door.
+            static void Later(GuiPage p, Door door, Rect gui)
             {
-                float w = 96f, h = 14f, x = gui.x + (gui.width - w) / 2f, y = gui.y + gui.height - h - 14f;
-                var well = Well(p, p.Root, x, y, w, h);
-                well.name = "Coming later plaque";
-                well.raycastTarget = false;
-                var t = p.Label(well.transform, "Coming later", 0, 0, w, h, 9f, HudArt.GoldHi, TextAnchor.MiddleCenter, LobbyInk.Caps);
+                if (door.Frames.Count > 1) door.Frames.RemoveRange(1, door.Frames.Count - 1);
+                if (door.Face != null) door.Face.color = Shut;
+                foreach (var g in door.GetComponentsInChildren<Graphic>(true))
+                    if (g.gameObject != door.gameObject) g.color *= Shut;
+                float x = gui.x + (gui.width - LaterW) / 2f;
+                var plate = p.Picture(p.Root, "Coming later plate", p.Paint($"lozenge{LaterW}x{LaterH}", s => HudArt.Lozenge(LaterW, LaterH, s, false)), x, LaterY, LaterW, LaterH);
+                plate.raycastTarget = false;
+                var t = p.Label(plate.transform, "Coming later", 0, 0, LaterW, LaterH, 9f, HudArt.Minium, TextAnchor.MiddleCenter, LobbyInk.Caps);
                 t.name = "Coming later";
             }
 
