@@ -1,7 +1,8 @@
 # Builds the Windows alpha of Darien Reforged for playtesters and packs it as
 # a zip: the game folder, README.txt, LICENSE.txt and THIRD-PARTY-NOTICES.txt.
 # Unity runs in batch mode, through the shared heavy lock when this machine
-# has one. The content report and Unity's log go beside the zip.
+# has one. The content report and Unity's log go beside the zip, and so does
+# flat-features.txt, the scenery that still draws flat (coverage.py).
 #   powershell -File scripts/build-alpha.ps1 [-Out D:\OKBuild\alpha] [-Alpha "Alpha 1"] [-PackOnly]
 # Close the Unity editor on this checkout first, since a project opens in one
 # editor at a time. -PackOnly packs the last build of this commit again.
@@ -89,6 +90,16 @@ if (Test-Path $zip) { Remove-Item -Force $zip }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+
+# Which scenery still draws flat over every map in the install, for
+# hand-building later. It reports and never fails the build.
+$flat = Join-Path $Out "flat-features.txt"
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python) {
+    & $python.Source (Join-Path $root "tools\sprite-replace\coverage.py") --models $game --out $flat --title "Darien Reforged $version" |
+        ForEach-Object { "  $_" }
+} else { "No python on the path, so no list of flat scenery" }
+
 "Darien Reforged $version"
 "Zip: $zip ($mb MB)"
 "Content report: $report"

@@ -1,10 +1,11 @@
 // ContentCheck.cs - what a built player carries, and whether any of it could
 // hold the original game's pixels. It lists every texture, mesh, font and
 // sound Unity packed by the asset it came from, and every file under
-// StreamingAssets. A model there must be hand-built: its pictures made by
-// our own generators (okGenerated) or painted at load from the player's
-// files (okPaint), by the rules of tools/sprite-replace/okpaint.py. Carved
-// models keep the original's pixels and live in folders that never ship.
+// StreamingAssets. A model there holds geometry and recipes only: its
+// pictures made by our own generators (okGenerated) or painted at load from
+// the player's files (okPaint, a recipe of names and a few numbers), by the
+// rules of tools/sprite-replace/okpaint.py. Review copies of carved models
+// with the player's pixels live in folders that never ship.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -32,6 +33,11 @@ namespace OpenKingdomsUnity.Studio
             "Assets/Game/Resources/Fonts/", "Assets/Game/Resources/Shaders/", "Assets/Engine/Resources/Shaders/",
             "Assets/Game/Rendering/", "Assets/Game/Shaders/", "Assets/DefaultVolumeProfile.asset", "Assets/UniversalRenderPipelineGlobalSettings.asset",
         };
+
+        // An okPaint recipe's keys, and the most numbers one needs, as
+        // okpaint.py allows them. More could be a picture in disguise.
+        public static readonly string[] PaintKeys = { "kind", "name", "world", "gain", "bleed", "alpha", "size", "border", "tint", "mask", "delit" };
+        public const int PaintNumbers = 256;
 
         // The kinds of packed object the report lists.
         public static readonly string[] PackedKinds = { "Texture2D", "Texture3D", "Texture2DArray", "Cubemap", "CubemapArray", "Sprite", "Mesh", "Font", "AudioClip", "VideoClip" };
@@ -113,6 +119,16 @@ namespace OpenKingdomsUnity.Studio
                 {
                     painted = true;
                     if (used.Count > 0) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} still holds a picture");
+                    var paint = MiniJson.Obj(extras, "okPaint");
+                    if (paint == null) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} has no recipe");
+                    else
+                    {
+                        foreach (var k in paint.Keys)
+                            if (Array.IndexOf(PaintKeys, k) < 0) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} has okPaint key {k}");
+                        int numbers = Numbers(paint), longest = LongestText(paint);
+                        if (numbers > PaintNumbers) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} holds {numbers} numbers, more than a recipe needs");
+                        if (longest > 64) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} holds text {longest} long, more than a name");
+                    }
                 }
                 else if (extras.TryGetValue("okGenerated", out var g) && (g is bool b && b || g is double d && d != 0))
                     foreach (var s in sources) allowed.Add(s);
@@ -126,6 +142,20 @@ namespace OpenKingdomsUnity.Studio
             if (problems.Count > before) return Kind.Problem;
             if (images.Count > 0) return Kind.Generated;
             return painted ? Kind.PaintedAtLoad : Kind.Plain;
+        }
+
+        static int Numbers(object o)
+        {
+            if (o is Dictionary<string, object> d) return d.Values.Sum(Numbers);
+            if (o is List<object> l) return l.Sum(Numbers);
+            return o is double ? 1 : 0;
+        }
+
+        static int LongestText(object o)
+        {
+            if (o is Dictionary<string, object> d) return d.Values.Select(LongestText).DefaultIfEmpty(0).Max();
+            if (o is List<object> l) return l.Select(LongestText).DefaultIfEmpty(0).Max();
+            return o is string s ? s.Length : 0;
         }
 
         static IEnumerable<int> TexturesOf(Dictionary<string, object> m)
@@ -192,7 +222,7 @@ namespace OpenKingdomsUnity.Studio
             {
                 e.Kind = Kind.Problem;
                 e.Note = "not a model or data file this check knows";
-                problems.Add($"StreamingAssets/{rel} is not a hand-built model");
+                problems.Add($"StreamingAssets/{rel} is not a model or data file this check knows");
             }
             return e;
         }
@@ -234,9 +264,9 @@ namespace OpenKingdomsUnity.Studio
         {
             switch (k)
             {
-                case Kind.Generated: return "hand-built, generated textures";
-                case Kind.PaintedAtLoad: return "hand-built, painted at load";
-                case Kind.Plain: return "hand-built, colours only";
+                case Kind.Generated: return "generated textures";
+                case Kind.PaintedAtLoad: return "painted at load";
+                case Kind.Plain: return "colours only";
                 case Kind.Data: return "data";
                 default: return "PROBLEM";
             }

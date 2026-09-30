@@ -89,6 +89,23 @@ namespace OpenKingdomsUnity.Studio.Tests
         }
 
         [Test]
+        public void AMaskOrDelitRecipeMayShipButTexelsInARecipeFail()
+        {
+            var why = new List<string>();
+            const string masked = "{\"materials\":[{\"name\":\"skirt\",\"extras\":{\"okPaint\":{\"kind\":\"feature\",\"name\":\"ZonRuin01\",\"alpha\":\"mask\"," +
+                "\"mask\":{\"cover\":\"others\",\"hotspot\":[20,30]}}}},{\"name\":\"stone\",\"extras\":{\"okPaint\":{\"kind\":\"feature\",\"name\":\"AraHenge01\"," +
+                "\"delit\":{\"hotspot\":[34,43],\"light\":[-0.5,-0.1,0.8],\"ambient\":0.33,\"direct\":0.64,\"stones\":[{\"grey\":[0.15,0.15,0.13],\"dark\":0.15}]}}}}]}";
+            Assert.AreEqual(ContentCheck.Kind.PaintedAtLoad, ContentCheck.Glb(Glb(masked), why));
+            CollectionAssert.IsEmpty(why);
+            string rows = "{\"materials\":[{\"name\":\"skirt\",\"extras\":{\"okPaint\":{\"kind\":\"feature\",\"mask\":{\"cover\":\"others\",\"hotspot\":[" +
+                string.Join(",", Enumerable.Range(0, 300)) + "]}}}},{\"name\":\"wall\",\"extras\":{\"okPaint\":{\"kind\":\"feature\",\"texels\":\"" + new string('A', 200) + "\"}}}]}";
+            Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(Glb(rows), why));
+            Assert.IsTrue(why.Any(w => w.Contains("300 numbers")), string.Join("; ", why));
+            Assert.IsTrue(why.Any(w => w.Contains("okPaint key texels")), string.Join("; ", why));
+            Assert.IsTrue(why.Any(w => w.Contains("text 200 long")), string.Join("; ", why));
+        }
+
+        [Test]
         public void AReviewCopyFails()
         {
             var why = new List<string>();
@@ -151,7 +168,7 @@ namespace OpenKingdomsUnity.Studio.Tests
             var r = ContentCheck.Scan(temp, packed);
             Assert.IsTrue(r.Problems.Any(p => p.Contains("data.hpi") && p.Contains("original game's own files")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("units.gaf")));
-            Assert.IsTrue(r.Problems.Any(p => p.Contains("Hut.png") && p.Contains("not a hand-built model")));
+            Assert.IsTrue(r.Problems.Any(p => p.Contains("Hut.png") && p.Contains("not a model or data file")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Assets/" + ContentCheck.UnityServicesFile)), "only at the top of StreamingAssets");
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Stolen.png")));
             Assert.IsTrue(r.Problems.Any(p => p.Contains("Hut.fbx")));

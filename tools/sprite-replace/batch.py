@@ -15,8 +15,9 @@ A model ships as geometry: its painted materials name their sprite in
 okPaint and the game paints them from the player's own files at load
 (okpaint.py). OK_KEEP_PIXELS=1 keeps the pixels for review on this machine,
 and such models go only to unity/Assets/Overrides/Generated, which git
-ignores. A ruin's rubble skirt is cut by a mask the game cannot repeat, so
-a ruin exports only with its pixels.
+ignores. A ruin's rubble skirt keeps the sprite's clear texels and loses
+those its solid covers from the classic camera, which the game works out
+at load from the model's own faces (okPaint mask "cover").
 """
 import json
 import math
@@ -326,7 +327,7 @@ def main():
                 sib_spr = carve.Sprite(os.path.join(catalog, "sprites", r["sibling"]["name"] + ".png"))
                 ob, skirt, keep = arch.build_ruin(r, spr, sib_spr)
                 # the rubble the solid does not stand on keeps its alpha
-                skirt_spr = spr.copy(keep)
+                skirt_spr = spr.copy(keep, {"cover": "others", "hotspot": list(r["sprite"]["hotspot"])})
             elif kind:
                 ob = arch.build(r, kind, spr)
             elif fr:

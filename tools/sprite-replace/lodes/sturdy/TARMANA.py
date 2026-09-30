@@ -481,7 +481,7 @@ def underglow(radius=1.25, z=0.012, peak=0.7):
     import bmesh
     import bpy
     n = 48
-    img = bpy.data.images.new("tar_underglow", n, n, alpha=True)
+    img = hk.generated(bpy.data.images.new("tar_underglow", n, n, alpha=True))
     img["okGenerated"] = True  # made here, so it ships (okpaint.py)
     px = []
     for j in range(n):

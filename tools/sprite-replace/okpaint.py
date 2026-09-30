@@ -8,7 +8,30 @@ paints it at load from the player's own files (GlbLoader.cs):
 
 plus "border": true when a cut-out clears its outer ring, and "tint" when
 the picture is multiplied. "okFallback" beside it is the colour drawn
-without game files. A texture made here from noise and a few numbers
+without game files.
+
+Two more keys make the picture from the player's pixels and the model's
+own faces, never from anything shipped:
+
+    "mask": {"cover": "others", "hotspot": [hx, hy]}
+
+keeps a texel where the picture is opaque (its transparent colour clear)
+and no face of the model in another material covers it, as the classic
+camera sees it: a point (x, y, z) of the model in Blender's frame, one
+unit a cell, lands on the picture at column hx + 16 x and row
+hy - 16 y - 8 z. A ruin's rubble skirt drops what its walls stand on.
+
+    "delit": {"hotspot": [hx, hy], "light": [x, y, z], "ambient": a,
+              "direct": d, "stones": [{"grey": [r, g, b], "dark": k}, ...]}
+
+is henge.py's standing stone paint: under each texel the face the classic
+camera sees first gives its stone (TEXCOORD_1 u, rounded down) and its
+light, a + d max(0, n.light), which is divided out, and each stone's
+broad shading is flattened toward its grey, the carvings kept down to
+dark of it.
+
+An okPaint holds only such numbers, never a picture, so the check fails
+one with keys it does not know or more than MAX_NUMBERS numbers. A texture made here from noise and a few numbers
 (bark, leaves, tiles) is not the original's art and ships as it is, once
 its maker marks it with generated().
 
@@ -35,6 +58,11 @@ PAINT = "okPaint"
 FALLBACK = "okFallback"
 PLAYERS_FILES = "okFromPlayersFiles"
 TEXTURE_SLOTS = ("baseColorTexture", "metallicRoughnessTexture")
+PAINT_KEYS = ("kind", "name", "world", "gain", "bleed", "alpha", "size", "border", "tint", "mask", "delit")
+MASK_KEYS = ("cover", "hotspot")
+DELIT_KEYS = ("hotspot", "light", "ambient", "direct", "stones")
+STONE_KEYS = ("grey", "dark")
+MAX_NUMBERS = 256
 MATERIAL_TEXTURES = ("normalTexture", "occlusionTexture", "emissiveTexture")
 
 
@@ -155,10 +183,59 @@ def _textures_of(m):
     return [r.get("index") for r in refs if isinstance(r, dict) and "index" in r]
 
 
+def _numbers(v, n=None):
+    ok = isinstance(v, list) and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v)
+    return ok and (n is None or len(v) == n)
+
+
+def _count(v):
+    if isinstance(v, dict):
+        return sum(_count(x) for x in v.values())
+    if isinstance(v, list):
+        return sum(_count(x) for x in v)
+    return 1 if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
+
+
+def paint_problems(p):
+    """Why an okPaint is not a recipe this game reads, as a list."""
+    if not isinstance(p, dict):
+        return ["okPaint is not an object"]
+    out = []
+    odd = sorted(set(p) - set(PAINT_KEYS))
+    if odd:
+        out.append("okPaint has keys %s" % ", ".join(odd))
+    if p.get("kind") not in ("feature", "texture"):
+        out.append("okPaint kind %r" % p.get("kind"))
+    for k in ("kind", "name", "world", "alpha"):
+        if k in p and (not isinstance(p[k], str) or len(p[k]) > 64):
+            out.append("okPaint %s is not a short name" % k)
+    mask = p.get("mask")
+    if mask is not None:
+        if (not isinstance(mask, dict) or set(mask) - set(MASK_KEYS) or mask.get("cover") != "others"
+                or not _numbers(mask.get("hotspot"), 2)):
+            out.append("okPaint mask is not a cover by the model's own faces")
+        if p.get("alpha") != "mask":
+            out.append("okPaint mask without alpha mask")
+    delit = p.get("delit")
+    if delit is not None:
+        stones = delit.get("stones") if isinstance(delit, dict) else None
+        if (not isinstance(delit, dict) or set(delit) - set(DELIT_KEYS) or not _numbers(delit.get("hotspot"), 2)
+                or not _numbers(delit.get("light"), 3) or not _numbers([delit.get("ambient"), delit.get("direct")])
+                or not isinstance(stones, list) or not stones
+                or any(not isinstance(st, dict) or set(st) - set(STONE_KEYS) or not _numbers(st.get("grey"), 3)
+                       or not _numbers([st.get("dark", 0.15)]) for st in stones)):
+            out.append("okPaint delit is not a list of stones and a light")
+    n = _count(p)
+    if n > MAX_NUMBERS:
+        out.append("okPaint holds %d numbers, more than a recipe needs (%d)" % (n, MAX_NUMBERS))
+    return out
+
+
 def check(path):
     """Why the file may not ship, as a list, empty when it may: every
     picture in it must belong to materials marked generated, a painted
-    material holds no picture, and it carries no okFromPlayersFiles."""
+    material holds no picture and only a recipe, and it carries no
+    okFromPlayersFiles."""
     j = glb_json(path)
     name = os.path.basename(path)
     problems = []
@@ -168,6 +245,8 @@ def check(path):
         ex = m.get("extras", {})
         idx = [t for t in _textures_of(m) if t is not None and t < len(textures)]
         srcs = {textures[t].get("source") for t in idx}
+        if PAINT in ex:
+            problems += ["%s: material %s: %s" % (name, m.get("name"), w) for w in paint_problems(ex[PAINT])]
         if PAINT in ex and idx:
             problems.append("%s: painted material %s still holds a picture" % (name, m.get("name")))
         elif ex.get(GENERATED):

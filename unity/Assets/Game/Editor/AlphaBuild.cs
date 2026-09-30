@@ -5,7 +5,7 @@
 //
 // A 64-bit Mono player in Release, stamped "Alpha 1 (<commit>)" and
 // skirmish only, with the published engine and SDL beside its plugins, the
-// hand-built models under StreamingAssets, and a content report beside the
+// scenery and unit models under StreamingAssets, and a content report beside the
 // folder. It fails when anything in it could hold the original's pixels.
 // scripts/build-alpha.ps1 runs it and packs the zip.
 using System;
@@ -125,7 +125,7 @@ namespace OpenKingdomsUnity
             else Debug.LogWarning(Tag + "no redistributable vcruntime140.dll found, so the player needs the Visual C++ runtime installed");
             Say($"engine: okengine-api{api}.dll as okengine.dll, SDL2.dll, in {plugins}");
 
-            // The hand-built models, where OverrideLoader looks in a player.
+            // The models, hand-built and carved, where OverrideLoader looks in a player.
             int models = 0;
             foreach (var folder in new[] { OverrideIndex.Folder(OverrideKind.Feature), OverrideIndex.Folder(OverrideKind.Unit) })
             {
@@ -140,7 +140,7 @@ namespace OpenKingdomsUnity
                     models++;
                 }
             }
-            Say($"copied {models} hand-built model files to StreamingAssets");
+            Say($"copied {models} model files to StreamingAssets");
 
             var packed = report.packedAssets.SelectMany(p => p.contents).Select(c => new ContentCheck.Packed
             {

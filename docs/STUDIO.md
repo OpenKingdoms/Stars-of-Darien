@@ -15,15 +15,15 @@ A model dropped into one of these folders replaces the original at load, with no
 | Folder | What goes there | Committed |
 | --- | --- | --- |
 | `unity/Assets/Overrides/Units/` | Hand-made unit models, named after the unit | Yes |
-| `unity/Assets/Overrides/Features/` | Hand-made feature models, named after the feature | Yes |
-| `unity/Assets/Overrides/Generated/` | Feature models made on your own machine from your own sprites by `tools/sprite-replace/batch.py` | Never, it is in `.gitignore` |
+| `unity/Assets/Overrides/Features/` | Feature models, named after the feature: hand-made ones, and carved ones from `batch.py` and `henge.py` that ship as geometry and are painted at load from the player's own game files | Yes |
+| `unity/Assets/Overrides/Generated/` | Review copies of carved models that still hold your own sprites' pixels (`OK_KEEP_PIXELS=1`) | Never, it is in `.gitignore` |
 | `unity/Assets/Overrides/Drop/` | Models Studio Mode is trying out, not read by the game | Never, it is in `.gitignore` |
 
 A unit model with a `.json` of the same name beside it in `Units` (`ARALODE.glb` and `ARALODE.json`) is a card model. It replaces only the piece named by `replacesPiece` in the JSON, with `replacesTexture` its texture, and the unit keeps its other pieces. Studio Mode writes both files for a unit card.
 
 The file name is what counts, in any case: `araking.glb` replaces the unit or model named AraKing, and `AraTree01.glb` replaces the feature AraTree01. A unit is looked up by its unit name first and then by its model name. A feature is looked up by its name, then its sprite sequence name, then its model name.
 
-When there is more than one candidate, a hand-made model in `Features` beats a generated one, and within a folder a `.prefab` beats a `.glb`, which beats a `.gltf`, which beats an `.fbx`. A sprite feature with no model at all is drawn as the original sprite on an upright card.
+When there is more than one candidate, a model in `Features` beats one in `Generated`. A carved model goes into `Features` only for a feature with no hand-made model, so the hand-made one always wins. Within a folder a `.prefab` beats a `.glb`, which beats a `.gltf`, which beats an `.fbx`. A sprite feature with no model at all is drawn as the original sprite on an upright card.
 
 ### Units, scale and facing
 

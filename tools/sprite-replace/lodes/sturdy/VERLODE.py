@@ -6,6 +6,7 @@ classic view still reading as the same object.
     blender -b --factory-startup --python tools/sprite-replace/lodes/sturdy/VERLODE.py
 """
 import math
+import os
 import sys
 
 import bmesh
@@ -13,7 +14,7 @@ import bpy
 import numpy as np
 from mathutils import Vector
 
-sys.path.insert(0, r"D:\Projects\openkingdoms-unity\tools\sprite-replace")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import handkit as hk  # noqa: E402
 
 NAME = "VERLODE"
@@ -242,7 +243,7 @@ def ellipsoid(c, r, mat=None, name="ball", u=12, v=8):
 def image(name, rgb):
     """A packed image from an (h, w, 3) array of sRGB values in 0-1."""
     h, w, _ = rgb.shape
-    img = bpy.data.images.new(name, w, h, alpha=False)
+    img = hk.generated(bpy.data.images.new(name, w, h, alpha=False))
     img["okGenerated"] = True  # made here, so it ships (okpaint.py)
     px = np.ones((h, w, 4), np.float32)
     px[..., :3] = np.clip(rgb, 0, 1)

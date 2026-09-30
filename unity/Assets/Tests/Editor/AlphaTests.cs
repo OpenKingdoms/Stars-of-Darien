@@ -52,6 +52,21 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsNull(SmokeRun.MapArg(new[] { "-okSmokeMap" }));
         }
 
+        [Test]
+        public void SmokeViewsReadLabelAnchorNearAndRadius()
+        {
+            var v = SmokeRun.ViewsArg(new[] { "-okSmokeViews", "henge:*mana*:*henge*:8;bad;ruin:arawell01a,aratow04a:*" });
+            Assert.AreEqual(2, v.Count, "a view without an anchor and a near is skipped");
+            Assert.AreEqual("henge", v[0].Label);
+            Assert.AreEqual(8f, v[0].Radius);
+            Assert.AreEqual(8f, v[1].Radius, "the radius defaults to 8");
+            Assert.IsTrue(SceneryViews.Matches("AraMana02", v[0].Anchor));
+            Assert.IsFalse(SceneryViews.Matches("AraHenge07", v[0].Anchor));
+            Assert.IsTrue(SceneryViews.Matches("AraTow04a", v[1].Anchor), "choices split by commas, any case");
+            Assert.IsFalse(SceneryViews.Matches("AraTow04", v[1].Anchor));
+            CollectionAssert.IsEmpty(SmokeRun.ViewsArg(new[] { "game.exe" }));
+        }
+
         static MapInfo Map(string id, float size, int players) =>
             new MapInfo { Id = id, Name = id, MaxPlayers = players, Size = new Vector2(size, size), Starts = new Vector2[players] };
 

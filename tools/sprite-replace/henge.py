@@ -15,6 +15,13 @@ painted light divided out and its broad shading flattened, so carvings,
 cracks and weathering stay dark but no face is black. The faces it never
 saw take a mottled granite tile in the stone's colour.
 
+The model ships as geometry (okpaint.py): the sprite's material names the
+sprite in okPaint with a "delit" recipe, the stones' greys and the light,
+and the game does the same sums at load from the player's own sprite and
+the model's faces, each face's stone in TEXCOORD_1. The granite tiles are
+made from noise and ship. OK_KEEP_PIXELS=1 keeps the delit sprite in the
+file for review on this machine.
+
 Writes <out>/models/<Name>.glb, and <out>/renders/<Name>_classic.png and
 _turned.png for `python handcompare.py <out>/renders <Name> <sprite> 3`.
 The catalog (catalog.json and sprites/) is the nearest folder above the
@@ -46,6 +53,7 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import carve  # noqa: E402
 import handkit as hk  # noqa: E402
+import okpaint  # noqa: E402
 
 CELL, TILT = carve.CELL, carve.TILT
 VIEW = Vector((0.0, -1.0, 2.0)).normalized()  # from the ground toward the classic camera
@@ -684,9 +692,10 @@ def granite_tile(grey, amp, seed):
 
 
 def paint(ob, face_stone, stones, spr, hx, hy, name, fit=None):
-    """One texture for the whole group: the delit sprite for the faces the
-    classic camera saw, and beside it a granite tile for each colour, which
-    the other faces take by a flat projection along their main axis."""
+    """Two materials: the delit sprite for the faces the classic camera
+    saw, painted at load, and granite tiles, one for each colour, which the
+    other faces take by a flat projection along their main axis. A second
+    UV map, "stone", carries each face's stone for the game's delit."""
     me = ob.data
     bm = bmesh.new()
     bm.from_mesh(me)
@@ -708,28 +717,30 @@ def paint(ob, face_stone, stones, spr, hx, hy, name, fit=None):
     sprite_rgb, amp = delit(spr, hits, face_stone, stones, greys, alpha, fit)
     amp = min(0.22, max(0.08, amp))
 
-    # the atlas: the sprite at the top left, the tiles down the right
+    # the delit sprite, and the granite tiles down a picture of their own
     keys = []
     for s in stones:
         key = (s["colour"].lower(), round(s.get("gain", 1.0), 3))
         if key not in keys:
             keys.append(key)
     T2 = 2 * TILE
-    W = spr.w + 4 + T2
-    H = max(spr.h, T2 * len(keys))
+    W, H = T2, T2 * len(keys)
     atlas = np.zeros((H, W, 3), np.float32)
-    atlas[...] = greys[0]
-    atlas[:spr.h, :spr.w] = sprite_rgb
     tile_at = {}
     for i, key in enumerate(keys):
         k = next(j for j, s in enumerate(stones) if (s["colour"].lower(), round(s.get("gain", 1.0), 3)) == key)
-        atlas[i * T2:(i + 1) * T2, spr.w + 4:] = granite_tile(greys[k], amp, zlib.crc32(("%s:%d" % (name, i)).encode()))
-        tile_at[key] = (spr.w + 4, i * T2)
-    img = bpy.data.images.new(name + "_atlas", W, H, alpha=True)
+        atlas[i * T2:(i + 1) * T2, :] = granite_tile(greys[k], amp, zlib.crc32(("%s:%d" % (name, i)).encode()))
+        tile_at[key] = (0, i * T2)
+    img = okpaint.generated(bpy.data.images.new(name + "_granite", W, H, alpha=True))
     pix = np.ones((H, W, 4), np.float32)
     pix[..., :3] = to_srgb(atlas)
     img.pixels[:] = pix[::-1].ravel()
     img.pack()
+    sprite_img = bpy.data.images.new(name + "_delit", spr.w, spr.h, alpha=True)
+    pix = np.ones((spr.h, spr.w, 4), np.float32)
+    pix[..., :3] = to_srgb(sprite_rgb)
+    sprite_img.pixels[:] = pix[::-1].ravel()
+    sprite_img.pack()
 
     def seen(f):
         n = f.normal
@@ -747,18 +758,35 @@ def paint(ob, face_stone, stones, spr, hx, hy, name, fit=None):
     looks = [seen(f) for f in bm.faces]
     bm.free()
 
-    mat = bpy.data.materials.new(name)
-    mat.use_nodes = True
-    nt = mat.node_tree
-    bsdf = nt.nodes["Principled BSDF"]
-    bsdf.inputs["Roughness"].default_value = 1.0
-    node = nt.nodes.new("ShaderNodeTexImage")
-    node.image = img
-    node.interpolation = "Linear"
-    node.extension = "EXTEND"
-    nt.links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
-    me.materials.append(mat)
+    def material(label, image):
+        mat = bpy.data.materials.new(label)
+        mat.use_nodes = True
+        nt = mat.node_tree
+        bsdf = nt.nodes["Principled BSDF"]
+        bsdf.inputs["Roughness"].default_value = 1.0
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = image
+        node.interpolation = "Linear"
+        node.extension = "EXTEND"
+        nt.links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
+        me.materials.append(mat)
+        return mat
+    seen_mat = material(name, sprite_img)
+    material(name + "_granite", img)
+    if spr.paint:
+        seen_mat[okpaint.PAINT] = dict(spr.paint, delit={
+            "hotspot": [float(hx), float(hy)], "light": [round(float(c), 6) for c in LIGHT],
+            "ambient": AMBIENT, "direct": DIRECT,
+            "stones": [{"grey": [round(float(c), 6) for c in greys[k]], "dark": float(s.get("dark", 0.15))}
+                       for k, s in enumerate(stones)]})
+        seen_mat[okpaint.FALLBACK] = [float(c) for c in greys[0]]
     uv = me.uv_layers.new(name="UVMap")
+    uv.active_render = True
+    stone_uv = me.uv_layers.new(name="stone")
+    for poly in me.polygons:
+        poly.material_index = 0 if looks[poly.index] else 1
+        for li in poly.loop_indices:
+            stone_uv.data[li].uv = (face_stone[poly.index] + 0.5, 0.0)
     for poly, look in zip(me.polygons, looks):
         cos = [me.vertices[me.loops[li].vertex_index].co for li in poly.loop_indices]
         if look:
@@ -766,7 +794,7 @@ def paint(ob, face_stone, stones, spr, hx, hy, name, fit=None):
                 sx, sy = screen(hx, hy, co)
                 sx = min(spr.w - 0.5, max(0.5, sx))
                 sy = min(spr.h - 0.5, max(0.5, sy))
-                uv.data[li].uv = (sx / W, 1.0 - sy / H)
+                uv.data[li].uv = (sx / spr.w, 1.0 - sy / spr.h)
             continue
         s = stones[face_stone[poly.index]]
         x0, y0 = tile_at[(s["colour"].lower(), round(s.get("gain", 1.0), 3))]
@@ -851,17 +879,10 @@ def build(name, henge, row, catalog, out, fit=None):
     bpy.context.collection.objects.link(ob)
     spr.opaque()
     seen, faces, hits = paint(ob, face_stone, stones, spr, hx, hy, name, fit)
-    # painted from the player's own sprite, so the studio keeps it out of git
-    ob["okFromPlayersFiles"] = True
     iou, miss, extra = fit_report(spr, hits, out, name)
     hk.smooth(ob, 40)
     glb = os.path.join(out, "models", name + ".glb")
-    os.makedirs(os.path.dirname(glb), exist_ok=True)
-    bpy.ops.object.select_all(action="DESELECT")
-    ob.select_set(True)
-    bpy.context.view_layer.objects.active = ob
-    bpy.ops.export_scene.gltf(filepath=glb, export_format="GLB", use_selection=True, export_yup=True,
-                              export_extras=True)
+    okpaint.export(ob, glb)
     hk.renders(ob, os.path.join(out, "renders"), name, sprite_png, (hx, hy), scale=3)
     lo = [min(v.co[i] for v in me.vertices) for i in range(3)]
     hi = [max(v.co[i] for v in me.vertices) for i in range(3)]

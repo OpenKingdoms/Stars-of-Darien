@@ -40,7 +40,7 @@ namespace OpenKingdomsUnity.Game.World
             var json = MiniJson.Parse(Encoding.UTF8.GetString(glb, 20, jsonLen));
             int binStart = 20 + jsonLen + 8, binLen = 0;
             if (20 + jsonLen + 8 <= glb.Length) binLen = BitConverter.ToInt32(glb, 20 + jsonLen);
-            var ctx = new Ctx { Json = json, Bin = glb, BinStart = binStart, BinLen = binLen };
+            var ctx = new Ctx { Json = json, Bin = glb, BinStart = binStart, BinLen = binLen, Name = $"{name}:{jsonLen}" };
 
             var root = new GameObject(name) { hideFlags = HideFlags.HideAndDontSave };
             root.SetActive(false);
@@ -70,6 +70,8 @@ namespace OpenKingdomsUnity.Game.World
             public int BinStart, BinLen;
             public readonly Dictionary<int, Material> Materials = new Dictionary<int, Material>();
             public readonly Dictionary<int, Texture2D> Textures = new Dictionary<int, Texture2D>();
+            public string Name;
+            public Faces Faces;
         }
 
         static void Node(Ctx ctx, int index, Transform parent)
@@ -224,7 +226,7 @@ namespace OpenKingdomsUnity.Game.World
             var extras = MiniJson.Obj(json, "extras");
             var paint = MiniJson.Obj(extras, "okPaint");
             var bct = MiniJson.Obj(pbr, "baseColorTexture");
-            if (paint != null) tex = PaintedTexture(paint);
+            if (paint != null) tex = PaintedTexture(paint, ctx, index);
             else if (bct != null) tex = TextureFor(ctx, MiniJson.Int(bct, "index"));
             m = Looks.Model(tex);
             m.name = MiniJson.Text(json, "name", "glb material");
@@ -324,6 +326,11 @@ namespace OpenKingdomsUnity.Game.World
         //   alpha, border       "opaque" or "mask", and the outer ring cleared
         //   size                [w, h] the UVs were made against
         //   tint                a multiplier, 1 when left out
+        //   mask                {"cover": "others", "hotspot": [hx, hy]}: with
+        //                       alpha "mask", texels under the model's faces in
+        //                       other materials, seen by the classic camera, clear
+        //   delit               henge.py's stones: the light under each texel
+        //                       divided out, each stone's shading flattened
         // okFallback beside it is the colour drawn without the picture, and
         // then the base colour factor is that colour rather than a tint.
 
@@ -354,14 +361,18 @@ namespace OpenKingdomsUnity.Game.World
         // The pictures asked for so far, one per name and treatment.
         public static int PaintedCount => painted.Count;
 
-        static Texture2D PaintedTexture(Dictionary<string, object> paint)
+        static Texture2D PaintedTexture(Dictionary<string, object> paint, Ctx ctx = null, int material = -1)
         {
             string kind = MiniJson.Text(paint, "kind", "feature") ?? "", name = MiniJson.Text(paint, "name", "") ?? "";
             string world = MiniJson.Text(paint, "world", "") ?? "";
             float gain = (float)MiniJson.Num(paint, "gain", 1);
             bool bleed = Flag(paint, "bleed"), border = Flag(paint, "border");
             bool opaque = MiniJson.Text(paint, "alpha", "opaque") != "mask";
+            var mask = MiniJson.Obj(paint, "mask");
+            var delit = MiniJson.Obj(paint, "delit");
             string key = $"{kind}|{world}|{name}|{gain:R}|{bleed}|{opaque}|{border}".ToLowerInvariant();
+            // A mask or delit depends on the model's own faces as well.
+            if ((mask != null || delit != null) && ctx != null) key += $"|{ctx.Name}|{material}";
             if (painted.TryGetValue(key, out var t)) return t;
             var img = Pictures?.Invoke(kind, name, world);
             var size = MiniJson.Arr(paint, "size");
@@ -373,6 +384,12 @@ namespace OpenKingdomsUnity.Game.World
             if (img != null)
             {
                 var px = Paint(img, gain, bleed, opaque, border);
+                if (mask != null && ctx != null && MiniJson.Text(mask, "cover", "") == "others")
+                {
+                    var hot = MiniJson.Arr(mask, "hotspot");
+                    Cover(px, FacesOf(ctx), material, hot != null && hot.Count == 2 ? new Vector2(F(hot[0]), F(hot[1])) : Vector2.zero, img.Width, img.Height);
+                }
+                if (delit != null && ctx != null) px = Delit(px, img, FacesOf(ctx), delit);
                 t = new Texture2D(img.Width, img.Height, TextureFormat.RGBA32, true) { hideFlags = HideFlags.DontSave, name = name };
                 // Rows top-down in the picture, bottom-up in the texture.
                 var flipped = new byte[px.Length];
@@ -484,6 +501,235 @@ namespace OpenKingdomsUnity.Game.World
                 for (int i = 0; i < n; i++) if (grow[i]) known[i] = true;
                 have += grew;
             }
+        }
+
+        // ---- The model seen by the classic camera ----
+        //
+        // A mask or delit reads the model's own triangles in Blender's frame
+        // (x east, y north, z up, one unit a cell): glTF's (x, y, z) is
+        // Blender's (x, -z, y). A point lands on the picture at column
+        // hx + 16 x and row hy - 16 y - 8 z, and the camera sees first the
+        // point with the greatest 2 z - y.
+
+        public sealed class Faces
+        {
+            public readonly List<Vector3> A = new List<Vector3>(), B = new List<Vector3>(), C = new List<Vector3>();
+            public readonly List<int> Material = new List<int>(), Stone = new List<int>();
+            public int Count => A.Count;
+
+            public void Add(Vector3 a, Vector3 b, Vector3 c, int material, int stone)
+            {
+                A.Add(a); B.Add(b); C.Add(c);
+                Material.Add(material);
+                Stone.Add(stone);
+            }
+        }
+
+        // Every triangle of every mesh, with its material and its stone
+        // (TEXCOORD_1 u rounded down, 0 without it).
+        static Faces FacesOf(Ctx ctx)
+        {
+            if (ctx.Faces != null) return ctx.Faces;
+            var f = new Faces();
+            foreach (var meshJson in MiniJson.Arr(ctx.Json, "meshes") ?? new List<object>())
+                foreach (var p in MiniJson.Arr(meshJson, "primitives") ?? new List<object>())
+                {
+                    if (MiniJson.Int(p, "mode", 4) != 4) continue;
+                    var attrs = MiniJson.Obj(p, "attributes");
+                    int pos = MiniJson.Int(attrs, "POSITION");
+                    if (pos < 0) continue;
+                    var P = ReadFloats(ctx, pos, 3);
+                    int count = P.Length / 3;
+                    int st = MiniJson.Int(attrs, "TEXCOORD_1");
+                    var S = st >= 0 ? ReadFloats(ctx, st, 2) : null;
+                    int ind = MiniJson.Int(p, "indices");
+                    int[] idx;
+                    if (ind >= 0) idx = ReadInts(ctx, ind);
+                    else { idx = new int[count]; for (int i = 0; i < count; i++) idx[i] = i; }
+                    Vector3 V(int i) => new Vector3(P[3 * i], -P[3 * i + 2], P[3 * i + 1]);
+                    int mat = MiniJson.Int(p, "material");
+                    for (int i = 0; i + 2 < idx.Length; i += 3)
+                        f.Add(V(idx[i]), V(idx[i + 1]), V(idx[i + 2]), mat, S != null ? Mathf.FloorToInt(S[2 * idx[i]]) : 0);
+                }
+            ctx.Faces = f;
+            return f;
+        }
+
+        // For each texel centre, rows top-down, the face the classic camera
+        // sees there first, or -1. use picks the faces that count.
+        public static int[] ClassicHits(Faces f, Vector2 hot, int w, int h, Func<int, bool> use = null)
+        {
+            var hit = new int[w * h];
+            var depth = new float[w * h];
+            for (int i = 0; i < hit.Length; i++) { hit[i] = -1; depth[i] = float.NegativeInfinity; }
+            Vector2 S(Vector3 v) => new Vector2(hot.x + 16f * v.x, hot.y - 16f * v.y - 8f * v.z);
+            float E(Vector2 a, Vector2 b, Vector2 p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+            for (int t = 0; t < f.Count; t++)
+            {
+                if (use != null && !use(t)) continue;
+                Vector2 a = S(f.A[t]), b = S(f.B[t]), c = S(f.C[t]);
+                float area = E(a, b, c);
+                if (Mathf.Abs(area) < 1e-9f) continue;
+                float da = 2f * f.A[t].z - f.A[t].y, db = 2f * f.B[t].z - f.B[t].y, dc = 2f * f.C[t].z - f.C[t].y;
+                int x0 = Mathf.Max(0, Mathf.CeilToInt(Mathf.Min(a.x, Mathf.Min(b.x, c.x)) - 0.5f));
+                int x1 = Mathf.Min(w - 1, Mathf.FloorToInt(Mathf.Max(a.x, Mathf.Max(b.x, c.x)) - 0.5f));
+                int y0 = Mathf.Max(0, Mathf.CeilToInt(Mathf.Min(a.y, Mathf.Min(b.y, c.y)) - 0.5f));
+                int y1 = Mathf.Min(h - 1, Mathf.FloorToInt(Mathf.Max(a.y, Mathf.Max(b.y, c.y)) - 0.5f));
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        var p = new Vector2(x + 0.5f, y + 0.5f);
+                        float u = E(b, c, p) / area, v = E(c, a, p) / area, s = E(a, b, p) / area;
+                        if (u < -1e-5f || v < -1e-5f || s < -1e-5f) continue;
+                        float d = u * da + v * db + s * dc;
+                        int i = y * w + x;
+                        if (d > depth[i]) { depth[i] = d; hit[i] = t; }
+                    }
+            }
+            return hit;
+        }
+
+        // Clears, in RGBA rows top-down, the texels a face in another
+        // material covers.
+        public static void Cover(byte[] px, Faces f, int material, Vector2 hot, int w, int h)
+        {
+            var hit = ClassicHits(f, hot, w, h, t => f.Material[t] != material);
+            for (int i = 0; i < hit.Length; i++) if (hit[i] >= 0) px[i * 4 + 3] = 0;
+        }
+
+        static float Luma(float r, float g, float b) => r * 0.2126f + g * 0.7152f + b * 0.0722f;
+        static float ToLinear(float c) => c <= 0.04045f ? c / 12.92f : Mathf.Pow((c + 0.055f) / 1.055f, 2.4f);
+        static float ToSrgb(float c)
+        {
+            c = Mathf.Clamp01(c);
+            return c <= 0.0031308f ? c * 12.92f : 1.055f * Mathf.Pow(c, 1f / 2.4f) - 0.055f;
+        }
+
+        // henge.py's delit: px is the picture as Paint leaves it opaque and
+        // src the picture as served, for its clear texels. Each texel the
+        // model covers takes its face's light out, at most 2.5 times, then
+        // each stone is scaled to its grey by the median brightness of its
+        // opaque texels and its broad shading is flattened by a gaussian of
+        // 1.5 texels, keeping detail between dark and 1.7 times the mean
+        // and the hue within 0.3 of the grey. The rest fill from the covered
+        // ones as Paint fills.
+        public static byte[] Delit(byte[] px, RgbaImage src, Faces f, Dictionary<string, object> delit)
+        {
+            int w = src.Width, h = src.Height, n = w * h;
+            var hot = MiniJson.Arr(delit, "hotspot");
+            var li = MiniJson.Arr(delit, "light");
+            var light = li != null && li.Count == 3 ? new Vector3(F(li[0]), F(li[1]), F(li[2])).normalized : Vector3.up;
+            float ambient = (float)MiniJson.Num(delit, "ambient", 0.33), direct = (float)MiniJson.Num(delit, "direct", 0.64);
+            var stones = MiniJson.Arr(delit, "stones") ?? new List<object>();
+            var grey = new Vector3[stones.Count];
+            var dark = new float[stones.Count];
+            for (int k = 0; k < stones.Count; k++)
+            {
+                var gg = MiniJson.Arr(stones[k], "grey");
+                grey[k] = gg != null && gg.Count == 3 ? new Vector3(F(gg[0]), F(gg[1]), F(gg[2])) : new Vector3(0.5f, 0.5f, 0.5f);
+                dark[k] = (float)MiniJson.Num(stones[k], "dark", 0.15);
+            }
+            var hit = ClassicHits(f, hot != null && hot.Count == 2 ? new Vector2(F(hot[0]), F(hot[1])) : Vector2.zero, w, h);
+            var rgb = new float[n * 3];
+            var alpha = new bool[n];
+            var known = new bool[n];
+            var owner = new int[n];
+            const float inv = 1f / 255f;
+            for (int i = 0; i < n; i++)
+            {
+                for (int c = 0; c < 3; c++) rgb[i * 3 + c] = ToLinear(px[i * 4 + c] * inv);
+                alpha[i] = src.Pixels[i * 4 + 3] * inv > 0.5f;
+                owner[i] = -1;
+                int t = hit[i];
+                if (t < 0) continue;
+                var nrm = Vector3.Cross(f.B[t] - f.A[t], f.C[t] - f.A[t]).normalized;
+                float shade = ambient + direct * Mathf.Max(0f, Vector3.Dot(nrm, light));
+                float lift = Mathf.Min(2.5f, 1f / Mathf.Max(1e-6f, shade));
+                for (int c = 0; c < 3; c++) rgb[i * 3 + c] *= lift;
+                known[i] = true;
+                int k = f.Stone[t];
+                owner[i] = k >= 0 && k < stones.Count ? k : -1;
+            }
+            var L = new float[n];
+            var inStone = new float[n];
+            for (int k = 0; k < stones.Count; k++)
+            {
+                var on = new List<float>();
+                for (int i = 0; i < n; i++) if (owner[i] == k && alpha[i]) on.Add(Luma(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]));
+                bool any = false;
+                for (int i = 0; i < n; i++) { inStone[i] = owner[i] == k ? 1f : 0f; any |= owner[i] == k; }
+                if (!any) continue;
+                float g = Luma(grey[k].x, grey[k].y, grey[k].z);
+                if (on.Count >= 12)
+                {
+                    on.Sort();
+                    int m = on.Count / 2;
+                    float median = on.Count % 2 == 1 ? on[m] : (on[m - 1] + on[m]) * 0.5f;
+                    float scale = Mathf.Min(2.5f, Mathf.Max(0.4f, g / Mathf.Max(1e-4f, median)));
+                    for (int i = 0; i < n; i++) if (owner[i] == k) for (int c = 0; c < 3; c++) rgb[i * 3 + c] *= scale;
+                }
+                for (int i = 0; i < n; i++) L[i] = Mathf.Max(Luma(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]), 1e-5f);
+                var mean = MaskedBlur(L, inStone, w, h, 1.5f);
+                var hue0 = grey[k] / g;
+                for (int i = 0; i < n; i++)
+                {
+                    if (owner[i] != k) continue;
+                    float ratio = L[i] / Mathf.Max(mean[i], 1e-5f);
+                    float broad = Mathf.Clamp(Mathf.Sqrt(mean[i] / g), 0.85f, 1.2f);
+                    float want = g * Mathf.Clamp(ratio, dark[k], 1.7f) * broad;
+                    float keep = Mathf.Clamp01(L[i] / (0.4f * g));
+                    for (int c = 0; c < 3; c++)
+                    {
+                        float hue = rgb[i * 3 + c] / L[i];
+                        hue = hue0[c] + Mathf.Clamp(hue - hue0[c], -0.3f, 0.3f) * keep;
+                        rgb[i * 3 + c] = hue * want;
+                    }
+                }
+            }
+            // henge.py fills its rows top-down, as they are here.
+            if (Array.IndexOf(known, true) >= 0) Bleed(rgb, known, w, h);
+            var o = new byte[n * 4];
+            for (int i = 0; i < n; i++)
+            {
+                for (int c = 0; c < 3; c++) o[i * 4 + c] = ToByte(ToSrgb(rgb[i * 3 + c]));
+                o[i * 4 + 3] = 255;
+            }
+            return o;
+        }
+
+        // henge.py's blur: the gaussian mean of val over the texels where
+        // mask is 1, rows top-down, nothing wrapping at the edges.
+        static float[] MaskedBlur(float[] val, float[] mask, int w, int h, float sigma)
+        {
+            int r = Math.Max(1, (int)Math.Round(3 * sigma, MidpointRounding.ToEven));
+            var k = new float[2 * r + 1];
+            for (int i = -r; i <= r; i++) k[i + r] = Mathf.Exp(-i * i / (2f * sigma * sigma));
+            float[] Conv(float[] a)
+            {
+                var t = new float[w * h];
+                var o = new float[w * h];
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        float sum = 0f;
+                        for (int j = -r; j <= r; j++) { int sx = x - j; if (sx >= 0 && sx < w) sum += k[j + r] * a[y * w + sx]; }
+                        t[y * w + x] = sum;
+                    }
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                    {
+                        float sum = 0f;
+                        for (int j = -r; j <= r; j++) { int sy = y - j; if (sy >= 0 && sy < h) sum += k[j + r] * t[sy * w + x]; }
+                        o[y * w + x] = sum;
+                    }
+                return o;
+            }
+            var vm = new float[w * h];
+            for (int i = 0; i < vm.Length; i++) vm[i] = val[i] * mask[i];
+            var top = Conv(vm);
+            var bottom = Conv(mask);
+            for (int i = 0; i < top.Length; i++) top[i] /= Mathf.Max(bottom[i], 1e-6f);
+            return top;
         }
 
         static bool DoubleSided(Ctx ctx, int material)

@@ -2,8 +2,9 @@
 // skirmish on the smallest map against one computer player, lets it run
 // that long, logs the frames drawn and the simulation's ticks, and quits.
 // The exit code is 0 when the engine ran the battle and says why not
-// otherwise. "-okSmokeMap <name>" picks the map. Every line it logs starts
-// with OKSMOKE.
+// otherwise. "-okSmokeMap <name>" picks the map. "-okSmokeViews <views>"
+// reveals the map and, with a GPU, saves SceneryViews pictures of each view
+// in the shots folder. Every line it logs starts with OKSMOKE.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -21,6 +22,7 @@ namespace OpenKingdomsUnity.Game
 
         // "-okSmokeShots <folder>" is where the pictures go, with a GPU.
         public const string ShotsFlag = "-okSmokeShots";
+        public const string ViewsFlag = "-okSmokeViews";
         public const int ShotWidth = 1280, ShotHeight = 720;
         // A pixel counts as drawn by a model when it differs this much, summed
         // over red, green and blue, from the same frame without the models.
@@ -41,6 +43,12 @@ namespace OpenKingdomsUnity.Game
         {
             int i = Find(args, MapFlag);
             return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+        }
+
+        public static List<SceneryViews.Spec> ViewsArg(string[] args)
+        {
+            int i = Find(args, ViewsFlag);
+            return SceneryViews.Parse(i >= 0 && i + 1 < args.Length ? args[i + 1] : null);
         }
 
         static int Find(string[] args, string flag)
@@ -128,6 +136,12 @@ namespace OpenKingdomsUnity.Game
             }
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             Seat(root.Setup, map);
+            var views = ViewsArg(Environment.GetCommandLineArgs());
+            if (views.Count > 0)
+            {
+                root.Setup.MapRevealed = true;
+                root.Setup.LineOfSight = false;
+            }
             Say($"skirmish on {map.Id} ({map.Size.x:0}x{map.Size.y:0}, {MapCatalog.PlayersOf(map)} starts) against one computer player");
             root.Flow.Fire(FlowEvent.Start);
 
@@ -152,6 +166,7 @@ namespace OpenKingdomsUnity.Game
                     Quit(Result.NoModels, why);
                     yield break;
                 }
+                if (views.Count > 0) yield return Views(map, views);
             }
             else Say("no graphics device, so no picture: run without -nographics to check what draws");
 
@@ -215,6 +230,27 @@ namespace OpenKingdomsUnity.Game
             Destroy(with);
             Destroy(without);
             if (why != null) failed(why);
+        }
+
+        // Each view's pictures as <map>-<label>-<angle>.png in the shots folder.
+        IEnumerator Views(MapInfo map, List<SceneryViews.Spec> views)
+        {
+            string dir = ShotsDir(Environment.GetCommandLineArgs());
+            System.IO.Directory.CreateDirectory(dir);
+            root.World.Atmosphere.SetWeather(WeatherChoice.Off);
+            string slug = (map.Name ?? map.Id).Replace("'", "").Replace(' ', '-').ToLowerInvariant();
+            foreach (var v in views)
+            {
+                var spot = SceneryViews.Spot(root.Backend, v);
+                if (spot == null) { Say($"view {v.Label}: no feature matches {v.Anchor}"); continue; }
+                Say($"view {v.Label} at ({spot.Value.x:0.0}, {spot.Value.z:0.0})");
+                yield return SceneryViews.Take(root.World, spot.Value, (angle, png) =>
+                {
+                    string path = System.IO.Path.Combine(dir, $"{slug}-{v.Label}-{angle}.png");
+                    System.IO.File.WriteAllBytes(path, png);
+                    Say("picture " + path);
+                });
+            }
         }
 
         public static string ShotsDir(string[] args)

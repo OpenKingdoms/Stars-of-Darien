@@ -65,6 +65,11 @@ class Sprite:
         if r and not r.get("texture") and r.get("sprite") and (r["sprite"]["w"], r["sprite"]["h"]) == (self.w, self.h):
             self.paint = {"kind": "feature", "name": r.get("seq") or r["name"], "world": r["world"],
                           "gain": ALBEDO_GAIN, "bleed": True, "alpha": "opaque", "size": [self.w, self.h]}
+        elif r and r.get("texture") and r.get("texture_size"):
+            # a card's 3DO texture at its own size: the UVs run 0 to 1 over
+            # the picture whatever its size, so the game paints it unscaled
+            self.paint = {"kind": "texture", "name": r["texture"], "world": r["world"],
+                          "gain": ALBEDO_GAIN, "bleed": True, "alpha": "opaque", "size": list(r["texture_size"])}
         px = self.img.pixels[:]
         w, h = self.w, self.h
         # alpha as rows top-down, for lookups by sprite row
@@ -74,9 +79,11 @@ class Sprite:
         self.rgb = np.array(px, dtype=np.float32).reshape(h, w, 4)[::-1, :, :3].copy()
         self.bleed(px)
 
-    def copy(self, keep=None):
+    def copy(self, keep=None, mask=None):
         """This sprite on a texture of its own with its alpha, cleared where
-        keep (rows top-down) is false."""
+        keep (rows top-down) is false. mask is how the game finds keep at
+        load (okpaint.py), and without it a picture cut by keep is not one
+        the game can paint."""
         import copy
         import numpy as np
         c = copy.copy(self)
@@ -86,8 +93,9 @@ class Sprite:
         c.img = bpy.data.images.new(self.img.name + "_copy", self.w, self.h, alpha=True)
         c.img.pixels[:] = a.ravel()
         c.alpha = (a[::-1, :, 3] > 0.5).tolist()
-        # a picture cut by keep is not one the game can paint
-        c.paint = dict(self.paint) if self.paint and keep is None else None
+        c.paint = dict(self.paint) if self.paint and (keep is None or mask) else None
+        if c.paint and keep is not None:
+            c.paint["mask"] = dict(mask)
         return c
 
     def bleed(self, px):

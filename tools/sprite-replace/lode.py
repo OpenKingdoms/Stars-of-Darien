@@ -10,7 +10,10 @@ picture the classic camera sees, in screen pixels with the anchor as the
 hotspot, so batch.py can carve it like a feature sprite.
 
 Writes <out dir>/sprites/<OBJECT>.png and <out dir>/catalog.json. The
-images come from the original game and are never committed.
+images come from the original game and are never committed. Each row
+carries the texture's own size, so batch.py's models name the texture in
+okPaint and the game paints them from it at load: their UVs run over the
+whole picture, so the card's scaling needs nothing more.
 """
 import json
 import os
@@ -96,7 +99,7 @@ def main(data_dir, out_dir):
         pic.save(os.path.join(out_dir, "sprites", obj + ".png"))
         rows.append({
             "name": obj, "world": obj[:3].lower(), "description": "Painted card", "category": "card",
-            "piece": piece, "texture": tex, "footprint": [2, 2],
+            "piece": piece, "texture": tex, "texture_size": [f["w"], f["h"]], "footprint": [2, 2],
             "height": round(top[1]), "sprite": {"w": pic.width, "h": pic.height, "hotspot": [hx, hy]},
             "shape": SHAPES.get(obj, "lode"), "maps": 0, "status": "sprite",
         })

@@ -67,6 +67,26 @@ class CheckTests(unittest.TestCase):
         p = self.problems([], node_extras={"okFromPlayersFiles": True})
         self.assertTrue(any("okFromPlayersFiles" in m for m in p), p)
 
+    def test_a_cover_mask_and_a_delit_recipe_ship(self):
+        mask = dict(PAINT, alpha="mask", mask={"cover": "others", "hotspot": [21, 112]})
+        delit = dict(PAINT, delit={"hotspot": [21, 112], "light": [-0.56, -0.1, 0.82], "ambient": 0.33,
+                                   "direct": 0.64, "stones": [{"grey": [0.1, 0.1, 0.09], "dark": 0.15}]})
+        self.assertEqual([], self.problems([{"name": "skirt", "extras": {"okPaint": mask}},
+                                            {"name": "stone", "extras": {"okPaint": delit}}]))
+
+    def test_a_mask_needs_alpha_mask_and_a_known_cover(self):
+        p = self.problems([{"name": "skirt", "extras": {"okPaint": dict(PAINT, mask={"cover": "others", "hotspot": [1, 2]})}},
+                           {"name": "rim", "extras": {"okPaint": dict(PAINT, alpha="mask", mask={"cover": "runs", "rows": [1]})}}])
+        self.assertTrue(any("without alpha mask" in m for m in p), p)
+        self.assertTrue(any("not a cover" in m for m in p), p)
+
+    def test_texels_in_a_recipe_fail(self):
+        rows = dict(PAINT, alpha="mask", mask={"cover": "others", "hotspot": list(range(300))})
+        odd = dict(PAINT, pixels="iVBORw0KGgo" * 20)
+        p = self.problems([{"name": "a", "extras": {"okPaint": rows}}, {"name": "b", "extras": {"okPaint": odd}}])
+        self.assertTrue(any("numbers" in m for m in p), p)
+        self.assertTrue(any("keys pixels" in m for m in p), p)
+
     @unittest.skipUnless(os.path.isdir(FEATURES), "no Overrides/Features beside the tools")
     def test_no_shipped_model_holds_the_originals_art(self):
         bad = []
