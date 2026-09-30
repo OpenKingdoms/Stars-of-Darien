@@ -139,7 +139,7 @@ namespace OpenKingdomsUnity.Game
                 float t = Time.realtimeSinceStartup - playFrom;
                 if (t >= nextLine)
                 {
-                    Say($"at {t:0} s: frames {root.FramesPlayed - firstFrame}, tick {b.Tick}, units {Units(b)}");
+                    Say($"at {t:0} s: frames {root.FramesPlayed - firstFrame}, tick {b.Tick}, units in sight {Units(b)}, {Players(b)}");
                     nextLine += 5f;
                 }
                 yield return null;
@@ -147,12 +147,28 @@ namespace OpenKingdomsUnity.Game
             float ran = Time.realtimeSinceStartup - playFrom;
             int frames = root.FramesPlayed - firstFrame;
             uint ticks = b.Tick - firstTick;
-            Say($"done: {frames} frames and {ticks} sim ticks in {ran:0.0} s ({frames / Mathf.Max(0.01f, ran):0.0} fps, {ticks / Mathf.Max(0.01f, ran):0.0} ticks a second, {b.TicksPerSecond} expected), state {root.Flow.State}, units {Units(b)}");
+            Say($"done: {frames} frames and {ticks} sim ticks in {ran:0.0} s ({frames / Mathf.Max(0.01f, ran):0.0} fps, {ticks / Mathf.Max(0.01f, ran):0.0} ticks a second, {b.TicksPerSecond} expected), state {root.Flow.State}, units in sight {Units(b)}, {Players(b)}");
             if (ticks == 0) Quit(Result.NoTicks, "the simulation did not advance");
             else Quit(Result.Passed, $"{ticks} ticks in {ran:0.0} s");
         }
 
         static readonly UnitState[] unitBuf = new UnitState[2048];
+
+        // Each player's mana and what it spends, which shows the computer at work.
+        static string Players(IGameBackend b)
+        {
+            var parts = new List<string>();
+            try
+            {
+                foreach (var p in b.Players)
+                {
+                    var e = b.ReadEconomy(p.Index);
+                    parts.Add($"{(p.IsLocal ? "you" : p.IsComputer ? "computer" : "player " + p.Index)} {p.Side}{(p.Alive ? "" : " (out)")} mana {e.Mana:0} spending {e.Expense:0.#}/s");
+                }
+            }
+            catch (Exception e) { parts.Add("players unreadable: " + e.Message); }
+            return string.Join("; ", parts);
+        }
 
         static int Units(IGameBackend b)
         {

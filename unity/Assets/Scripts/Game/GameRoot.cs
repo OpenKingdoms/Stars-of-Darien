@@ -352,7 +352,9 @@ namespace OpenKingdomsUnity.Game
             {
                 // The sim's own clock, which stands still while paused.
                 if (World.Entities != null) World.Entities.SimSeconds = Backend.Tick / (double)Mathf.Max(1, Backend.TicksPerSecond) + clock;
-                using (RenderMarker.Auto()) World.Render();
+                // A batch run without graphics (the smoke test) has nothing to draw with.
+                if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null)
+                    using (RenderMarker.Auto()) World.Render();
                 if (!Application.isBatchMode) TellView();
             }
             using (ScreensMarker.Auto()) Screens.Tick();
