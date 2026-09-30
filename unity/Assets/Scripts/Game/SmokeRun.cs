@@ -17,7 +17,16 @@ namespace OpenKingdomsUnity.Game
         public const string Flag = "-okSmoke", MapFlag = "-okSmokeMap", Prefix = "OKSMOKE ";
         public const float DefaultSeconds = 20f, LoadLimit = 300f;
 
-        public enum Result { Passed = 0, NoEngine = 2, NoMap = 3, LoadFailed = 4, NoTicks = 5 }
+        public enum Result { Passed = 0, NoEngine = 2, NoMap = 3, LoadFailed = 4, NoTicks = 5, NoModels = 6 }
+
+        // "-okSmokeShots <folder>" is where the pictures go, with a GPU.
+        public const string ShotsFlag = "-okSmokeShots";
+        public const int ShotWidth = 1280, ShotHeight = 720;
+        // A pixel counts as drawn by a model when it differs this much, summed
+        // over red, green and blue, from the same frame without the models.
+        public const int PixelDelta = 48;
+        // The share of the monarch's rect that must change for it to count as drawn.
+        public const float MonarchShare = 0.04f;
 
         // The seconds asked for, or null without the flag.
         public static float? Seconds(string[] args)
@@ -131,6 +140,21 @@ namespace OpenKingdomsUnity.Game
             }
             Say($"skirmish started after {Time.realtimeSinceStartup - began:0.0} s, status {b.Status}, tick {b.Tick}");
 
+            if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                // A few seconds in, the models have loaded and the camera settled.
+                float settle = Time.realtimeSinceStartup + 3f;
+                while (Time.realtimeSinceStartup < settle && GameFlow.InGame(root.Flow.State)) yield return null;
+                string why = null;
+                yield return Picture(r => why = r);
+                if (why != null)
+                {
+                    Quit(Result.NoModels, why);
+                    yield break;
+                }
+            }
+            else Say("no graphics device, so no picture: run without -nographics to check what draws");
+
             uint firstTick = b.Tick;
             int firstFrame = root.FramesPlayed;
             float playFrom = Time.realtimeSinceStartup, nextLine = 5f;
@@ -153,6 +177,117 @@ namespace OpenKingdomsUnity.Game
         }
 
         static readonly UnitState[] unitBuf = new UnitState[2048];
+
+        // Draws the battle camera's view twice into pictures, with the
+        // models and without, and checks the monarch shows where it stands.
+        // failed gets why not, or is not called.
+        IEnumerator Picture(Action<string> failed)
+        {
+            var world = root.World;
+            var cam = world?.Camera != null ? world.Camera.GetComponent<Camera>() : null;
+            if (cam == null) { failed("the battle has no camera"); yield break; }
+            string dir = ShotsDir(Environment.GetCommandLineArgs());
+            System.IO.Directory.CreateDirectory(dir);
+
+            yield return null;
+            var with = Grab(cam);
+            var monarch = Monarch(root.Backend, world, cam, out string who);
+            world.Entities.HideModels = true;
+            yield return null;
+            var without = Grab(cam);
+            world.Entities.HideModels = false;
+
+            string a = System.IO.Path.Combine(dir, "smoke-battle.png"), bare = System.IO.Path.Combine(dir, "smoke-battle-no-models.png");
+            System.IO.File.WriteAllBytes(a, with.EncodeToPNG());
+            System.IO.File.WriteAllBytes(bare, without.EncodeToPNG());
+            int whole = Changed(with, without, new RectInt(0, 0, with.width, with.height), out int wholeArea);
+            Say($"pictures {ShotWidth}x{ShotHeight}: {a} and {bare}; the models change {whole} of {wholeArea} pixels");
+            string why = null;
+            if (monarch is RectInt m)
+            {
+                int inRect = Changed(with, without, m, out int area);
+                float share = inRect / (float)Mathf.Max(1, area);
+                Say($"monarch {who} in the picture at x {m.x}..{m.xMax}, y {m.y}..{m.yMax} from the bottom: {inRect} of {area} pixels drawn ({share:P0})");
+                if (share < MonarchShare) why = $"the monarch does not draw: {share:P1} of its rect changes with the models, {MonarchShare:P0} expected";
+            }
+            else why = "no monarch of yours in the camera's view: " + who;
+            if (why == null && whole < wholeArea / 200) why = $"the models change only {whole} pixels of the picture";
+            Destroy(with);
+            Destroy(without);
+            if (why != null) failed(why);
+        }
+
+        public static string ShotsDir(string[] args)
+        {
+            int i = Find(args, ShotsFlag);
+            return i >= 0 && i + 1 < args.Length ? args[i + 1] : System.IO.Path.Combine(Application.persistentDataPath, "Smoke");
+        }
+
+        // The camera's view now, in a picture the size of a 720p screen.
+        static Texture2D Grab(Camera cam)
+        {
+            var rt = RenderTexture.GetTemporary(ShotWidth, ShotHeight, 24, RenderTextureFormat.ARGB32);
+            var was = cam.targetTexture;
+            cam.targetTexture = rt;
+            cam.Render();
+            cam.targetTexture = was;
+            var active = RenderTexture.active;
+            RenderTexture.active = rt;
+            var tex = new Texture2D(ShotWidth, ShotHeight, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, ShotWidth, ShotHeight), 0, 0);
+            tex.Apply(false);
+            RenderTexture.active = active;
+            RenderTexture.ReleaseTemporary(rt);
+            return tex;
+        }
+
+        // Where your first unit, the monarch at the start, stands in the
+        // picture: its drawn height and girth projected, origin bottom left.
+        static RectInt? Monarch(IGameBackend b, World.WorldView world, Camera cam, out string who)
+        {
+            int n = b.ReadUnits(unitBuf);
+            for (int i = 0; i < n; i++)
+            {
+                var u = unitBuf[i];
+                if (u.Player != b.LocalPlayer) continue;
+                who = $"handle {u.Handle} at {u.Position}";
+                Vector2 size = world.Entities.DrawnSize.TryGetValue(u.Handle, out var s) ? s : new Vector2(2f, 0.8f);
+                float h = Mathf.Max(0.5f, size.x), r = Mathf.Max(0.3f, size.y);
+                float xMin = float.MaxValue, yMin = float.MaxValue, xMax = float.MinValue, yMax = float.MinValue;
+                foreach (var dx in new[] { -r, r })
+                    foreach (var dz in new[] { -r, r })
+                        foreach (var dy in new[] { 0f, h })
+                        {
+                            var p = cam.WorldToViewportPoint(u.Position + new Vector3(dx, dy, dz));
+                            if (p.z <= 0f) continue;
+                            xMin = Mathf.Min(xMin, p.x); xMax = Mathf.Max(xMax, p.x);
+                            yMin = Mathf.Min(yMin, p.y); yMax = Mathf.Max(yMax, p.y);
+                        }
+                if (xMin > xMax) return null;
+                int x0 = Mathf.Clamp(Mathf.FloorToInt(xMin * ShotWidth), 0, ShotWidth - 1), x1 = Mathf.Clamp(Mathf.CeilToInt(xMax * ShotWidth), 1, ShotWidth);
+                int y0 = Mathf.Clamp(Mathf.FloorToInt(yMin * ShotHeight), 0, ShotHeight - 1), y1 = Mathf.Clamp(Mathf.CeilToInt(yMax * ShotHeight), 1, ShotHeight);
+                if (x1 - x0 < 2 || y1 - y0 < 2) return null;
+                return new RectInt(x0, y0, x1 - x0, y1 - y0);
+            }
+            who = "you have no units";
+            return null;
+        }
+
+        // How many pixels in the rect differ by PixelDelta or more.
+        public static int Changed(Texture2D a, Texture2D b, RectInt r, out int area)
+        {
+            var pa = a.GetPixels32();
+            var pb = b.GetPixels32();
+            int count = 0, w = a.width;
+            area = r.width * r.height;
+            for (int y = r.yMin; y < r.yMax; y++)
+                for (int x = r.xMin; x < r.xMax; x++)
+                {
+                    int i = y * w + x;
+                    if (Math.Abs(pa[i].r - pb[i].r) + Math.Abs(pa[i].g - pb[i].g) + Math.Abs(pa[i].b - pb[i].b) >= PixelDelta) count++;
+                }
+            return count;
+        }
 
         // Each player's mana and what it spends, which shows the computer at work.
         static string Players(IGameBackend b)

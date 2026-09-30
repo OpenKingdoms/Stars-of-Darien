@@ -413,12 +413,19 @@ namespace OpenKingdomsUnity.Game.World
             AddGhost();
             AddOrderLines();
             AddBrush();
-            solid.Draw();
-            DrawRising();
-            billboards.Draw();
+            if (!HideModels)
+            {
+                solid.Draw();
+                DrawRising();
+                billboards.Draw();
+            }
             overlay.Draw();
             halos.Draw();
         }
+
+        // Leaves out the units' and features' models, rings and overlays
+        // still drawn: the smoke test's picture without them.
+        public bool HideModels;
 
         // Each unit drawn this frame and how big it is: height and radius in
         // world units. Picking uses it, so a unit is picked where it shows.
