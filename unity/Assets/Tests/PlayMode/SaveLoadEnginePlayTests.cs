@@ -116,6 +116,8 @@ namespace OpenKingdomsUnity.Tests
             // Quit to the menu, back to the skirmish page, and its Load button.
             ButtonOn("Pause", t => t == "Quit to menu").onClick.Invoke();
             yield return null;
+            ButtonOn("Leave", t => t == "Leave").onClick.Invoke();
+            yield return null;
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
             Assert.IsNull(root.World, "the battle is gone");
             Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenSkirmish));
