@@ -1,5 +1,5 @@
 // EngineNotice.cs - what Play shows in a scene without the game when the
-// engine cannot run: what is wrong and what to do, on the game's own panel.
+// engine cannot run: what is wrong and what to do, in a dialog on vellum.
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.UI;
 using UnityEngine;
@@ -35,12 +35,16 @@ namespace OpenKingdomsUnity.Engine
             }
             var canvas = UiKit.MakeCanvas("Notice", 10).transform;
             canvas.SetParent(transform, false);
-            UiKit.Picture(canvas, "Black", UiKit.White, Color.black).rectTransform.Fill();
-            UiKit.Label(canvas, GameRoot.Title, 40, UiKit.Dim, TextAnchor.MiddleCenter, true).rectTransform.Place(0, 0.86f, 1, 0.95f);
-            var panel = UiKit.Panel(canvas, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -480, -220, -480, -220);
-            UiKit.Label(panel, Heading, 44, UiKit.Gold, TextAnchor.MiddleCenter, true).rectTransform.Place(0, 0.7f, 1, 0.95f, 40, 0, 40, 0);
-            Message = UiKit.Label(panel, problem, 30, UiKit.Pale, TextAnchor.UpperCenter);
-            Message.rectTransform.Place(0, 0, 1, 0.68f, 56, 40, 56, 0);
+            canvas.gameObject.AddComponent<Resharpen>();
+            // The game folder screen's book: vellum, the name on its strip.
+            UiKit.VellumPage(canvas, "Page");
+            UiKit.TitleStrip(canvas, GameRoot.Title);
+            var box = DialogLayout.ForScreen(Screen.width, Screen.height).Notice();
+            var d = UiKit.MakeDialog(canvas, box, Heading, "");
+            var rt = (RectTransform)d.transform;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(0f, -DialogLayout.StripH / 2f);
+            Message = UiKit.Words(d.transform, "Message", box.Local(box.Note), problem, DialogLayout.Sentence, HudArt.Ink, UiKit.BodyFont);
         }
     }
 }

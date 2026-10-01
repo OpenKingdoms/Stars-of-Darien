@@ -22,8 +22,6 @@ namespace OpenKingdomsUnity.Engine
         public const string Found = "This folder holds the game. Press Use this folder.";
         const int MaxRows = 400;
 
-        static readonly Color Bad = new Color(0.95f, 0.55f, 0.42f);
-
         public InputField Field { get; private set; }
         public Text Status { get; private set; }
         public Text Tips { get; private set; }
@@ -64,64 +62,57 @@ namespace OpenKingdomsUnity.Engine
             }
             var canvas = UiKit.MakeCanvas("Game folder", 100).transform;
             canvas.SetParent(transform, false);
-            var stone = UiKit.Picture(canvas, "Stone", UiKit.Stone, new Color(0.8f, 0.78f, 0.74f));
-            stone.rectTransform.Fill();
-            stone.raycastTarget = true;
-            var glow = UiKit.Picture(canvas, "Glow", UiKit.Glow, new Color(1f, 0.72f, 0.35f, 0.22f));
-            glow.rectTransform.Place(0.1f, -0.2f, 0.9f, 1.1f);
-            glow.raycastTarget = false;
-            UiKit.Label(canvas, GameRoot.Title, 64, UiKit.Gold, TextAnchor.MiddleCenter, true).rectTransform.Place(0, 0.89f, 1, 0.98f);
+            canvas.gameObject.AddComponent<Resharpen>();
+            // The same book as the main menu: vellum, bands and knots, the
+            // game's name on a purple strip, the dialog under it.
+            UiKit.VellumPage(canvas, "Page");
+            UiKit.TitleStrip(canvas, GameRoot.Title);
+            var size = MenuScreens.SizeOverride ?? new Vector2Int(Screen.width, Screen.height);
+            var box = DialogLayout.ForScreen(size.x, size.y).Folder();
+            string resting = cancelled != null ? "Enter uses the folder in the field, Escape cancels." : "Enter uses the folder in the field.";
+            var dialog = UiKit.MakeDialog(canvas, box, Heading, resting);
+            var p = dialog.transform;
+            var rt = (RectTransform)p;
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(0f, -DialogLayout.StripH / 2f);
 
-            var p = UiKit.Panel(canvas, "Panel", false).Place(0.5f, 0.5f, 0.5f, 0.5f, -640, -470, -640, -390);
-            UiKit.Label(p, Heading, 52, UiKit.Gold, TextAnchor.MiddleCenter, true).rectTransform.Place(0, 1, 1, 1, 40, -110, 40, 24);
-            var intro = UiKit.Label(p, Intro, 27, UiKit.Pale, TextAnchor.UpperLeft);
-            intro.rectTransform.Place(0, 1, 1, 1, 60, -230, 60, 120);
-
-            Field = UiKit.Input(p, "The game's folder, such as C:\\GOG Games\\Total Annihilation Kingdoms", 26);
-            Field.name = "Folder";
-            Field.GetComponent<RectTransform>().Place(0, 1, 1, 1, 60, -310, 280, 240);
+            UiKit.Words(p, "Intro", box.Local(box.Note), Intro, DialogLayout.Body, HudArt.Ink, UiKit.BodyFont, TextAnchor.UpperLeft);
+            Field = UiKit.VellumField(p, "Folder", box.Local(box.Field), "The game's folder, such as C:\\GOG Games\\Total Annihilation Kingdoms", DialogLayout.Body);
             Field.text = Shown(start);
             Field.onEndEdit.AddListener(_ => Check(false));
-            var browse = UiKit.MakeButton(p, "Browse", ToggleBrowser, 28);
-            browse.name = "Browse";
-            browse.GetComponent<RectTransform>().Place(1, 1, 1, 1, -250, -310, 60, 240);
+            UiKit.MakePlate(p, "Browse", box.Local(box.Plate("Browse")), ToggleBrowser, dialog, "Looks through your drives and folders");
 
-            Status = UiKit.Label(p, "", 24, UiKit.Pale, TextAnchor.UpperLeft);
-            Status.name = "Status";
-            Status.rectTransform.Place(0, 1, 1, 1, 60, -400, 60, 322);
+            Status = UiKit.Words(p, "Status", box.Local(box.Status), "", DialogLayout.Body, HudArt.Ink, UiKit.BodyFont, TextAnchor.UpperLeft);
 
             // The lower half: where the game usually is, or the Browse list.
-            Tips = UiKit.Label(p, Where, 24, UiKit.Dim, TextAnchor.UpperLeft);
-            Tips.name = "Where";
-            Tips.rectTransform.Place(0, 0, 1, 1, 60, 140, 60, 420);
-            var box = UiKit.Picture(p, "Browser", UiKit.White, new Color(0.06f, 0.045f, 0.03f, 0.8f));
-            Browser = box.gameObject;
-            box.rectTransform.Place(0, 0, 1, 1, 60, 130, 60, 410);
-            var up = UiKit.MakeButton(box.transform, "Up", Up, 24);
-            up.name = "Up";
-            up.GetComponent<RectTransform>().Place(0, 1, 0, 1, 12, -62, -152, 10);
-            ListFolder = UiKit.Label(box.transform, "", 22, UiKit.Gold, TextAnchor.MiddleLeft);
-            ListFolder.rectTransform.Place(0, 1, 1, 1, 180, -62, 16, 10);
-            List = UiKit.ScrollList(box.transform, "Folders", 4);
-            ((RectTransform)List.parent.parent).Place(0, 0, 1, 1, 12, 12, 12, 74);
+            var lower = box.Local(box.List);
+            Tips = UiKit.Words(p, "Where", lower, Where, DialogLayout.Body, new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.6f), UiKit.BodyFont, TextAnchor.UpperLeft);
+            var well = UiKit.PaintedImage(p, "Browser", lower, "trough", HudArt.TroughSize, HudArt.TroughBorder, HudArt.Trough);
+            well.raycastTarget = true;
+            Browser = well.gameObject;
+            UiKit.MakePlate(well.transform, "Up", DialogLayout.BrowseUp, Up, dialog, "The folder above this one");
+            ListFolder = UiKit.Words(well.transform, "Shown folder", UiKit.Lead(DialogLayout.BrowseFolder(lower.width), DialogLayout.Row), "", DialogLayout.Row,
+                HudArt.Ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
+            List = UiKit.ScrollList(well.transform, "Folders", 0);
+            var rows = DialogLayout.BrowseRows(lower.size);
+            var view = (RectTransform)List.parent.parent;
+            view.anchorMin = view.anchorMax = view.pivot = new Vector2(0, 1);
+            view.anchoredPosition = new Vector2(rows.x, -rows.y);
+            view.sizeDelta = rows.size;
             Browser.SetActive(false);
 
-            UseButton = UiKit.MakeButton(p, "Use this folder", Use, 30, "ok.wav");
-            UseButton.name = "Use this folder";
-            UseButton.GetComponent<RectTransform>().Place(0.5f, 0, 0.5f, 0, -460, 36, 40, -110);
+            UseButton = UiKit.MakePlate(p, "Use this folder", box.Local(box.Plate("Use this folder")), Use, dialog, "Takes the folder in the field", "ok.wav");
             string leave = cancelled != null ? "Cancel" : "Quit";
-            var back = UiKit.MakeButton(p, leave, Leave, 30);
-            back.name = leave;
-            back.GetComponent<RectTransform>().Place(0.5f, 0, 0.5f, 0, 40, 36, -460, -110);
+            UiKit.MakePlate(p, leave, box.Local(box.Plate("Leave")), Leave, dialog, cancelled != null ? "Keeps the folder you had" : "Closes the game");
 
             if (!string.IsNullOrWhiteSpace(start)) Check(false);
-            else Say("The game did not find Total Annihilation: Kingdoms on this computer by itself.", UiKit.Pale);
+            else Say("The game did not find Total Annihilation: Kingdoms on this computer by itself.", HudArt.Ink);
         }
 
         // Paths as Windows writes them.
         public static string Shown(string dir) => (dir ?? "").Replace('/', '\\');
 
-        void Say(string text, bool good) => Say(text, good ? UiKit.GoldBright : Bad);
+        void Say(string text, bool good) => Say(text, good ? HudArt.Verdigris : HudArt.Minium);
 
         void Say(string text, Color colour)
         {
@@ -222,7 +213,7 @@ namespace OpenKingdomsUnity.Engine
             {
                 Field.text = Shown(Browsing);
                 if (GameFolder.Holds(Browsing)) Say(Found, true);
-                else Say("Open the folder the game is in. A folder that holds it says so in the list.", UiKit.Pale);
+                else Say("Open the folder the game is in. A folder that holds it says so in the list.", HudArt.Ink);
             }
             for (int i = List.childCount - 1; i >= 0; i--) Destroy(List.GetChild(i).gameObject);
             Rows.Clear();
@@ -231,12 +222,8 @@ namespace OpenKingdomsUnity.Engine
                 string path = GameFolder.Clean(folders[i]);
                 bool game = Browsing.Length > 0 && GameFolder.Holds(path);
                 string label = Browsing.Length == 0 ? Shown(path) : Path.GetFileName(path.TrimEnd('/'));
-                var b = UiKit.MakeButton(List, game ? label + "    (the game is here)" : label, () => Open(path), 22, "");
-                b.name = "Folder " + label;
-                var text = b.GetComponentInChildren<Text>();
-                text.alignment = TextAnchor.MiddleLeft;
-                if (game) text.color = UiKit.GoldBright;
-                b.GetComponent<RectTransform>().Size(0, 44);
+                UiKit.ListRow(List, "Folder " + label, game ? label + "    (the game is here)" : label, DialogLayout.ListRowH, DialogLayout.Row,
+                    game ? HudArt.Verdigris : HudArt.Ink, () => Open(path));
                 Rows.Add(path);
             }
         }

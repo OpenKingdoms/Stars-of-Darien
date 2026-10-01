@@ -78,6 +78,10 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
+        // Whether a skirmish-only build's pause menu offers Save game: the one
+        // switch that hides it there. Development builds always offer it.
+        public static bool SaveInAlpha = true;
+
         // The first line of Player.log after Unity's own.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void LogStart()

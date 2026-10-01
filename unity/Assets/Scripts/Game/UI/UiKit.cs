@@ -1,9 +1,9 @@
-// UiKit.cs - the menu look built from code: stone, parchment and gold
-// trim painted procedurally, Cinzel for titles and EB Garamond for text
-// (both SIL Open Font License), and small builders for panels, buttons,
-// cycling pickers and bars. The canvas scales from 1920 by 1080, and
-// fonts render at the final pixel size, so text is sharp at 1080p and 4K.
+// UiKit.cs - the menus' kit built from code: dialogs on vellum with plates,
+// pickers, a bar and a help line in the HUD's skin, and the older stone and
+// parchment pieces. Fonts render at the final pixel size, sharp at 4K.
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -373,6 +373,346 @@ namespace OpenKingdomsUnity.Game.UI
             return h;
         }
 
+        // ---- The dialog kit, in the HUD's skin ----
+
+        // The menus' animations, off for captures and tests. FadeIn.Off
+        // turns them off too, so a capture that sets either sees no motion.
+        public static class Motion
+        {
+            public static bool Off;
+            public static bool Still => Off || FadeIn.Off;
+        }
+
+        // Vellum repeats every so many units: 192 px for its 256 at 1080p.
+        public const float VellumUnits = 192f;
+
+        static readonly Dictionary<string, Texture2D> paintings = new Dictionary<string, Texture2D>();
+        static readonly Dictionary<string, Sprite> slices = new Dictionary<string, Sprite>();
+
+        // Screen pixels per canvas unit, rounded up to a quarter as the HUD
+        // paints, so keylines never fall under a pixel or blur at 4K.
+        public static float DensityOf(Canvas c)
+        {
+            float f = c != null ? c.rootCanvas.scaleFactor : 1f;
+            return HudArt.Density(f > 0.01f ? f : 1f);
+        }
+
+        static string Keyed(string key, float density) => key + "@" + density.ToString("0.00", CultureInfo.InvariantCulture);
+
+        // A painted sheet as a texture, painted once for each key and density.
+        public static Texture2D Painting(string key, float density, Func<float, HudArt.Sheet> make)
+        {
+            string k = Keyed(key, density);
+            if (paintings.TryGetValue(k, out var t) && t != null) return t;
+            t = HudArt.ToTexture(make(density));
+            paintings[k] = t;
+            return t;
+        }
+
+        // The same as a sprite that 9-slices by border units of its size in
+        // units, or stretches whole when border is 0.
+        public static Sprite Slice(string key, float density, float size, float border, Func<float, HudArt.Sheet> make)
+        {
+            string k = Keyed(key, density);
+            if (slices.TryGetValue(k, out var sp) && sp != null) return sp;
+            var tex = Painting(key, density, make);
+            float perUnit = size > 0f ? tex.width / size : density;
+            sp = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f * perUnit, 0,
+                SpriteMeshType.FullRect, Vector4.one * border * perUnit);
+            sp.hideFlags = HideFlags.DontSave;
+            slices[k] = sp;
+            return sp;
+        }
+
+        // A rect at r: x right and y down from the parent's top left, in units.
+        public static RectTransform At(Transform parent, string name, Rect r)
+        {
+            var rt = Rect(parent, name);
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
+            rt.anchoredPosition = new Vector2(r.x, -r.y);
+            rt.sizeDelta = new Vector2(r.width, r.height);
+            return rt;
+        }
+
+        // A rect grown about its middle to hold a line of letters this size.
+        public static Rect Lead(Rect r, int size, float lead = 1.4f)
+        {
+            float h = Mathf.Max(r.height, size * lead);
+            return new Rect(r.x, r.center.y - h / 2f, r.width, h);
+        }
+
+        // A painted part that stays sharp at any size: sliced when it has a border.
+        public static Image PaintedImage(Transform parent, string name, Rect r, string key, float size, float border, Func<float, HudArt.Sheet> make)
+        {
+            var img = At(parent, name, r).gameObject.AddComponent<Image>();
+            img.type = border > 0f ? Image.Type.Sliced : Image.Type.Simple;
+            img.raycastTarget = false;
+            img.gameObject.AddComponent<Painted>().Set(key, size, border, make);
+            return img;
+        }
+
+        // A painted picture, repeated every tile units across and down (0 stretches).
+        public static RawImage PaintedPicture(Transform parent, string name, Rect r, string key, Func<float, HudArt.Sheet> make, Vector2 tile = default)
+        {
+            var img = At(parent, name, r).gameObject.AddComponent<RawImage>();
+            img.raycastTarget = false;
+            var p = img.gameObject.AddComponent<Painted>();
+            p.Tile = tile;
+            p.Set(key, 0f, 0f, make);
+            return img;
+        }
+
+        // Words in one of the three letters, never taking clicks.
+        public static Text Words(Transform parent, string name, Rect r, string text, int size, Color colour, Font font, TextAnchor align = TextAnchor.MiddleCenter)
+        {
+            var t = At(parent, name, r).gameObject.AddComponent<Text>();
+            t.font = font;
+            t.fontSize = size;
+            t.color = colour;
+            t.alignment = align;
+            t.text = text ?? "";
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
+            t.verticalOverflow = VerticalWrapMode.Overflow;
+            t.raycastTarget = false;
+            t.supportRichText = false;
+            return t;
+        }
+
+        // A dialog on vellum as DialogLayout lays it out: the frame, interlace
+        // on azurite along its top with a knot at each corner, the purple
+        // title band with its title, and the help line at its foot.
+        public static Dialog MakeDialog(Transform screen, DialogBox box, string title, string resting)
+        {
+            var rt = Rect(screen, box.Name);
+            rt.anchorMin = rt.anchorMax = new Vector2(0, 1);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(box.Frame.center.x, -box.Frame.center.y);
+            rt.sizeDelta = box.Frame.size;
+            var d = rt.gameObject.AddComponent<Dialog>();
+            rt.gameObject.AddComponent<Opening>();
+            float w = box.Frame.width, h = box.Frame.height, b = DialogLayout.Border;
+            var all = new Rect(0, 0, w, h);
+            PaintedPicture(rt, "Vellum", all, "vellum", s => HudArt.VellumTile(HudArt.Vellum), Vector2.one * VellumUnits).raycastTarget = true;
+            PaintedPicture(rt, "Interlace", box.Local(box.Interlace), "twist", s => HudArt.TwistTile(DialogLayout.Interlace, 20f, s, false, HudArt.Azurite), new Vector2(20f, 0f));
+            var title0 = box.Local(box.Title);
+            PaintedImage(rt, "Title band", new Rect(b, title0.y, w - 2 * b, title0.height), "titleband", HudArt.BandSize, HudArt.BandBorder, HudArt.TitleBand);
+            d.Title = Words(rt, "Title", Lead(title0, box.TitleSize), title, box.TitleSize, HudArt.GoldHi, TitleFont);
+            // Clear inside: drawing no middle keeps a stretched texel of the
+            // hairline from tinting the whole dialog at fractional sizes.
+            PaintedImage(rt, "Frame", all, "dialogframe", HudArt.DialogFrameSize, HudArt.DialogBorder, HudArt.DialogFrame).fillCenter = false;
+            foreach (var k in box.Knots) PaintedPicture(rt, "Knot", box.Local(k), "knot", s => HudArt.SolomonKnot(DialogLayout.Knot, s));
+            d.Help = Words(rt, "Help", Lead(box.Local(box.Help), DialogLayout.Help), resting, DialogLayout.Help, HudArt.Ink, BodyFont);
+            // A long line shrinks to the floor rather than spill onto a plate.
+            d.Help.verticalOverflow = VerticalWrapMode.Truncate;
+            d.Help.resizeTextForBestFit = true;
+            d.Help.resizeTextMinSize = DialogLayout.Floor;
+            d.Help.resizeTextMaxSize = DialogLayout.Help;
+            d.RestingHelp = resting ?? "";
+            return d;
+        }
+
+        // A line for a dialog's help while the pointer is over go.
+        public static HelpSpot Explain(GameObject go, Dialog d, string line)
+        {
+            var h = go.GetComponent<HelpSpot>();
+            if (h == null) h = go.AddComponent<HelpSpot>();
+            h.Owner = d;
+            h.Line = line;
+            return h;
+        }
+
+        static void Plain(Button b)
+        {
+            b.transition = Selectable.Transition.None;
+            b.navigation = new Navigation { mode = Navigation.Mode.None };
+        }
+
+        // A plate button labelled in Cinzel ink, with the original's sound
+        // for it and a line for the dialog's help.
+        public static Button MakePlate(Transform parent, string label, Rect r, Action onClick, Dialog help = null, string line = null,
+            string sound = null, int size = DialogLayout.PlateLabel)
+        {
+            var face = PaintedImage(parent, label, r, "plate0", HudArt.PlateSize, HudArt.PlateBorder, s => HudArt.PlateFace(s, HudArt.PlateRest));
+            face.raycastTarget = true;
+            var whole = new Rect(0, 0, r.width, r.height);
+            var lit = PaintedImage(face.transform, "Lit", whole, "plate1", HudArt.PlateSize, HudArt.PlateBorder, s => HudArt.PlateFace(s, HudArt.PlateLit));
+            lit.color = new Color(1f, 1f, 1f, 0f);
+            var text = Words(face.transform, "Label", Lead(whole, size), label, size, HudArt.Ink, TitleFont);
+            var b = face.gameObject.AddComponent<Button>();
+            Plain(b);
+            b.targetGraphic = face;
+            string wav = sound ?? SoundFor(label);
+            if (!string.IsNullOrEmpty(wav)) b.onClick.AddListener(() => Play(wav));
+            if (onClick != null) b.onClick.AddListener(() => onClick());
+            face.gameObject.AddComponent<Plate>().Init(b, face.GetComponent<Painted>(), lit, text);
+            if (help != null) Explain(face.gameObject, help, line);
+            return b;
+        }
+
+        // The options' gadget: a plate with the choice and an arrow at each
+        // end. A click or the right arrow steps on, a right click or the left
+        // arrow steps back, as the original's click to cycle does.
+        public static CyclePicker MakePicker(Transform parent, string name, Rect r, string[] choices, int index, Action<int> changed)
+        {
+            var b = MakePlate(parent, name, r, null, null, null, "", DialogLayout.PickerValue);
+            var value = b.GetComponent<Plate>().Label;
+            value.name = "Value";
+            value.text = choices.Length > 0 ? choices[Mathf.Clamp(index, 0, choices.Length - 1)] : "";
+            const float aw = DialogLayout.ArrowW;
+            var vr = value.rectTransform;
+            vr.anchoredPosition = new Vector2(aw, vr.anchoredPosition.y);
+            vr.sizeDelta = new Vector2(r.width - 2f * aw, vr.sizeDelta.y);
+            b.GetComponent<Plate>().Rehome();
+            var c = b.gameObject.AddComponent<CyclePicker>();
+            c.Init(choices, index, changed, value);
+            b.onClick.AddListener(() => c.Step(1));
+            Arrow(b.transform, false, r.height, () => c.Step(-1));
+            Arrow(b.transform, true, r.height, () => c.Step(1));
+            return c;
+        }
+
+        static void Arrow(Transform plate, bool right, float h, Action step)
+        {
+            var at = DialogLayout.PickerArrow(right);
+            var hit = At(plate, right ? "Next" : "Previous", new Rect(at.x, 0, at.width, h));
+            var img = hit.gameObject.AddComponent<Image>();
+            img.sprite = White;
+            img.color = new Color(1f, 1f, 1f, 0f);
+            const float aw = 12f, ah = 18f;
+            string key = right ? "arrowR" : "arrowL";
+            var pic = PaintedPicture(hit, "Arrow", new Rect((at.width - aw) / 2f, (h - ah) / 2f, aw, ah), key, s => HudArt.PickerArrow(aw, ah, s, right, false));
+            var b = hit.gameObject.AddComponent<Button>();
+            Plain(b);
+            b.onClick.AddListener(() => step());
+            hit.gameObject.AddComponent<Glint>().Init(pic.GetComponent<Painted>(), key, s => HudArt.PickerArrow(aw, ah, s, right, false),
+                key + "Lit", s => HudArt.PickerArrow(aw, ah, s, right, true));
+        }
+
+        // The close cross for a title band's end.
+        public static Button MakeCross(Transform parent, string name, Rect r, Action onClick)
+        {
+            var hit = At(parent, name, r);
+            var img = hit.gameObject.AddComponent<Image>();
+            img.sprite = White;
+            img.color = new Color(1f, 1f, 1f, 0f);
+            float size = Mathf.Min(r.width, r.height);
+            var pic = PaintedPicture(hit, "Cross", new Rect((r.width - size) / 2f, (r.height - size) / 2f, size, size), "cross", s => HudArt.Cross(size, s, false));
+            var b = hit.gameObject.AddComponent<Button>();
+            Plain(b);
+            b.targetGraphic = img;
+            b.onClick.AddListener(() => Play(SoundFor("x")));
+            if (onClick != null) b.onClick.AddListener(() => onClick());
+            hit.gameObject.AddComponent<Glint>().Init(pic.GetComponent<Painted>(), "cross", s => HudArt.Cross(size, s, false), "crossLit", s => HudArt.Cross(size, s, true));
+            return b;
+        }
+
+        // A bar on vellum: a trough in an ink keyline with a gold fill that
+        // SetBar moves.
+        public static Image VellumBar(Transform parent, string name, Rect r, out Image fill)
+        {
+            var trough = PaintedImage(parent, name, r, "trough", HudArt.TroughSize, HudArt.TroughBorder, HudArt.Trough);
+            var track = Rect(trough.transform, "Track").Fill(HudArt.TroughBorder - 1f);
+            float h = Mathf.Max(1f, r.height - 2f * (HudArt.TroughBorder - 1f));
+            fill = PaintedImage(track, "Fill", new Rect(0, 0, 0, h), "goldfill" + Mathf.RoundToInt(h), 0f, 0f, s => HudArt.GoldFill(h, s));
+            var f = fill.rectTransform;
+            f.anchorMin = Vector2.zero;
+            f.anchorMax = new Vector2(0f, 1f);
+            f.offsetMin = f.offsetMax = Vector2.zero;
+            return trough;
+        }
+
+        // A field on vellum, its keyline gold highlight while it has the keys.
+        public static InputField VellumField(Transform parent, string name, Rect r, string hint, int size)
+        {
+            var bg = PaintedImage(parent, name, r, "field0", HudArt.TroughSize, HudArt.TroughBorder, s => HudArt.Field(s, false));
+            bg.raycastTarget = true;
+            var field = bg.gameObject.AddComponent<InputField>();
+            var inner = Lead(new Rect(14f, 0, r.width - 28f, r.height), size);
+            var text = Words(bg.transform, "Text", inner, "", size, HudArt.Ink, BodyFont, TextAnchor.MiddleLeft);
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var place = Words(bg.transform, "Hint", inner, hint, size, new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.5f), BodyFont, TextAnchor.MiddleLeft);
+            place.fontStyle = FontStyle.Italic;
+            field.textComponent = text;
+            field.placeholder = place;
+            field.caretColor = HudArt.Ink;
+            field.selectionColor = new Color(HudArt.Gold.r, HudArt.Gold.g, HudArt.Gold.b, 0.45f);
+            field.lineType = InputField.LineType.SingleLine;
+            bg.gameObject.AddComponent<FieldFocus>();
+            return field;
+        }
+
+        // A ruled row for a list on vellum: ink ruling at its foot and a gold
+        // wash under the pointer. It stretches to the list's width.
+        public static Button ListRow(Transform parent, string name, string label, float height, int size, Color colour, Action onClick)
+        {
+            var row = Rect(parent, name).Size(0, height);
+            var wash = row.gameObject.AddComponent<Image>();
+            wash.sprite = White;
+            var rule = Picture(row, "Ruling", White, new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.12f));
+            rule.raycastTarget = false;
+            rule.rectTransform.Place(0, 0, 1, 0, 0, 0, 0, -1);
+            var text = Words(row, "Label", new Rect(0, 0, 10, 10), label, size, colour, BodyFont, TextAnchor.MiddleLeft);
+            text.rectTransform.Place(0, 0, 1, 1, 12, 0, 12, 0);
+            var b = row.gameObject.AddComponent<Button>();
+            b.navigation = new Navigation { mode = Navigation.Mode.None };
+            b.targetGraphic = wash;
+            var cb = b.colors;
+            cb.normalColor = new Color(1f, 1f, 1f, 0f);
+            cb.highlightedColor = new Color(HudArt.Gold.r, HudArt.Gold.g, HudArt.Gold.b, 0.24f);
+            cb.pressedColor = new Color(HudArt.Gold.r, HudArt.Gold.g, HudArt.Gold.b, 0.38f);
+            cb.selectedColor = cb.normalColor;
+            cb.colorMultiplier = 1f;
+            cb.fadeDuration = 0.1f;
+            b.colors = cb;
+            if (onClick != null) b.onClick.AddListener(() => onClick());
+            return b;
+        }
+
+        // The vellum page some screens stand on: vellum, interlace bands
+        // along the top and foot with knots at the corners.
+        public static RectTransform VellumPage(Transform parent, string name)
+        {
+            var page = Rect(parent, name).Fill();
+            var ground = page.gameObject.AddComponent<RawImage>();
+            ground.raycastTarget = true;
+            var p = page.gameObject.AddComponent<Painted>();
+            p.Tile = Vector2.one * VellumUnits;
+            p.Set("vellum", 0f, 0f, s => HudArt.VellumTile(HudArt.Vellum));
+            ground.color = new Color(0.93f, 0.9f, 0.86f);
+            foreach (bool top in new[] { true, false })
+            {
+                var band = Rect(page, "Band").Place(0, top ? 1 : 0, 1, top ? 1 : 0, 0, top ? -DialogLayout.ScreenBand : 0, 0, top ? 0 : -DialogLayout.ScreenBand);
+                var img = band.gameObject.AddComponent<RawImage>();
+                img.raycastTarget = false;
+                var bp = band.gameObject.AddComponent<Painted>();
+                bp.Tile = new Vector2(24f, 0f);
+                bp.Set("twist12", 0f, 0f, s => HudArt.TwistTile(DialogLayout.ScreenBand, 24f, s, false, HudArt.Azurite));
+                foreach (bool left in new[] { true, false })
+                {
+                    float k = DialogLayout.Knot + 4f;
+                    var knot = Rect(page, "Knot").Place(left ? 0 : 1, top ? 1 : 0, left ? 0 : 1, top ? 1 : 0,
+                        left ? 0 : -k, top ? -k : 0, left ? -k : 0, top ? 0 : -k);
+                    var ki = knot.gameObject.AddComponent<RawImage>();
+                    ki.raycastTarget = false;
+                    knot.gameObject.AddComponent<Painted>().Set("knot22", 0f, 0f, s => HudArt.SolomonKnot(DialogLayout.Knot + 4f, s));
+                }
+            }
+            return page;
+        }
+
+        // The purple strip under the page's top band, with the game's name.
+        public static Text TitleStrip(Transform parent, string title)
+        {
+            var strip = Rect(parent, "Title strip").Place(0, 1, 1, 1, 0, -(DialogLayout.ScreenBand + DialogLayout.StripH), 0, DialogLayout.ScreenBand);
+            var img = strip.gameObject.AddComponent<Image>();
+            img.type = Image.Type.Sliced;
+            img.raycastTarget = false;
+            strip.gameObject.AddComponent<Painted>().Set("titleband", HudArt.BandSize, HudArt.BandBorder, HudArt.TitleBand);
+            var t = Words(strip, "Title", new Rect(0, 0, 10, 10), title, DialogLayout.ScreenTitle, HudArt.GoldHi, TitleFont);
+            t.rectTransform.Fill();
+            return t;
+        }
+
         // Row 0 of a picture is its top, and Unity uploads bottom first, so
         // by default the rows flip and the picture stands the right way up.
         // Model textures do not flip: their UVs expect the rows as they come.
@@ -467,6 +807,292 @@ namespace OpenKingdomsUnity.Game.UI
         public void OnPointerClick(PointerEventData e)
         {
             if (e.button == PointerEventData.InputButton.Right) Step(-1);
+        }
+    }
+
+    // A dialog's help line: a control's line under the pointer, or the
+    // resting line.
+    public sealed class Dialog : MonoBehaviour
+    {
+        public Text Title, Help;
+        public string RestingHelp = "";
+
+        public void ShowHelp(string line)
+        {
+            if (Help != null) Help.text = string.IsNullOrEmpty(line) ? RestingHelp : line;
+        }
+
+        public void Rest(string line)
+        {
+            RestingHelp = line ?? "";
+            ShowHelp(null);
+        }
+    }
+
+    // Writes a line in a dialog's help while the pointer is over it.
+    public sealed class HelpSpot : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        public Dialog Owner;
+        public string Line;
+        public void OnPointerEnter(PointerEventData e) => Owner?.ShowHelp(Line);
+        public void OnPointerExit(PointerEventData e) => Owner?.ShowHelp(null);
+    }
+
+    // A painted part that paints itself again when its canvas's sharpness
+    // changes, and keeps its tiling as its rect changes.
+    public sealed class Painted : MonoBehaviour
+    {
+        public string Key;
+        public float Size, Border;
+        public Func<float, HudArt.Sheet> Make;
+        // Units per repeat across and down, 0 to stretch.
+        public Vector2 Tile;
+        Canvas canvas;
+        Image image;
+        RawImage raw;
+        float density = -1f;
+        Vector2 tiled = -Vector2.one;
+
+        public void Set(string key, float size, float border, Func<float, HudArt.Sheet> make)
+        {
+            Key = key;
+            Size = size;
+            Border = border;
+            Make = make;
+            density = -1f;
+            Refresh();
+        }
+
+        void OnEnable()
+        {
+            canvas = null;
+            density = -1f;
+            Refresh();
+        }
+
+        void LateUpdate() => Refresh();
+
+        public void Refresh()
+        {
+            if (Make == null) return;
+            if (canvas == null) canvas = GetComponentInParent<Canvas>(true);
+            float d = UiKit.DensityOf(canvas);
+            if (d != density)
+            {
+                density = d;
+                if (image == null) image = GetComponent<Image>();
+                if (raw == null) raw = GetComponent<RawImage>();
+                if (image != null) image.sprite = UiKit.Slice(Key, d, Size, Border, Make);
+                else if (raw != null) raw.texture = UiKit.Painting(Key, d, Make);
+                tiled = -Vector2.one;
+            }
+            if (raw == null || (Tile.x <= 0f && Tile.y <= 0f)) return;
+            var size = ((RectTransform)transform).rect.size;
+            if (size == tiled) return;
+            tiled = size;
+            raw.uvRect = new Rect(0, 0, Tile.x > 0f ? size.x / Tile.x : 1f, Tile.y > 0f ? size.y / Tile.y : 1f);
+        }
+    }
+
+    // A dialog's button: at rest, lit under the pointer over a tenth of a
+    // second, a unit down at once while pressed, washed out when it cannot
+    // be used. The look changes in the frame of the pointer's event.
+    public sealed class Plate : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
+    {
+        public Button Button { get; private set; }
+        public Text Label { get; private set; }
+        public bool Pressed => down;
+        Painted face;
+        Image lit;
+        Vector2 home;
+        bool over, down;
+        float glow;
+        int look = -1;
+
+        public void Init(Button b, Painted f, Image l, Text label)
+        {
+            Button = b;
+            face = f;
+            lit = l;
+            Label = label;
+            Rehome();
+        }
+
+        // Where the label sits at rest, after its rect is moved.
+        public void Rehome()
+        {
+            home = Label.rectTransform.anchoredPosition;
+            look = -1;
+            Paint();
+        }
+
+        public bool Enabled
+        {
+            get => Button == null || Button.interactable;
+            set
+            {
+                if (Button != null) Button.interactable = value;
+                Paint();
+            }
+        }
+
+        public void OnPointerEnter(PointerEventData e) { over = true; Paint(); }
+        public void OnPointerExit(PointerEventData e) { over = false; down = false; Paint(); }
+        public void OnPointerDown(PointerEventData e) { if (e.button == PointerEventData.InputButton.Left) down = true; Paint(); }
+        public void OnPointerUp(PointerEventData e) { down = false; Paint(); }
+
+        void OnDisable()
+        {
+            over = down = false;
+            glow = 0f;
+            Paint();
+        }
+
+        void Update()
+        {
+            float target = over && !down && Enabled ? 1f : 0f;
+            glow = UiKit.Motion.Still ? target : Mathf.MoveTowards(glow, target, Time.unscaledDeltaTime / 0.1f);
+            if (lit != null) lit.color = new Color(1f, 1f, 1f, down ? 0f : glow);
+        }
+
+        void Paint()
+        {
+            if (face == null || Label == null) return;
+            bool on = Enabled;
+            int want = !on ? HudArt.PlateOff : down ? HudArt.PlateDown : HudArt.PlateRest;
+            if (want != look)
+            {
+                look = want;
+                face.Set("plate" + want, HudArt.PlateSize, HudArt.PlateBorder, s => HudArt.PlateFace(s, want));
+            }
+            Label.rectTransform.anchoredPosition = home + (down && on ? new Vector2(0f, -1f) : Vector2.zero);
+            var c = HudArt.Ink;
+            c.a = on ? 1f : 0.4f;
+            Label.color = c;
+            if (lit != null && (down || !on)) lit.color = new Color(1f, 1f, 1f, 0f);
+        }
+    }
+
+    // A small painted part of a button, the picker's arrows and the close
+    // cross, that lights under the pointer and while pressed.
+    public sealed class Glint : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerDownHandler, IPointerUpHandler
+    {
+        Painted picture;
+        string rest, lit;
+        Func<float, HudArt.Sheet> restMake, litMake;
+        bool over, down;
+
+        public void Init(Painted p, string restKey, Func<float, HudArt.Sheet> restPaint, string litKey, Func<float, HudArt.Sheet> litPaint)
+        {
+            picture = p;
+            rest = restKey;
+            restMake = restPaint;
+            lit = litKey;
+            litMake = litPaint;
+        }
+
+        public void OnPointerEnter(PointerEventData e) { over = true; Paint(); }
+        public void OnPointerExit(PointerEventData e) { over = down = false; Paint(); }
+        public void OnPointerDown(PointerEventData e) { down = true; Paint(); }
+        public void OnPointerUp(PointerEventData e) { down = false; Paint(); }
+        void OnDisable() { over = down = false; Paint(); }
+
+        void Paint()
+        {
+            if (picture == null) return;
+            bool on = over || down;
+            picture.Set(on ? lit : rest, 0f, 0f, on ? litMake : restMake);
+        }
+    }
+
+    // Fades a dialog in and grows it from just under its size when it
+    // opens, after a hold when one is asked for, and shrinks it to fit a
+    // canvas smaller than it. Motion.Off shows it at once.
+    public sealed class Opening : MonoBehaviour
+    {
+        public float Seconds = 0.18f, Delay, From = 0.98f, Margin = DialogLayout.Margin;
+        CanvasGroup group;
+        float start;
+
+        public CanvasGroup Group
+        {
+            get
+            {
+                if (group == null) group = GetComponent<CanvasGroup>();
+                if (group == null) group = gameObject.AddComponent<CanvasGroup>();
+                return group;
+            }
+        }
+
+        void OnEnable()
+        {
+            start = Time.unscaledTime;
+            Apply();
+        }
+
+        // Opens again from now, holding first for delay seconds.
+        public void Restart(float delay)
+        {
+            Delay = delay;
+            start = Time.unscaledTime;
+            Apply();
+        }
+
+        void LateUpdate() => Apply();
+
+        void Apply()
+        {
+            float t = UiKit.Motion.Still ? 1f : Mathf.Clamp01((Time.unscaledTime - start - Delay) / Mathf.Max(0.01f, Seconds));
+            var g = Group;
+            g.alpha = t;
+            g.blocksRaycasts = g.interactable = t > 0f;
+            var rt = (RectTransform)transform;
+            float fit = 1f;
+            if (rt.parent is RectTransform parent)
+            {
+                var size = rt.rect.size;
+                fit = Mathf.Min(1f, (parent.rect.width - 2f * Margin) / Mathf.Max(1f, size.x), (parent.rect.height - 2f * Margin) / Mathf.Max(1f, size.y));
+                fit = Mathf.Max(0.05f, fit);
+            }
+            float grow = Mathf.Lerp(From, 1f, Mathf.SmoothStep(0f, 1f, t));
+            rt.localScale = new Vector3(fit * grow, fit * grow, 1f);
+        }
+    }
+
+    // Draws the words under it again when the canvas's scale changes, as
+    // legacy Text keeps the size it was drawn at until its rect changes.
+    public sealed class Resharpen : MonoBehaviour
+    {
+        Canvas canvas;
+        float scale = -1f;
+
+        void LateUpdate()
+        {
+            if (canvas == null) canvas = GetComponentInParent<Canvas>(true);
+            if (canvas == null) return;
+            float s = canvas.rootCanvas.scaleFactor;
+            if (Mathf.Approximately(s, scale)) return;
+            bool first = scale < 0f;
+            scale = s;
+            if (!first) foreach (var t in GetComponentsInChildren<Text>()) t.SetAllDirty();
+        }
+    }
+
+    // Lights a vellum field's keyline while it has the keys.
+    public sealed class FieldFocus : MonoBehaviour
+    {
+        InputField field;
+        Painted face;
+        bool lit;
+
+        void LateUpdate()
+        {
+            if (field == null) field = GetComponent<InputField>();
+            if (face == null) face = GetComponent<Painted>();
+            if (field == null || face == null || field.isFocused == lit) return;
+            lit = field.isFocused;
+            bool on = lit;
+            face.Set(on ? "field1" : "field0", HudArt.TroughSize, HudArt.TroughBorder, s => HudArt.Field(s, on));
         }
     }
 }
