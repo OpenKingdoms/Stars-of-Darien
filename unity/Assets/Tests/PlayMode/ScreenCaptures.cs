@@ -1,7 +1,8 @@
 // ScreenCaptures.cs - pictures of each screen on the mock engine, for
 // looking at the look without a window. Runs only when OKU_CAPTURE_DIR
 // names a folder, and writes 1920 by 1080 PNGs there (OKU_CAPTURE_W and
-// OKU_CAPTURE_H for another size).
+// OKU_CAPTURE_H for another size). OKU_CAPTURE_ALPHA=1 stamps the game
+// as an alpha, so the menu shows what a playtester sees.
 using System.Collections;
 using System.IO;
 using NUnit.Framework;
@@ -14,7 +15,13 @@ namespace OpenKingdomsUnity.Tests
     public class ScreenCaptures
     {
         [TearDown]
-        public void CleanUp() => OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
+        public void CleanUp()
+        {
+            OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
+            OpenKingdomsUnity.Game.UI.MenuScreens.SizeOverride = null;
+            OpenKingdomsUnity.Game.UI.FadeIn.Off = false;
+            BuildStamp.Reset();
+        }
 
         [UnityTest]
         public IEnumerator CaptureEveryScreen()
@@ -22,7 +29,16 @@ namespace OpenKingdomsUnity.Tests
             string dir = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_DIR");
             if (string.IsNullOrEmpty(dir)) Assert.Ignore("set OKU_CAPTURE_DIR to capture screens");
             Directory.CreateDirectory(dir);
+            // The menus lay out for the picture's size, not the batch run's
+            // 1024x768 screen, and show at once rather than mid fade.
             OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = new Vector2Int(W, H);
+            OpenKingdomsUnity.Game.UI.MenuScreens.SizeOverride = new Vector2Int(W, H);
+            OpenKingdomsUnity.Game.UI.FadeIn.Off = true;
+            if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_ALPHA") == "1")
+            {
+                BuildStamp.Version = "Alpha (review)";
+                BuildStamp.SkirmishOnly = true;
+            }
             bool engine = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine";
             string map = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_MAP");
             if (string.IsNullOrEmpty(map)) map = null;
@@ -186,7 +202,6 @@ namespace OpenKingdomsUnity.Tests
                 yield return Shoot(cam, Path.Combine(dir, "8-editor.png"));
             }
             Object.Destroy(root.gameObject);
-            OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
         }
 
         internal static IEnumerator View(OpenKingdomsUnity.Game.World.GameCamera c, float distance, float pitch, float yaw)
