@@ -4,8 +4,9 @@
 //     -executeMethod OpenKingdomsUnity.Build.WindowsAlpha -okOut <folder>
 //
 // A 64-bit Mono player in Release, stamped "Alpha 1 (<commit>)" and
-// skirmish only, with the published engine and SDL beside its plugins, the
-// scenery and unit models under StreamingAssets, and a content report beside the
+// skirmish only without the map editor, with the published engine and SDL
+// beside its plugins, the scenery and unit models under StreamingAssets, and
+// a content report beside the
 // folder. It fails when anything in it could hold the original's pixels.
 // scripts/build-alpha.ps1 runs it and packs the zip.
 using System;
@@ -85,7 +86,7 @@ namespace OpenKingdomsUnity
             BuildReport report;
             try
             {
-                File.WriteAllText(Path.Combine(ProjectDir, StampAsset), BuildStamp.Format(version, true));
+                File.WriteAllText(Path.Combine(ProjectDir, StampAsset), BuildStamp.Format(version, true, false));
                 AssetDatabase.ImportAsset(StampAsset, ImportAssetOptions.ForceSynchronousImport);
                 var scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray();
                 Say("scenes: " + string.Join(", ", scenes));

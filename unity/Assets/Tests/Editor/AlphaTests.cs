@@ -21,6 +21,13 @@ namespace OpenKingdomsUnity.Tests
             BuildStamp.Parse(BuildStamp.Format("Alpha 2 (abc)", false), out version, out only);
             Assert.AreEqual("Alpha 2 (abc)", version);
             Assert.IsFalse(only);
+            BuildStamp.Parse(BuildStamp.Format("Alpha 2 (abc)", true, false), out version, out only, out bool editor);
+            Assert.IsTrue(only);
+            Assert.IsFalse(editor, "an alpha leaves the map editor out");
+            BuildStamp.Parse(BuildStamp.Format("Alpha 2 (abc)", true), out version, out only, out editor);
+            Assert.IsTrue(editor);
+            BuildStamp.Parse("version=Alpha 1 (b2b61d6)\nskirmishOnly=1\n", out version, out only, out editor);
+            Assert.IsTrue(editor, "a stamp from before the key keeps the editor");
         }
 
         [Test]
@@ -39,6 +46,7 @@ namespace OpenKingdomsUnity.Tests
             BuildStamp.Reset();
             Assert.IsNull(BuildStamp.Version);
             Assert.IsFalse(BuildStamp.SkirmishOnly);
+            Assert.IsTrue(BuildStamp.MapEditor);
         }
 
         [Test]

@@ -66,9 +66,11 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void ASavedGameLoadsFromTheMenuAndAFailedLoadReturnsThere()
+        public void ASavedGameLoadsFromTheSkirmishAndAFailedLoadReturnsThere()
         {
             var f = new GameFlow();
+            Assert.IsFalse(f.Fire(FlowEvent.OpenLoad), "the menu has no saved games");
+            f.Fire(FlowEvent.OpenSkirmish);
             Assert.IsTrue(f.Fire(FlowEvent.OpenLoad));
             Assert.AreEqual(FlowState.LoadList, f.State);
             Assert.IsTrue(f.Fire(FlowEvent.Start));
@@ -80,9 +82,23 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(FlowState.Playing, f.State);
             f.Fire(FlowEvent.Pause);
             f.Fire(FlowEvent.ToMenu);
+            f.Fire(FlowEvent.OpenSkirmish);
             f.Fire(FlowEvent.OpenLoad);
             Assert.IsTrue(f.Fire(FlowEvent.Back));
-            Assert.AreEqual(FlowState.MainMenu, f.State);
+            Assert.AreEqual(FlowState.Skirmish, f.State, "back to the skirmish it was opened from");
+        }
+
+        [Test]
+        public void ABuildWithoutTheMapEditorNeverOpensIt()
+        {
+            try
+            {
+                BuildStamp.MapEditor = false;
+                var f = new GameFlow();
+                Assert.IsFalse(f.Fire(FlowEvent.OpenEditor));
+                Assert.AreEqual(FlowState.MainMenu, f.State);
+            }
+            finally { BuildStamp.Reset(); }
         }
 
         [Test]

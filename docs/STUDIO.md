@@ -86,7 +86,7 @@ The Sprite Replacement window is the work list for the 3D replacements. It reads
 
 ## Map editor
 
-The map editor is part of the game rather than the Unity editor, so it works in a built game too. Pick Map editor on the main menu, choose a map, and Open brings it up through the loading screen with the world held still.
+The map editor is part of the game rather than the Unity editor, so it works in a built game too. Pick Map editor on the main menu, choose a map, and Open brings it up through the loading screen with the world held still. An alpha build made by `scripts/build-alpha.ps1` leaves the map editor out, and its menu shows only the original's doors.
 
 The panel on the left holds the tools. Raise, Lower, Flatten and Smooth work on the ground's heights under a round brush while the left button is held. Flatten levels toward the height where the stroke began. Paint gives the blocks under a square brush a picture from the game's own library, which the panel shows a page at a time, tiled so neighbouring blocks show neighbouring parts of it. Features places the feature picked from the list, which can be searched, and Erase takes away the feature nearest the pointer. Brush sets the size in cells and Strength how hard each stroke works. Only the patches of ground under a stroke are rebuilt, so edits show at once.
 

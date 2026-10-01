@@ -61,10 +61,12 @@ namespace OpenKingdomsUnity.Game.UI
 
                 ArtButton.Make(p, "Quit", "mainscreen.gaf", "ExitButton", 68, 407, 39, 51, "Quit", () => root.Flow.Fire(FlowEvent.Exit), "Leave the game");
                 ArtButton.Make(p, "Options", "mainscreen.gaf", "OptionsButton", 524, 406, 58, 56, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), "Options");
-                // The remaster's two more doors, lettered on the parchment
-                // beside the plaque.
-                ArtButton.Make(p, "Load game", null, null, 66, 391, 96, 20, "Load game", () => root.Flow.Fire(FlowEvent.OpenLoad), "Load a saved game");
-                ArtButton.Make(p, "Map editor", null, null, 466, 391, 100, 20, "Map editor", () => root.Flow.Fire(FlowEvent.OpenEditor), "Change a map, or make one");
+                // The remaster's map editor, lettered on the parchment above
+                // the plaque's middle so the original's menu stays balanced.
+                // An alpha leaves it out, and saved games load from the
+                // skirmish screen.
+                if (BuildStamp.MapEditor)
+                    ArtButton.Make(p, "Map editor", null, null, EditorX, EditorY, EditorW, EditorH, "Map editor", () => root.Flow.Fire(FlowEvent.OpenEditor), "Change a map, or make one");
 
                 var version = p.Label(p.Root, GameRoot.Title + ", free and open, played with your own game files", 172, 442, 296, 13, 8.5f, HudArt.GoldHi, TextAnchor.MiddleCenter);
                 version.name = "Version";
@@ -74,14 +76,17 @@ namespace OpenKingdomsUnity.Game.UI
 
             public const string MultiplayerLater = "Multiplayer comes in a later alpha.";
 
+            // The map editor's lettering, in cp: centred under the doors.
+            public const float EditorW = 100f, EditorH = 20f, EditorX = 320f - EditorW / 2f, EditorY = 400f;
+
             // Where the closed doors' plates hang, in cp: the same height on
             // both, low on the door leaves.
             public const float LaterY = 352f, LaterW = 88f, LaterH = 20f;
             public static readonly Color Shut = new Color(0.5f, 0.48f, 0.46f, 1f);
 
             // A closed door: its art in shadow and still under the pointer,
-            // and a plate lettered like Load game and Map editor, which lets
-            // clicks through to the door.
+            // and a plate lettered like the Map editor, which lets clicks
+            // through to the door.
             static void Later(GuiPage p, Door door, Rect gui)
             {
                 if (door.Frames.Count > 1) door.Frames.RemoveRange(1, door.Frames.Count - 1);

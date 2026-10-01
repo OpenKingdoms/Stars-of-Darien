@@ -117,6 +117,8 @@ namespace OpenKingdomsUnity.Tests
             {
                 root.Flow.Fire(FlowEvent.ToMenu);
                 yield return null;
+                Assert.IsFalse(root.Flow.Fire(FlowEvent.OpenLoad), "saved games open from the skirmish, not the menu");
+                Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenSkirmish));
                 Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenLoad));
                 yield return null;
                 Assert.AreEqual("Load", root.Screens.Visible);

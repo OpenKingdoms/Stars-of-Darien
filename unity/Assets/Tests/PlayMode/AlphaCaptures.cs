@@ -63,6 +63,7 @@ namespace OpenKingdomsUnity.Tests
             FadeIn.Off = true;
             BuildStamp.Version = "Alpha 1 (b2b61d6)";
             BuildStamp.SkirmishOnly = true;
+            BuildStamp.MapEditor = false;
             foreach (var size in new[] { new Vector2Int(1920, 1080), new Vector2Int(1280, 720) })
             {
                 MenuScreens.SizeOverride = size;

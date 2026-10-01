@@ -113,11 +113,11 @@ namespace OpenKingdomsUnity.Tests
         {
             root = GameRoot.Boot(new MockBackend { StageSeconds = 0f, DamageScale = 0f });
             yield return null;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
             root.Flow.Fire(FlowEvent.OpenLoad);
             yield return ViewAt(1024, 600);
             Click("Load", "Back");
-            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
-            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            Assert.AreEqual(FlowState.Skirmish, root.Flow.State);
             root.Screens.StartGame();
             float deadline = Time.realtimeSinceStartup + 30f;
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;

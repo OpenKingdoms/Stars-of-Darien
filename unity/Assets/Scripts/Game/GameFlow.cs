@@ -32,7 +32,6 @@ namespace OpenKingdomsUnity.Game
             { (FlowState.MainMenu, FlowEvent.OpenSkirmish), FlowState.Skirmish },
             { (FlowState.MainMenu, FlowEvent.OpenOptions), FlowState.Options },
             { (FlowState.MainMenu, FlowEvent.Exit), FlowState.Quit },
-            { (FlowState.MainMenu, FlowEvent.OpenLoad), FlowState.LoadList },
             { (FlowState.MainMenu, FlowEvent.OpenEditor), FlowState.EditorSetup },
             { (FlowState.EditorSetup, FlowEvent.Back), FlowState.MainMenu },
             { (FlowState.EditorSetup, FlowEvent.Start), FlowState.Loading },
@@ -80,6 +79,8 @@ namespace OpenKingdomsUnity.Game
             else if (State == FlowState.Loading && e == FlowEvent.LoadFailed) next = LoadingFrom;
             else if (State == FlowState.Loading && e == FlowEvent.Loaded && LoadingFrom == FlowState.EditorSetup) next = FlowState.Editing;
             else if (!Table.TryGetValue((State, e), out next)) return false;
+            // A build without the map editor never opens it, whatever asks.
+            if (next == FlowState.EditorSetup && !BuildStamp.MapEditor) return false;
             if (next == FlowState.Loading) LoadingFrom = State;
             if (next == FlowState.Options) OptionsReturn = State;
             if (next == FlowState.LoadList) LoadListReturn = State;

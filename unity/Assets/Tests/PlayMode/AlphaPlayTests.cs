@@ -59,6 +59,7 @@ namespace OpenKingdomsUnity.Tests
         {
             BuildStamp.Version = "Alpha 1 (test)";
             BuildStamp.SkirmishOnly = true;
+            BuildStamp.MapEditor = false;
             yield return Boot();
             var menu = root.Screens.Screen("Menu");
             var stamp = Named(menu, "Build version");
@@ -81,9 +82,16 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(2, plates.Count);
             Assert.IsTrue(plates.All(i => !i.raycastTarget), "clicks reach the doors");
             Assert.AreEqual(plates[0].rectTransform.anchoredPosition.y, plates[1].rectTransform.anchoredPosition.y, 0.01f, "the plates hang level");
+            Assert.IsNull(Entry(menu, "Map editor"), "an alpha has no map editor");
+            Assert.IsNull(Entry(menu, "Load game"), "saved games load from the skirmish");
+            Assert.IsFalse(root.Flow.Fire(FlowEvent.OpenEditor), "nor any way into it");
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
             page.Doors[0].Press();
             Assert.AreEqual(FlowState.Skirmish, root.Flow.State, "skirmish opens");
         }
+
+        static GameObject Entry(GameObject menu, string name) =>
+            menu.GetComponentsInChildren<ArtButton>(true).FirstOrDefault(b => b.name == name)?.gameObject;
 
         [UnityTest]
         public IEnumerator TheEditorMenuHasNoStampAndMultiplayerOpens()
@@ -93,6 +101,15 @@ namespace OpenKingdomsUnity.Tests
             var menu = root.Screens.Screen("Menu");
             Assert.IsNull(Named(menu, "Build version"));
             Assert.AreEqual(0, menu.GetComponentsInChildren<Text>(true).Count(t => t.name == "Coming later"));
+            Assert.IsNull(Entry(menu, "Load game"), "saved games load from the skirmish");
+            var editor = Entry(menu, "Map editor");
+            Assert.IsNotNull(editor, "the map editor stays outside an alpha");
+            var at = (RectTransform)editor.transform;
+            var mid = new Vector3[4];
+            at.GetWorldCorners(mid);
+            var page = new Vector3[4];
+            root.Screens.Lobby.Menu.Page.Root.GetWorldCorners(page);
+            Assert.AreEqual((page[0].x + page[2].x) / 2f, (mid[0].x + mid[2].x) / 2f, (page[2].x - page[0].x) * 0.01f, "centred under the doors");
             root.Screens.Lobby.Menu.Doors[2].Press();
             Assert.AreEqual(FlowState.Multiplayer, root.Flow.State);
         }
