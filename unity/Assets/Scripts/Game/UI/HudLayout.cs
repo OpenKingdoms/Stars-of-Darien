@@ -165,13 +165,17 @@ namespace OpenKingdomsUnity.Game.UI
         public const float BadgeCp = 8f;
         public int BadgeEm => Font(BadgeCp, BadgeFloor);
 
-        // The key letter's tab, in the lower right corner of the button's
-        // hit rect over the bezel, a capital's height and a letter's width,
-        // so it covers a tenth of the picture at most.
+        // The key letter's tab in the lower right corner of the button's hit
+        // rect, with room round its capital. Where that would cover over a
+        // tenth of the picture it gets shorter, to a capital's height, then narrower.
         public Rect Badge(string slot)
         {
-            var hit = Hit(Slot(slot));
-            float em = BadgeEm, w = 1.05f * em + 0.5f, h = 0.62f * em + 0.2f;
+            var pic = Slot(slot);
+            var hit = Hit(pic);
+            float em = BadgeEm, w = 1.2f * em + 0.5f, h = 0.8f * em + 0.5f;
+            float over = (hit.width - pic.width) / 2f, room = 0.0999f * pic.width * pic.height;
+            h = Mathf.Max(Mathf.Min(h, over + room / (w - over)), 0.65f * em + 0.2f);
+            w = Mathf.Min(w, over + room / (h - over));
             return new Rect(hit.xMax - w, hit.yMax - h, w, h);
         }
 

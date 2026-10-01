@@ -364,10 +364,40 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual("1 kill", BattleHud.Record(0, 1));
             Assert.AreEqual("Champion", BattleHud.Record(2, 0));
             Assert.AreEqual("", BattleHud.Record(0, 0));
-            var def = new OpenKingdomsUnity.Game.UnitDef { Title = "Monarch", Description = "Monarch of Aramon", Category = "ARA MONARCH" };
-            Assert.AreEqual("Monarch of Aramon", BattleHud.Describe(def));
-            def.Description = "";
-            Assert.AreEqual("ARA MONARCH", BattleHud.Describe(def), "the category where the game gives no description");
+        }
+
+        static readonly OpenKingdomsUnity.Game.SideInfo[] Sides =
+        {
+            new OpenKingdomsUnity.Game.SideInfo { Id = "ARAMON", Name = "Aramon" },
+            new OpenKingdomsUnity.Game.SideInfo { Id = "ZHON", Name = "Zhon" },
+        };
+
+        static string Described(string description, string category) =>
+            BattleHud.Describe(new OpenKingdomsUnity.Game.UnitDef { Description = description, Category = category, Side = "ARAMON" }, Sides);
+
+        [Test]
+        public void AUnitIsDescribedByItsCategoryWhereTheGameOnlyNamesItsKingdom()
+        {
+            Assert.AreEqual("Monarch of Aramon", Described("Aramon", "ARA Monarch"));
+            Assert.AreEqual("Factory", Described("Aramon", "ARA FACTORY"));
+            Assert.AreEqual("Melee attack", Described("Aramon", "ARA MELEE ATTACK"));
+            Assert.AreEqual("Builder", Described("ZHON", "ZON BUILDER"), "a side's id names it too");
+            Assert.AreEqual("", Described("Aramon", "ARA"), "nothing left, so no line");
+            Assert.AreEqual("Melee attack", Described("NPC", "ARA MELEE ATTACK"));
+            Assert.AreEqual("Factory", Described("", "ARA FACTORY"));
+            Assert.AreEqual("A knight of the western realm", Described("A knight of the western realm", "ARA MELEE ATTACK"), "prose from the game wins");
+        }
+
+        [Test]
+        public void AKeyLetterIsTallerThanItsCapitalAndRoomyAt720p()
+        {
+            foreach (var l in Every())
+                foreach (var name in HudLayout.SlotNames)
+                    Assert.GreaterOrEqual(l.Badge(name).height, 0.65f * l.BadgeEm + 0.2f, $"{name}'s tab holds a capital at {At(l)}");
+            var small = new HudLayout(1280, 720, HudLayout.DefaultScale);
+            var tab = small.Badge("O1L");
+            Assert.AreEqual(1.2f * small.BadgeEm + 0.5f, tab.width, 1e-3f, "an order's tab at 720p");
+            Assert.AreEqual(0.8f * small.BadgeEm + 0.5f, tab.height, 1e-3f);
         }
     }
 }

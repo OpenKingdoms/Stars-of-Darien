@@ -346,6 +346,8 @@ namespace OpenKingdomsUnity.Tests
                         Assert.GreaterOrEqual(size * s, HudLayout.BodyFloor - 0.01f, $"{t.name} '{Plain(t.text)}', {at}");
                         if (t.name == "Numbers" || t.name == "Clock" || t.name == "Income" || t.name == "Spend" || t.name == "Kills" || t.name == "Queued" || t.name == "Cost" || t.name == "Count")
                             Assert.GreaterOrEqual(size * s, HudLayout.NumberFloor - 0.01f, $"{t.name}, {at}");
+                        if (t.name == "Key")
+                            Assert.AreEqual(t.fontSize * s >= 14f, t.fontStyle == FontStyle.Bold, $"a key letter is bold only from 14 px, {at}");
                         if (t.name == "Key" || t.name == "Cost")
                         {
                             Assert.LessOrEqual(t.preferredWidth, t.rectTransform.rect.width + 0.01f, $"{t.name} '{t.text}' fits its tab, {at}");
@@ -518,7 +520,7 @@ namespace OpenKingdomsUnity.Tests
             mock.Select(new[] { knight }, false);
             yield return Settle();
             var kd = mock.UnitDefs[mine.First(u => u.Handle == knight).Def];
-            Assert.AreEqual(BattleHud.Describe(kd), Named<Text>("Description").text);
+            Assert.AreEqual(BattleHud.Describe(kd, mock.Sides), Named<Text>("Description").text);
             Assert.AreEqual("Champion, 12 kills", Named<Text>("Record").text);
         }
 
@@ -556,7 +558,7 @@ namespace OpenKingdomsUnity.Tests
             yield return Settle();
             var def = mock.UnitDefs[Units().First(u => u.Handle == knight).Def];
             Assert.IsNotEmpty(def.Description);
-            Assert.AreEqual(def.Description, Named<Text>("Group").text, "the description in the strip's spare width");
+            Assert.AreEqual(BattleHud.Describe(def, mock.Sides), Named<Text>("Group").text, "the description in the strip's spare width");
             Assert.AreEqual("Veteran.", Named<Text>("Rank").text, "after the rank word");
             Assert.AreEqual("4", Named<Text>("Kills").text);
             Assert.AreEqual("kills", Named<Text>("KillsLabel").text, "the count says what it counts");
@@ -564,6 +566,16 @@ namespace OpenKingdomsUnity.Tests
             yield return Settle();
             Assert.IsNull(Named<Text>("KillsLabel"), "no word without a count");
             Assert.IsNull(Named<Text>("Rank"), "nor a rank");
+
+            // A game whose description only names the kingdom: the category says what it is.
+            def.Description = mock.Sides.First(sd => sd.Id == def.Side).Name;
+            def.Category = "ARA MELEE ATTACK";
+            mock.Select(new int[0], false);
+            yield return Settle();
+            mock.Select(new[] { knight }, false);
+            yield return Settle();
+            Assert.AreEqual("Melee attack", Named<Text>("Group").text, "never the kingdom's name");
+            Assert.AreEqual("Melee attack", Named<Text>("Description").text, "in the roster too");
 
             var two = new[] { knight, Own(MockBackend.Role.Archer) };
             mock.Select(two, false);

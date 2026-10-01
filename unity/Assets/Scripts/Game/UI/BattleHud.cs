@@ -633,7 +633,7 @@ namespace OpenKingdomsUnity.Game.UI
             var title = top;
             title.xMin = HudLayout.RosterTitle(top).x;
             FitWords(rosterRows, "Title", title, UiKit.BodyFont, 11, 8, HudLayout.BodyFloor, HudArt.Ink, TextAnchor.MiddleLeft).text = Nice(d);
-            string record = Record(rk, k), text = Describe(d);
+            string record = Record(rk, k), text = Describe(d, root.Backend.Sides);
             int last = rows - 1;
             if (record != "" && last >= 1)
             {
@@ -984,7 +984,7 @@ namespace OpenKingdomsUnity.Game.UI
             }
             var g = layout.Group;
             Move(group.rectTransform, new Rect(g.x + left, g.y, Mathf.Max(0f, g.width - left), g.height));
-            group.text = def != null ? Describe(def) : "";
+            group.text = def != null ? Describe(def, root.Backend.Sides) : "";
         }
 
         public static string RankWord(int rank) => rank >= 2 ? "Champion" : rank == 1 ? "Veteran" : "";
@@ -996,9 +996,31 @@ namespace OpenKingdomsUnity.Game.UI
             return word != "" && count != "" ? word + ", " + count : word + count;
         }
 
-        // What a unit is, from the game, or its category where it gives none.
-        public static string Describe(UnitDef d) =>
-            !string.IsNullOrEmpty(d.Description) ? d.Description : d.Category ?? "";
+        // What the game's description says when it tells whose a unit is, not what.
+        static readonly string[] Owners = { "NPC", "Mission", "Animal", "Monster" };
+
+        // What a unit is. The game's description mostly names its kingdom, and
+        // then the category says it without its side token: "ARA MELEE ATTACK"
+        // is "Melee attack", and "ARA Monarch" is "Monarch of Aramon".
+        public static string Describe(UnitDef d, IReadOnlyList<SideInfo> sides)
+        {
+            string text = (d.Description ?? "").Trim();
+            var side = SideNamed(text, sides);
+            if (text != "" && side == null && !Owners.Any(o => string.Equals(o, text, System.StringComparison.OrdinalIgnoreCase))) return text;
+            var words = (d.Category ?? "").Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length < 2) return "";
+            if (string.Equals(words[1], "Monarch", System.StringComparison.OrdinalIgnoreCase))
+            {
+                side = side ?? SideNamed(d.Side, sides);
+                return side != null ? "Monarch of " + side.Name : "Monarch";
+            }
+            string rest = string.Join(" ", words, 1, words.Length - 1).ToLowerInvariant();
+            return char.ToUpperInvariant(rest[0]) + rest.Substring(1);
+        }
+
+        static SideInfo SideNamed(string word, IReadOnlyList<SideInfo> sides) =>
+            string.IsNullOrEmpty(word) || sides == null ? null
+            : sides.FirstOrDefault(sd => string.Equals(sd.Name, word, System.StringComparison.OrdinalIgnoreCase) || string.Equals(sd.Id, word, System.StringComparison.OrdinalIgnoreCase));
 
         void SetPortrait(int def)
         {
@@ -1268,14 +1290,14 @@ namespace OpenKingdomsUnity.Game.UI
         }
 
         // The key letter on a vellum tab in an ink keyline, in the button's
-        // corner, as big as the floor allows. A Ctrl chord's caret is smaller,
-        // in minium, so the letter keeps the room.
+        // corner, bold only from 14 px where strokes have room. A Ctrl chord's
+        // caret is smaller, in minium, so the letter keeps the room.
         void KeyTab(Transform parent, Rect r, string hotkey)
         {
             Solid(parent, "KeyInk", r, HudArt.Ink);
             Solid(parent, "KeyTab", Grow(r, -Px), HudArt.Vellum);
             var t = Words(parent, "Key", r, UiKit.BodyFont, layout.BadgeEm, HudLayout.BadgeFloor, HudArt.Ink, TextAnchor.MiddleCenter);
-            t.fontStyle = FontStyle.Bold;
+            t.fontStyle = t.fontSize * layout.S >= 14f ? FontStyle.Bold : FontStyle.Normal;
             string glyph = Badge(hotkey);
             t.text = glyph.StartsWith("^")
                 ? $"<size={Mathf.RoundToInt(t.fontSize * 0.6f)}><color={Colour(HudArt.Minium)}>^</color></size>{glyph.Substring(1)}"
