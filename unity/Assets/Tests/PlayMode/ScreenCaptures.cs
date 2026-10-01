@@ -38,6 +38,7 @@ namespace OpenKingdomsUnity.Tests
             {
                 BuildStamp.Version = "Alpha (review)";
                 BuildStamp.SkirmishOnly = true;
+                BuildStamp.MapEditor = false;
             }
             bool engine = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_BACKEND") == "engine";
             string map = System.Environment.GetEnvironmentVariable("OKU_CAPTURE_MAP");
