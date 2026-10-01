@@ -377,7 +377,14 @@ namespace OpenKingdomsUnity.Game
 
         // ---- Saved games ----
 
-        public static string SavesDir => Path.Combine(Application.persistentDataPath, "Saves");
+        // The player's saves. Tests set a folder of their own, and null puts
+        // the player's folder back.
+        public static string SavesDir
+        {
+            get => savesDir ?? Path.Combine(Application.persistentDataPath, "Saves");
+            set => savesDir = value;
+        }
+        static string savesDir;
 
         public struct SaveEntry
         {

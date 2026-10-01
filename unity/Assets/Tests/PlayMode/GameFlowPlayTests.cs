@@ -13,11 +13,16 @@ namespace OpenKingdomsUnity.Tests
     public class GameFlowPlayTests
     {
         GameRoot root;
+        string saves;
+
+        [SetUp]
+        public void OwnSaves() => saves = TempSaves.Use();
 
         [TearDown]
         public void CleanUp()
         {
             if (root != null) Object.Destroy(root.gameObject);
+            TempSaves.Drop(saves);
         }
 
         static IEnumerator Until(System.Func<bool> done, float seconds, string what)

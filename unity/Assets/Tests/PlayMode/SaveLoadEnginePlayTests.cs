@@ -18,13 +18,16 @@ namespace OpenKingdomsUnity.Tests
     public class SaveLoadEnginePlayTests
     {
         GameRoot root;
-        string saved;
+        string saved, saves;
+
+        [SetUp]
+        public void OwnSaves() => saves = TempSaves.Use();
 
         [TearDown]
         public void CleanUp()
         {
             if (root != null) Object.Destroy(root.gameObject);
-            if (saved != null && File.Exists(saved)) File.Delete(saved);
+            TempSaves.Drop(saves);
             saved = null;
         }
 

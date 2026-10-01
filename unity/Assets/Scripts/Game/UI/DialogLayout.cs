@@ -16,6 +16,9 @@ namespace OpenKingdomsUnity.Game.UI
         public const float PlateH = 56f, PlateMinH = 48f, PlateMinW = 240f, PlateW = 240f, Gap = 16f;
         public const float RowH = 52f, RubricH = 44f, PickerW = 300f, PickerH = 48f, ArrowW = 40f;
         public const float TableRowH = 36f, TableHeadH = 28f, ListRowH = 44f;
+        // Ruled list rows stand this far apart, so no two share an edge that
+        // both would take a click on.
+        public const float ListRowGap = 2f;
         // The top of the folder and notice screens: a band, then a purple
         // strip with the game's name. And the loading screen's bar.
         public const float ScreenBand = 12f, StripH = 104f, BarW = 1040f, BarH = 28f;

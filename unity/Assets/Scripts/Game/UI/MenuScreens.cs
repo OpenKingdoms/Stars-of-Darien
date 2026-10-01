@@ -868,7 +868,7 @@ namespace OpenKingdomsUnity.Game.UI
             var well = UiKit.PaintedImage(p, "Saves", box.Local(new Rect(box.List.x, box.Note.y, box.List.width, box.List.yMax - box.Note.y)),
                 "trough", HudArt.TroughSize, HudArt.TroughBorder, HudArt.Trough);
             well.raycastTarget = true;
-            saveItems = UiKit.ScrollList(well.transform, "Items", 0);
+            saveItems = UiKit.ScrollList(well.transform, "Items", DialogLayout.ListRowGap);
             ((RectTransform)saveItems.parent.parent).Fill(12);
             loadEmpty = UiKit.Words(well.transform, "Empty", new Rect(0, 0, 10, 10), "", DialogLayout.Body,
                 new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.6f), UiKit.BodyFont);

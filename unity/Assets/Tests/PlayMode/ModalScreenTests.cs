@@ -19,6 +19,10 @@ namespace OpenKingdomsUnity.Tests
         GameRoot root;
         Camera uiCam;
         RenderTexture rt;
+        string saves;
+
+        [SetUp]
+        public void OwnSaves() => saves = TempSaves.Use();
 
         [TearDown]
         public void CleanUp()
@@ -26,6 +30,7 @@ namespace OpenKingdomsUnity.Tests
             if (root != null) Object.Destroy(root.gameObject);
             if (uiCam != null) Object.Destroy(uiCam.gameObject);
             if (rt != null) rt.Release();
+            TempSaves.Drop(saves);
         }
 
         // Draws the screens into a picture of the given size, as a Game view
@@ -52,6 +57,13 @@ namespace OpenKingdomsUnity.Tests
         {
             var target = FindButton(screen, button);
             Assert.IsNotNull(target, $"{screen} has a {button} button");
+            Uncovered(target);
+            target.onClick.Invoke();
+        }
+
+        void Uncovered(Button target)
+        {
+            string button = target.name;
             var canvasRt = (RectTransform)root.Screens.Canvas.transform;
             var box = WorldRect(canvasRt);
             var own = WorldRect((RectTransform)target.transform);
@@ -64,7 +76,6 @@ namespace OpenKingdomsUnity.Tests
                 if (r.width <= 0f || r.height <= 0f) continue;
                 Assert.IsFalse(r.Overlaps(own), $"{g.name} (depth {g.depth}) lies over {button} (depth {depth})");
             }
-            target.onClick.Invoke();
         }
 
         // What a mask leaves of a graphic, as raycasts see it.
@@ -77,6 +88,13 @@ namespace OpenKingdomsUnity.Tests
                 r = Rect.MinMaxRect(Mathf.Max(r.xMin, c.xMin), Mathf.Max(r.yMin, c.yMin), Mathf.Min(r.xMax, c.xMax), Mathf.Min(r.yMax, c.yMax));
             }
             return r;
+        }
+
+        // Whether a rect lies inside another, edges touching included.
+        static bool Within(Rect inner, Rect outer)
+        {
+            float e = 1e-4f * outer.height;
+            return inner.xMin >= outer.xMin - e && inner.yMin >= outer.yMin - e && inner.xMax <= outer.xMax + e && inner.yMax <= outer.yMax + e;
         }
 
         static Rect WorldRect(RectTransform r)
@@ -451,25 +469,54 @@ namespace OpenKingdomsUnity.Tests
             yield return Begin();
             root.Flow.Fire(FlowEvent.Pause);
             Assert.IsTrue(root.SaveNow(out var path), "a save to list");
-            try
+            Assert.AreEqual(saves, System.IO.Path.GetDirectoryName(path), "saved in the test's own folder");
+            // Fifteen older saves, more rows than the list shows at once.
+            string json = System.IO.File.ReadAllText(path);
+            for (int day = 1; day <= 15; day++)
             {
-                root.Flow.Fire(FlowEvent.ToMenu);
-                root.Flow.Fire(FlowEvent.OpenSkirmish);
-                root.Flow.Fire(FlowEvent.OpenLoad);
-                yield return ViewAt(1280, 720);
-                var load = root.Screens.Screen("Load");
-                var dialog = load.GetComponentInChildren<Dialog>();
-                Assert.IsNotNull(dialog, "the saved games are a dialog on vellum");
-                Assert.AreEqual("Load a game", dialog.Title.text);
-                Assert.IsFalse(load.GetComponentsInChildren<Image>(true).Any(i => i.sprite == UiKit.Stone), "no grey stone left");
-                CheckReadable("Load");
-                var entry = FindButton("Load", "Save " + System.IO.Path.GetFileName(path));
-                Assert.IsNotNull(entry, "the save is a row in the list");
-                Assert.AreEqual(HudArt.Ink, entry.GetComponentInChildren<Text>().color, "in ink on the vellum");
-                Click("Load", entry.name);
-                Assert.AreEqual(FlowState.Loading, root.Flow.State, "a row loads its game");
+                long at = new System.DateTime(2026, 9, day, 12, 0, 0, System.DateTimeKind.Utc).Ticks;
+                System.IO.File.WriteAllText(System.IO.Path.Combine(saves, $"2026-09-{day:00} 12-00-00 Twin Isles.oksav"),
+                    System.Text.RegularExpressions.Regex.Replace(json, "\"savedAt\":\\d+", "\"savedAt\":" + at));
             }
-            finally { System.IO.File.Delete(path); }
+            root.Flow.Fire(FlowEvent.ToMenu);
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            root.Flow.Fire(FlowEvent.OpenLoad);
+            yield return ViewAt(1280, 720);
+            var load = root.Screens.Screen("Load");
+            var dialog = load.GetComponentInChildren<Dialog>();
+            Assert.IsNotNull(dialog, "the saved games are a dialog on vellum");
+            Assert.AreEqual("Load a game", dialog.Title.text);
+            Assert.IsFalse(load.GetComponentsInChildren<Image>(true).Any(i => i.sprite == UiKit.Stone), "no grey stone left");
+            CheckReadable("Load");
+            var rows = load.GetComponentsInChildren<Button>().Where(b => b.name.StartsWith("Save ")).ToList();
+            Assert.AreEqual(16, rows.Count, "a row for every save");
+            var entry = FindButton("Load", "Save " + System.IO.Path.GetFileName(path));
+            Assert.IsNotNull(entry, "the save is a row in the list");
+            Assert.AreSame(rows[0], entry, "the newest first");
+            Assert.AreEqual(HudArt.Ink, entry.GetComponentInChildren<Text>().color, "in ink on the vellum");
+            var scroll = entry.GetComponentInParent<ScrollRect>();
+            Assert.Greater(scroll.content.rect.height, scroll.viewport.rect.height, "the list is longer than its window");
+
+            // Every row the window shows whole takes its own clicks, at the
+            // top of the list and scrolled to its foot.
+            foreach (float place in new[] { 1f, 0f })
+            {
+                scroll.verticalNormalizedPosition = place;
+                yield return null;
+                Canvas.ForceUpdateCanvases();
+                yield return null;
+                var view = WorldRect(scroll.viewport);
+                var shown = rows.Where(r => Within(WorldRect((RectTransform)r.transform), view)).ToList();
+                Assert.GreaterOrEqual(shown.Count, 6, "the window shows six rows or more");
+                Assert.Contains(place > 0.5f ? rows[0] : rows[rows.Count - 1], shown, "the end of the list it is scrolled to");
+                foreach (var row in shown) Uncovered(row);
+            }
+            scroll.verticalNormalizedPosition = 1f;
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+            yield return null;
+            Click("Load", entry.name);
+            Assert.AreEqual(FlowState.Loading, root.Flow.State, "a row loads its game");
         }
     }
 }

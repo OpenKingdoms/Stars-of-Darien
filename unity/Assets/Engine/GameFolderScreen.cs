@@ -93,7 +93,7 @@ namespace OpenKingdomsUnity.Engine
             UiKit.MakePlate(well.transform, "Up", DialogLayout.BrowseUp, Up, dialog, "The folder above this one");
             ListFolder = UiKit.Words(well.transform, "Shown folder", UiKit.Lead(DialogLayout.BrowseFolder(lower.width), DialogLayout.Row), "", DialogLayout.Row,
                 HudArt.Ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
-            List = UiKit.ScrollList(well.transform, "Folders", 0);
+            List = UiKit.ScrollList(well.transform, "Folders", DialogLayout.ListRowGap);
             var rows = DialogLayout.BrowseRows(lower.size);
             var view = (RectTransform)List.parent.parent;
             view.anchorMin = view.anchorMax = view.pivot = new Vector2(0, 1);
