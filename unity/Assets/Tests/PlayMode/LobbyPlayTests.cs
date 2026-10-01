@@ -356,15 +356,18 @@ namespace OpenKingdomsUnity.Tests
 
             // A field with the keys keeps Enter for itself.
             EventSystem.current.SetSelectedGameObject(sk.Browser.Search.gameObject);
+            yield return null;
             Assert.IsFalse(root.Screens.Lobby.Key(KeyCode.Return), "Enter in the search field");
             Assert.AreEqual(FlowState.Skirmish, root.Flow.State);
+            sk.Browser.Search.DeactivateInputField();
             EventSystem.current.SetSelectedGameObject(null);
+            yield return null;
 
             Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Escape));
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State, "Escape goes back to the menu");
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             yield return null;
-            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Return));
+            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Return), $"Enter taken on {root.Flow.State}, focus {EventSystem.current.currentSelectedGameObject?.name}");
             Assert.AreEqual(FlowState.Loading, root.Flow.State, "Enter starts the game");
         }
 
