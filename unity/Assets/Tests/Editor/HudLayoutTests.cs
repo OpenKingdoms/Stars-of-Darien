@@ -250,5 +250,124 @@ namespace OpenKingdomsUnity.Tests
                     Assert.LessOrEqual(filler.yMax, l.Block.y, "the filler above the orders");
                 }
         }
+
+        static bool Inside(Rect a, Rect b) =>
+            a.xMin >= b.xMin - 1e-3f && a.yMin >= b.yMin - 1e-3f && a.xMax <= b.xMax + 1e-3f && a.yMax <= b.yMax + 1e-3f;
+
+        static float Shared(Rect a, Rect b) =>
+            Mathf.Max(0f, Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin)) * Mathf.Max(0f, Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin));
+
+        [Test]
+        public void AKeyLetterSitsInItsButtonsCornerOffThePicture()
+        {
+            foreach (var l in Every())
+            {
+                Assert.GreaterOrEqual(l.BadgeEm * l.S, HudLayout.BadgeFloor - 0.01f, "the letter reads at " + At(l));
+                foreach (var name in HudLayout.SlotNames)
+                {
+                    var pic = HudLayout.Slot(name);
+                    var tab = l.Badge(name);
+                    Assert.IsTrue(Inside(tab, HudLayout.Hit(pic)), $"{name}'s key {tab} inside its hit rect at {At(l)}");
+                    Assert.LessOrEqual(Shared(tab, pic), 0.1f * pic.width * pic.height + 1e-3f, $"{name}'s key covers a tenth of its picture at most, {At(l)}");
+                    Assert.GreaterOrEqual(tab.width, l.BadgeEm, $"{name}'s tab holds a letter at {At(l)}");
+                    Assert.LessOrEqual(tab.width * l.S, HudLayout.Slot(name).width * l.S, "no wider than its button");
+                }
+            }
+            var owner = new HudLayout(1920, 1080, HudLayout.DefaultScale).Badge("O2L");
+            Assert.LessOrEqual(owner.width, 11f, "at most 11 cp wide on the owner's screen");
+            Assert.LessOrEqual(owner.height, 9f, "and 9 tall");
+        }
+
+        [Test]
+        public void TheKeyLetterIsOneGlyphAndTheHelpBoxSpellsItOut()
+        {
+            Assert.AreEqual("M", BattleHud.Badge("m"));
+            Assert.AreEqual("P", BattleHud.Badge("P"));
+            Assert.AreEqual("^A", BattleHud.Badge("a"), "A pans the camera, so attack is Ctrl A, a caret for Ctrl");
+            Assert.AreEqual("^S", BattleHud.Badge("S"));
+            Assert.AreEqual("Ctrl A", BattleHud.KeyName("a"));
+            Assert.AreEqual("M", BattleHud.KeyName("m"));
+        }
+
+        [Test]
+        public void TheRosterTakesTheSlotUnderTheMapWhereItIsTallEnough()
+        {
+            int shown = 0;
+            foreach (var l in Every())
+                foreach (float aspect in new[] { 0.5f, 1f, 1.25f, 2f })
+                {
+                    var filler = l.Filler(l.MapRect(aspect));
+                    var r = HudLayout.Roster(filler);
+                    if (filler.height < HudLayout.RosterMinH)
+                    {
+                        Assert.AreEqual(Rect.zero, r, $"no roster in a {filler.height} cp slot at {At(l)}");
+                        continue;
+                    }
+                    shown++;
+                    Assert.IsTrue(Inside(r, filler), $"{r} inside {filler} at {At(l)}");
+                    int rows = HudLayout.RosterRows(r);
+                    Assert.That(rows, Is.InRange(1, HudLayout.RosterMaxRows), At(l));
+                    for (int i = 0; i < rows; i++)
+                    {
+                        var row = HudLayout.RosterRow(r, i);
+                        Assert.AreEqual(16f, row.height, 1e-4f);
+                        Assert.IsTrue(Inside(row, r), $"row {i} inside the roster at {At(l)}");
+                    }
+                    if (rows < HudLayout.RosterMaxRows) Assert.Greater(HudLayout.RosterRow(r, rows).yMax, r.yMax, "every row that fits is used");
+                }
+            Assert.Greater(shown, 0, "some screens have a roster");
+            var owner = new HudLayout(1920, 1080, HudLayout.DefaultScale);
+            var room = HudLayout.Roster(owner.Filler(owner.MapRect(1.25f)));
+            Assert.AreEqual(HudLayout.RosterMaxRows, HudLayout.RosterRows(room), "six rows on the owner's screen");
+        }
+
+        [Test]
+        public void TheWordKillsSitsUnderTheCountWithoutCrowdingTheStrip()
+        {
+            foreach (var l in Every())
+            {
+                var label = l.KillsLabel;
+                if (label.width <= 0) { Assert.AreEqual(HudLayout.Kills, l.KillsCount, "the count alone where the word has no room, " + At(l)); continue; }
+                Assert.IsTrue(Inside(label, HudLayout.Kills), "the word inside Kills at " + At(l));
+                Assert.IsTrue(Inside(l.KillsCount, HudLayout.Kills), "the count inside Kills at " + At(l));
+                Assert.IsFalse(label.Overlaps(l.KillsCount), "the word under the count at " + At(l));
+                foreach (var t in l.StripTexts())
+                    if (t.name != "Kills") Assert.IsFalse(label.Overlaps(t.rect), $"the word over {t.name} at {At(l)}");
+                foreach (var b in l.StripTroughs()) Assert.IsFalse(label.Overlaps(b.rect), $"the word over the {b.name} bar at {At(l)}");
+            }
+            Assert.Greater(new HudLayout(1920, 1080, HudLayout.DefaultScale).KillsLabel.width, 0f, "the owner's screen has room for it");
+        }
+
+        [Test]
+        public void MinimapDotsAreBigEnoughToSee()
+        {
+            var owner = new HudLayout(1920, 1080, HudLayout.DefaultScale);
+            Assert.GreaterOrEqual(owner.DotUnit, 3, "a unit's dot in screen pixels at 1080p");
+            Assert.GreaterOrEqual(owner.DotBuilding, 4, "a building's");
+            foreach (var l in Every()) Assert.Greater(l.DotBuilding, l.DotUnit, "buildings stand out from units at " + At(l));
+        }
+
+        [Test]
+        public void TheHelpBoxAndLabelsSayWhatACardOrUnitIs()
+        {
+            Assert.AreEqual(("Knight, 120 mana", "Shift 5, Ctrl repeat, right click removes"), BattleHud.CardLines("Knight", 120, true, false, true));
+            Assert.AreEqual("Click to place, R turns it", BattleHud.CardLines("Lodge", 400, false, true, true).Item2);
+            Assert.AreEqual("Click to place", BattleHud.CardLines("Lodestone", 400, false, false, true).Item2);
+            Assert.AreEqual("Not enough mana", BattleHud.CardLines("Lodge", 400, false, true, false).Item2);
+            Assert.AreEqual("Not enough mana", BattleHud.CardLines("Knight", 120, true, false, false).Item2);
+            Assert.AreEqual("–", BattleHud.SpellCost(0), "a dash under a spell that costs nothing");
+            Assert.AreEqual("200", BattleHud.SpellCost(200));
+            Assert.AreEqual("", BattleHud.RankWord(0));
+            Assert.AreEqual("Veteran", BattleHud.RankWord(1));
+            Assert.AreEqual("Champion", BattleHud.RankWord(2));
+            Assert.AreEqual("Veteran, 12 kills", BattleHud.Record(1, 12));
+            Assert.AreEqual("1 kill", BattleHud.Record(0, 1));
+            Assert.AreEqual("Champion", BattleHud.Record(2, 0));
+            Assert.AreEqual("", BattleHud.Record(0, 0));
+            var def = new OpenKingdomsUnity.Game.UnitDef { Title = "Monarch", Description = "Monarch of Aramon", Category = "ARA MONARCH" };
+            Assert.AreEqual("Monarch of Aramon", BattleHud.Describe(def));
+            def.Description = "";
+            Assert.AreEqual("ARA MONARCH", BattleHud.Describe(def), "the category where the game gives no description");
+        }
     }
 }

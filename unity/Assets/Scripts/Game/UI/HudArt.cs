@@ -18,6 +18,11 @@ namespace OpenKingdomsUnity.Game.UI
         public static readonly Color Gold = Hex(0xC8A24A), GoldHi = Hex(0xF3DC8A), GoldShadow = Hex(0x7A5A1E);
         public static readonly Color Purple = Hex(0x3B1F3A), Silver = Hex(0xD5D9DF);
         public static readonly Color Garnet = Hex(0x8E1B2A), Sapphire = Hex(0x1F3E8A), Emerald = Hex(0x1E6B4A), Pearl = Hex(0xEDE6D6);
+        // Minium lightened to read on purple (5:1), for a refusal in the help box.
+        public static readonly Color MiniumPale = Hex(0xCA8778);
+        // A bezel under a pressed button, and the wash on a card the pool cannot pay for.
+        public static readonly Color Pressed = GoldShadow;
+        public static readonly Color Unaffordable = new Color(Vellum.r, Vellum.g, Vellum.b, 0.25f);
 
         public static Color Hex(int rgb) => new Color(((rgb >> 16) & 255) / 255f, ((rgb >> 8) & 255) / 255f, (rgb & 255) / 255f, 1f);
 
@@ -218,7 +223,6 @@ namespace OpenKingdomsUnity.Game.UI
             float aa = 0.6f / s, hair = Mathf.Max(0.5f, 1f / s);
             var keyline = new Color(Ink.r, Ink.g, Ink.b, 0.45f);
             var red = new Color(Minium.r, Minium.g, Minium.b, 0.6f);
-            var gold = new Color(Gold.r, Gold.g, Gold.b, 0.8f);
             float size = Mathf.Min(26f, Mathf.Min(wCp, hCp) * 0.28f), k = size / 12f;
             float len = 2.6f * k, rad = 1.85f * k, core = 0.72f * k, outline = Mathf.Max(0.36f * k, hair);
             float ring = size * 0.72f;
@@ -227,11 +231,7 @@ namespace OpenKingdomsUnity.Game.UI
             float Loop(float a, float b) { float q = Mathf.Max(0f, Mathf.Abs(a) - len); return Mathf.Abs(Mathf.Sqrt(q * q + b * b) - rad); }
             return Paint(wCp, hCp, s, (x, y) =>
             {
-                float d = Mathf.Min(Mathf.Min(x, wCp - x), Mathf.Min(y, hCp - y));
-                var c = Color.clear;
-                c = Over(c, keyline, Band(d, 0f, hair, aa));
-                c = Over(c, red, Band(d, 1.5f, 1.5f + hair * 1.4f, aa));
-                c = Over(c, gold, Band(d, 3f, 3.9f, aa));
+                var c = RuledFrame(x, y, wCp, hCp, s);
                 float px = x - wCp / 2f, py = y - hCp / 2f, r = Mathf.Sqrt(px * px + py * py);
                 c = Over(c, red, Band(r, ring - hair * 0.7f, ring + hair * 0.7f, aa));
                 c = Over(c, keyline, Band(r, ring + 1.6f, ring + 1.6f + hair, aa));
@@ -249,6 +249,36 @@ namespace OpenKingdomsUnity.Game.UI
                     c = Over(c, sc, outer);
                 }
                 return c;
+            });
+        }
+
+        // The filler's ink, minium and gold rules, clear inside.
+        static Color RuledFrame(float x, float y, float wCp, float hCp, float s)
+        {
+            float aa = 0.6f / s, hair = Mathf.Max(0.5f, 1f / s);
+            float d = Mathf.Min(Mathf.Min(x, wCp - x), Mathf.Min(y, hCp - y));
+            var c = Color.clear;
+            c = Over(c, new Color(Ink.r, Ink.g, Ink.b, 0.45f), Band(d, 0f, hair, aa));
+            c = Over(c, new Color(Minium.r, Minium.g, Minium.b, 0.6f), Band(d, 1.5f, 1.5f + hair * 1.4f, aa));
+            return Over(c, new Color(Gold.r, Gold.g, Gold.b, 0.8f), Band(d, 3f, 3.9f, aa));
+        }
+
+        // The roster's panel under the minimap: the filler's frame without its knot.
+        public static Sheet RosterFrame(float wCp, float hCp, float s) =>
+            Paint(wCp, hCp, s, (x, y) => RuledFrame(x, y, wCp, hCp, s));
+
+        public const float ViewBoxCp = 8f, ViewBoxBorderCp = 3f;
+
+        // The minimap's view box, sliced at ViewBoxBorderCp: a 1.5 cp gold
+        // highlight between half-cp ink lines, so it reads on any ground.
+        public static Sheet ViewBox(float s)
+        {
+            float aa = 0.5f / s;
+            return Paint(ViewBoxCp, ViewBoxCp, s, (x, y) =>
+            {
+                float d = Mathf.Min(Mathf.Min(x, ViewBoxCp - x), Mathf.Min(y, ViewBoxCp - y));
+                var c = Over(Color.clear, Ink, Band(d, 0f, 2.5f, aa));
+                return Over(c, GoldHi, Band(d, 0.5f, 2f, aa));
             });
         }
 

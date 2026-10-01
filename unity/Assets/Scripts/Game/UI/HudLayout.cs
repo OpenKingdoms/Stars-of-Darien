@@ -104,6 +104,30 @@ namespace OpenKingdomsUnity.Game.UI
             return new Rect(MapSlot.x + BandW + 6, top, SidebarW - BandW - 12, bottom - top);
         }
 
+        // Unit dots on the minimap in screen pixels, buildings a size up.
+        public int DotUnit => Mathf.Max(2, Mathf.RoundToInt(S * 1.6f));
+        public int DotBuilding => Mathf.Max(DotUnit + 1, Mathf.RoundToInt(S * 2.2f));
+
+        // ---- The roster, in the filler's frame ----
+
+        public const float RosterMinH = 40f, RosterRowH = 16f, RosterInset = 5f;
+        public const int RosterMaxRows = 6;
+
+        // Inside the filler's frame, or nothing where the slot is too short.
+        public static Rect Roster(Rect filler) =>
+            filler.height < RosterMinH ? Rect.zero
+            : new Rect(filler.x + RosterInset, filler.y + RosterInset, filler.width - 2 * RosterInset, filler.height - 2 * RosterInset);
+
+        public static int RosterRows(Rect roster) =>
+            roster.height <= 0 ? 0 : Mathf.Min(RosterMaxRows, Mathf.FloorToInt(roster.height / RosterRowH + 0.001f));
+
+        public static Rect RosterRow(Rect roster, int i) => new Rect(roster.x, roster.y + i * RosterRowH, roster.width, RosterRowH);
+
+        // In a row: the kind's picture at the build card's shape, its title, its count.
+        public static Rect RosterPicture(Rect row) => new Rect(row.x, row.y + 0.5f, 20f, 15f);
+        public static Rect RosterTitle(Rect row) => new Rect(row.x + 24f, row.y, row.width - 48f, RosterRowH);
+        public static Rect RosterCount(Rect row) => new Rect(row.xMax - 22f, row.y, 22f, RosterRowH);
+
         // ---- The order block, relative to its top left ----
 
         public static readonly Rect Header = new Rect(0, 0, 128, 25);
@@ -136,6 +160,20 @@ namespace OpenKingdomsUnity.Game.UI
 
         public static IEnumerable<string> SlotNames => slots.Keys;
         public static Rect Slot(string name) => slots[name];
+
+        // A key letter's size in cp: 8, or bigger where the floor needs it.
+        public const float BadgeCp = 8f;
+        public int BadgeEm => Font(BadgeCp, BadgeFloor);
+
+        // The key letter's tab, in the lower right corner of the button's
+        // hit rect over the bezel, a capital's height and a letter's width,
+        // so it covers a tenth of the picture at most.
+        public Rect Badge(string slot)
+        {
+            var hit = Hit(Slot(slot));
+            float em = BadgeEm, w = 1.05f * em + 0.5f, h = 0.62f * em + 0.2f;
+            return new Rect(hit.xMax - w, hit.yMax - h, w, h);
+        }
 
         static bool IsWeapon(string id) => id == "PrimaryWeapon" || id == "SecondaryWeapon" || id == "SpecialWeapon";
 
@@ -224,6 +262,13 @@ namespace OpenKingdomsUnity.Game.UI
         // Health and mana numbers, out to the target panel where the strip
         // is wider than the original's.
         public Rect Numbers => new Rect(252, 27, Mathf.Max(130f, (HasTarget ? Target.x - 4f : StripW - 4f) - 252f), 16);
+
+        // The kill count with the word "kills" under it, each rect as tall as
+        // its figures or letters, where both fit at their floors. Otherwise
+        // the count alone in Kills and no word.
+        public Rect KillsCount => KillsRoom ? new Rect(Kills.x, Kills.y, Kills.width, 0.864f * Font(11, NumberFloor)) : Kills;
+        public Rect KillsLabel => KillsRoom ? new Rect(Kills.x, Kills.yMax - 0.709f * Font(8, BodyFloor), Kills.width, 0.709f * Font(8, BodyFloor)) : Rect.zero;
+        bool KillsRoom => 0.864f * Font(11, NumberFloor) + 0.709f * Font(8, BodyFloor) <= Kills.height;
 
         // A trough's fill: 97 cp of its 106, 3 cp tall, centred.
         public static Rect Fill(Rect trough) => new Rect(trough.x + 5, trough.y + 1.5f, 97, 3);

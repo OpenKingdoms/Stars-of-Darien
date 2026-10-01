@@ -29,7 +29,7 @@ namespace OpenKingdomsUnity.Tests
             BattleHud.SizeOverride = null;
         }
 
-        IEnumerator Begin()
+        IEnumerator Begin(int startMana = 1000)
         {
             BattleHud.SizeOverride = new Vector2Int(1920, 1080);
             mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
@@ -40,6 +40,7 @@ namespace OpenKingdomsUnity.Tests
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             root.Setup.MapId = "mock_highlands";
             root.Setup.MapRevealed = true;
+            root.Setup.StartMana = startMana;
             root.Screens.StartGame();
             float deadline = Time.realtimeSinceStartup + 30f;
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
@@ -74,6 +75,21 @@ namespace OpenKingdomsUnity.Tests
         }
 
         static string Plain(string rich) => Regex.Replace(rich, "<[^>]+>", "");
+
+        static Rect Local(Rect r, Rect origin) => new Rect(r.x - origin.x, r.y - origin.y, r.width, r.height);
+
+        static void Pointer(GameObject go, bool down)
+        {
+            var e = new PointerEventData(EventSystem.current) { button = PointerEventData.InputButton.Left };
+            if (down) ExecuteEvents.Execute(go, e, ExecuteEvents.pointerDownHandler);
+            else ExecuteEvents.Execute(go, e, ExecuteEvents.pointerUpHandler);
+        }
+
+        int[] Selection()
+        {
+            var into = new int[512];
+            return into.Take(mock.ReadSelection(into)).ToArray();
+        }
 
         static void AtCp(Rect expected, RectTransform rt, string what)
         {
@@ -147,11 +163,18 @@ namespace OpenKingdomsUnity.Tests
             };
             foreach (var (id, slot) in slots)
                 AtCp(HudLayout.Hit(HudLayout.Slot(slot)), Button(id), id);
-            string Key(string id) => Button(id).GetComponentsInChildren<Text>().FirstOrDefault(t => t.name == "Key")?.text;
+            Text KeyText(string id) => Button(id).GetComponentsInChildren<Text>().FirstOrDefault(t => t.name == "Key");
+            string Key(string id) => KeyText(id) is Text t ? Plain(t.text) : null;
             Assert.AreEqual("M", Key("MOVE"));
-            Assert.AreEqual("Ctrl A", Key("ATTACK"), "A pans the camera, so attack takes Ctrl");
-            Assert.AreEqual("Ctrl S", Key("STOP"));
+            Assert.AreEqual("^A", Key("ATTACK"), "A pans the camera, so attack takes Ctrl, shown as a caret");
+            Assert.AreEqual("^S", Key("STOP"));
             Assert.IsNull(Key("Offensive"), "stances have no key");
+            foreach (var (id, slot) in slots)
+            {
+                var k = KeyText(id);
+                if (k == null) continue;
+                AtCp(Local(Hud.Layout.Badge(slot), HudLayout.Hit(HudLayout.Slot(slot))), k.rectTransform, id + "'s key in its corner");
+            }
             root.Options.HotkeyLetters = false;
             yield return Settle();
             Assert.IsNull(Key("MOVE"), "the letters can be hidden");
@@ -180,6 +203,9 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual("Fireball", Hud.HelpLine1);
             Assert.AreEqual(MockBackend.FireballCost + " mana", Hud.HelpLine2);
             Button("PrimaryWeapon").GetComponent<HoverHint>().Show(false);
+            Button("ATTACK").GetComponent<HoverHint>().Show(true);
+            Assert.AreEqual("Ctrl A", Hud.HelpLine2, "the help box spells out the key the badge abbreviates");
+            Button("ATTACK").GetComponent<HoverHint>().Show(false);
 
             // An armed order names itself and how to let it go.
             Button("PATROL").GetComponent<Button>().onClick.Invoke();
@@ -318,7 +344,7 @@ namespace OpenKingdomsUnity.Tests
                     {
                         int size = t.resizeTextForBestFit ? t.resizeTextMinSize : t.fontSize;
                         Assert.GreaterOrEqual(size * s, HudLayout.BodyFloor - 0.01f, $"{t.name} '{Plain(t.text)}', {at}");
-                        if (t.name == "Numbers" || t.name == "Clock" || t.name == "Income" || t.name == "Spend" || t.name == "Kills" || t.name == "Queued" || t.name == "Cost")
+                        if (t.name == "Numbers" || t.name == "Clock" || t.name == "Income" || t.name == "Spend" || t.name == "Kills" || t.name == "Queued" || t.name == "Cost" || t.name == "Count")
                             Assert.GreaterOrEqual(size * s, HudLayout.NumberFloor - 0.01f, $"{t.name}, {at}");
                         if (t.name == "Key" || t.name == "Cost")
                         {
@@ -367,6 +393,195 @@ namespace OpenKingdomsUnity.Tests
             root.Screens.Screen("Hud").SetActive(true);
             yield return Settle();
             Assert.AreEqual(v.width, cam.rect.width, 1e-4f);
+        }
+
+        [UnityTest]
+        public IEnumerator AButtonGoesDownUnderThePointerAndComesBackUp()
+        {
+            yield return Begin();
+            mock.Select(new[] { Own(MockBackend.Role.Knight) }, false);
+            yield return Settle();
+            var move = Button("MOVE");
+            var plate = (RectTransform)move.Find("Plate");
+            Assert.IsNotNull(plate, "the picture and bezel move together");
+            var bezel = plate.Find("Bezel").GetComponent<Image>();
+            var rest = plate.anchoredPosition;
+            Pointer(move.gameObject, true);
+            Assert.AreEqual(rest + new Vector2(1, -1), plate.anchoredPosition, "down and right by 1 cp");
+            Assert.AreEqual(HudArt.GoldShadow, bezel.color, "the bezel in shadow");
+            yield return Settle();
+            Assert.AreEqual(rest + new Vector2(1, -1), plate.anchoredPosition, "a refresh keeps it down");
+            Assert.AreEqual(HudArt.GoldShadow, bezel.color);
+            Pointer(move.gameObject, false);
+            Assert.AreEqual(rest, plate.anchoredPosition, "and up again");
+            Assert.AreEqual(HudArt.Gold, bezel.color);
+
+            // A build card's picture goes in by 1 cp, and the Menu lozenge goes down.
+            mock.Select(new[] { Own(MockBackend.Role.Monarch) }, false);
+            yield return Settle();
+            var card = GameObject.Find("Builds").transform.GetChild(0);
+            var cardPlate = (RectTransform)card.Find("Plate");
+            Assert.IsNotNull(cardPlate);
+            var cardRest = cardPlate.anchoredPosition;
+            Pointer(card.gameObject, true);
+            Assert.AreEqual(cardRest + new Vector2(1, -1), cardPlate.anchoredPosition, "the card's picture goes in");
+            Assert.IsTrue(cardPlate.GetComponentsInChildren<Image>().Where(i => i.name == "Bezel").All(i => i.color == HudArt.GoldShadow), "its bezel in shadow");
+            Pointer(card.gameObject, false);
+            Assert.AreEqual(cardRest, cardPlate.anchoredPosition);
+            var menu = Named<Image>("Menu");
+            var lozenge = menu.transform.Find("Lozenge") as RectTransform;
+            var lozRest = lozenge.anchoredPosition;
+            Pointer(menu.gameObject, true);
+            Assert.AreEqual(lozRest + new Vector2(1, -1), lozenge.anchoredPosition, "the Menu lozenge goes down");
+            Pointer(menu.gameObject, false);
+            Assert.AreEqual(lozRest, lozenge.anchoredPosition);
+        }
+
+        [UnityTest]
+        public IEnumerator ACardThePoolCannotPayForSaysSo()
+        {
+            yield return Begin(100);
+            var monarch = Units().First(u => u.Player == 1 && mock.RoleOf(u.Def) == MockBackend.Role.Monarch);
+            mock.Select(new[] { monarch.Handle }, false);
+            yield return Settle();
+            var options = mock.UnitDefs[monarch.Def].BuildOptions.Select(i => mock.UnitDefs[i]).ToArray();
+            var dear = options.OrderByDescending(d => d.ManaCost).First();
+            var cheap = options.OrderBy(d => d.ManaCost).First();
+            Assert.Greater(dear.ManaCost, 200, "the mock's dearest option is more than the pool");
+            Assert.LessOrEqual(cheap.ManaCost, 100);
+            var builds = GameObject.Find("Builds").transform;
+            Transform Card(UnitDef d) => builds.Find("Build " + d.Name);
+            Text Cost(UnitDef d) => Card(d).GetComponentsInChildren<Text>().First(t => t.name == "Cost");
+            Image Wash(UnitDef d) => Card(d).GetComponentsInChildren<Image>(true).First(i => i.name == "Wash");
+            Assert.AreEqual(HudArt.Minium, Cost(dear).color, "the cost the pool cannot pay in minium");
+            Assert.IsTrue(Wash(dear).enabled, "and its picture washed");
+            Assert.AreEqual(HudArt.AzuriteDeep, Cost(cheap).color, "what it can pay as before");
+            Assert.IsFalse(Wash(cheap).enabled);
+            Assert.IsTrue(Card(dear).GetComponent<Button>().interactable, "still clickable: the engine refuses and says why");
+            Card(dear).GetComponent<HoverHint>().Show(true);
+            Assert.AreEqual(Nice(dear) + ", " + dear.ManaCost + " mana", Hud.HelpLine1);
+            Assert.AreEqual("Not enough mana", Hud.HelpLine2);
+            Card(dear).GetComponent<HoverHint>().Show(false);
+            Card(cheap).GetComponent<HoverHint>().Show(true);
+            StringAssert.StartsWith("Click to place", Hud.HelpLine2, "a builder's card says how to place it");
+            Card(cheap).GetComponent<HoverHint>().Show(false);
+
+            // A factory's card gives its queue keys.
+            mock.Select(new[] { Own(MockBackend.Role.Lodge) }, false);
+            yield return Settle();
+            var lodge = Units().First(u => u.Player == 1 && mock.RoleOf(u.Def) == MockBackend.Role.Lodge);
+            var made = mock.UnitDefs[lodge.Def].BuildOptions.Select(i => mock.UnitDefs[i]).OrderBy(d => d.ManaCost).First();
+            Card(made).GetComponent<HoverHint>().Show(true);
+            Assert.AreEqual("Shift 5, Ctrl repeat, right click removes", Hud.HelpLine2);
+            Card(made).GetComponent<HoverHint>().Show(false);
+        }
+
+        static string Nice(UnitDef d) =>
+            !string.IsNullOrEmpty(d.Title) ? d.Title : string.IsNullOrEmpty(d.Description) ? d.Name : d.Description;
+
+        [UnityTest]
+        public IEnumerator TheRosterListsTheSelectionsKindsAndNarrowsIt()
+        {
+            yield return Begin();
+            var mine = Units().Where(u => u.Player == 1).ToArray();
+            int[] Of(MockBackend.Role role) => mine.Where(u => mock.RoleOf(u.Def) == role).Select(u => u.Handle).ToArray();
+            var knights = Of(MockBackend.Role.Knight);
+            var archers = Of(MockBackend.Role.Archer);
+            var mages = Of(MockBackend.Role.Mage);
+            Assert.AreEqual(3, new[] { knights.Length, archers.Length, mages.Length }.Distinct().Count(), "three kinds in different numbers");
+            mock.Select(knights.Concat(archers).Concat(mages).ToArray(), false);
+            yield return Settle();
+            var roster = Named<RectTransform>("Roster");
+            Assert.IsNotNull(roster, "the slot under the minimap holds the roster");
+            Assert.IsNull(Named<RawImage>("Filler"), "not the empty filler");
+            var rows = roster.GetComponentsInChildren<Button>().Where(b => b.name.StartsWith("Kind ")).ToArray();
+            Assert.AreEqual(3, rows.Length, "a row for each kind");
+            string Count(Button b) => b.GetComponentsInChildren<Text>().First(t => t.name == "Count").text;
+            var expect = new[] { knights, archers, mages }.OrderByDescending(h => h.Length).ToArray();
+            for (int i = 0; i < 3; i++)
+            {
+                var def = mock.UnitDefs[mine.First(u => u.Handle == expect[i][0]).Def];
+                Assert.AreEqual("Kind " + def.Name, rows[i].name, "the most numerous first");
+                Assert.AreEqual(expect[i].Length.ToString(), Count(rows[i]));
+                Assert.AreEqual(Nice(def), Plain(rows[i].GetComponentsInChildren<Text>().First(t => t.name == "Title").text));
+            }
+            int archerDef = mine.First(u => u.Handle == archers[0]).Def;
+            rows.First(b => b.name == "Kind " + mock.UnitDefs[archerDef].Name).onClick.Invoke();
+            CollectionAssert.AreEquivalent(archers, Selection(), "the engine keeps only the archers");
+            CollectionAssert.AreEquivalent(archers, root.World.Entities.Selected, "and so does the HUD");
+            yield return Settle();
+            Assert.AreEqual(1, Named<RectTransform>("Roster").GetComponentsInChildren<Button>().Count(b => b.name.StartsWith("Kind ")));
+
+            // One unit: its description, rank and kills.
+            int knight = knights[0];
+            mock.SetKills(knight, 12);
+            mock.Select(new[] { knight }, false);
+            yield return Settle();
+            var kd = mock.UnitDefs[mine.First(u => u.Handle == knight).Def];
+            Assert.AreEqual(BattleHud.Describe(kd), Named<Text>("Description").text);
+            Assert.AreEqual("Champion, 12 kills", Named<Text>("Record").text);
+        }
+
+        [UnityTest]
+        public IEnumerator WithNothingSelectedTheRosterFindsAnIdleBuilder()
+        {
+            yield return Begin();
+            var monarch = Units().First(u => u.Player == 1 && mock.RoleOf(u.Def) == MockBackend.Role.Monarch);
+            // Held where it stands, as the mock's idle units otherwise wander.
+            Assert.IsTrue(mock.MoveFormation(new[] { monarch.Handle }, new[] { new Vector2(monarch.Position.x, monarch.Position.z) }, 0f, false, false));
+            mock.Select(new int[0], false);
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (mock.ReadOrder(monarch.Handle).Kind != OrderKind.None && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.AreEqual(OrderKind.None, mock.ReadOrder(monarch.Handle).Kind, "the monarch stands idle");
+            yield return new WaitForSecondsRealtime(0.7f);
+            Assert.AreEqual("Idle builders: 1", Named<Text>("Idle").text);
+            var next = Named<Button>("Next idle");
+            Assert.IsNotNull(next, "with a plate to find it");
+            var cam = root.World.Camera;
+            cam.focus = new Vector3(monarch.Position.x + 30f, cam.focus.y, monarch.Position.z - 30f);
+            next.onClick.Invoke();
+            CollectionAssert.AreEqual(new[] { monarch.Handle }, Selection(), "the plate selects the builder");
+            CollectionAssert.AreEquivalent(new[] { monarch.Handle }, root.World.Entities.Selected);
+            var now = Units().First(u => u.Handle == monarch.Handle).Position;
+            Assert.Less(new Vector2(cam.focus.x - now.x, cam.focus.z - now.z).magnitude, 0.5f, "and looks at it");
+        }
+
+        [UnityTest]
+        public IEnumerator TheStripDescribesOneUnitAndItsRank()
+        {
+            yield return Begin();
+            int knight = Own(MockBackend.Role.Knight);
+            mock.SetKills(knight, 4);
+            mock.Select(new[] { knight }, false);
+            yield return Settle();
+            var def = mock.UnitDefs[Units().First(u => u.Handle == knight).Def];
+            Assert.IsNotEmpty(def.Description);
+            Assert.AreEqual(def.Description, Named<Text>("Group").text, "the description in the strip's spare width");
+            Assert.AreEqual("Veteran.", Named<Text>("Rank").text, "after the rank word");
+            Assert.AreEqual("4", Named<Text>("Kills").text);
+            Assert.AreEqual("kills", Named<Text>("KillsLabel").text, "the count says what it counts");
+            mock.SetKills(knight, 0);
+            yield return Settle();
+            Assert.IsNull(Named<Text>("KillsLabel"), "no word without a count");
+            Assert.IsNull(Named<Text>("Rank"), "nor a rank");
+
+            var two = new[] { knight, Own(MockBackend.Role.Archer) };
+            mock.Select(two, false);
+            yield return Settle();
+            StringAssert.Contains(", ", Named<Text>("Group").text, "several units show their make-up there");
+        }
+
+        [UnityTest]
+        public IEnumerator NumbersAreInSquareCapitals()
+        {
+            yield return Begin();
+            mock.Select(new[] { Own(MockBackend.Role.Monarch) }, false);
+            yield return Settle();
+            foreach (var name in new[] { "Clock", "Income", "Spend", "Kills", "Numbers" })
+                Assert.AreSame(UiKit.TitleFont, Named<Text>(name).font, name + " in Cinzel");
+            var cost = GameObject.Find("Builds").GetComponentsInChildren<Text>().First(t => t.name == "Cost");
+            Assert.AreSame(UiKit.TitleFont, cost.font, "a card's cost too");
+            Assert.AreNotSame(UiKit.Frame, Named<Image>("View").sprite, "the minimap's view box is painted in gold");
         }
 
         [UnityTest]
