@@ -20,7 +20,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         // The screens on the dialog kit, built again when the canvas changes
         // size, and the order modal screens draw in over the battle HUD.
-        static readonly string[] Dialogs = { "Options", "Loading", "Pause", "Leave", "Result", "Results" };
+        static readonly string[] Dialogs = { "Options", "Loading", "Pause", "Leave", "Result", "Results", "Load" };
         static readonly string[] Modal = { "Pause", "Leave", "Options", "Load", "Result", "Results" };
 
         readonly GameRoot root;
@@ -69,7 +69,6 @@ namespace OpenKingdomsUnity.Game.UI
             builtSize = size;
             BuildDialogs();
             BuildHud();
-            BuildLoadList();
             editor = new EditorScreens(root, this);
             lobby = new LobbyScreens(root, this);
             lobby.Fit(size, scale);
@@ -142,7 +141,8 @@ namespace OpenKingdomsUnity.Game.UI
                 case FlowState.Room: on = new[] { "Room" }; break;
                 case FlowState.MapChoice: on = new[] { "Room", "MapChoice" }; break;
                 case FlowState.Options:
-                    on = root.Flow.OptionsReturn == FlowState.Paused ? new[] { "Hud", "Options" } : new[] { "Options" };
+                    string under = Beneath(root.Flow.OptionsReturn);
+                    on = under != null ? new[] { under, "Options" } : new[] { "Options" };
                     PointRows();
                     if (fresh) OpenOptions();
                     break;
@@ -265,12 +265,23 @@ namespace OpenKingdomsUnity.Game.UI
             return rt;
         }
 
-        static Text Heading(Transform parent, string text, int size, float y0, float y1)
+        // The screen Options opens over: the battle, the menu or the lobby.
+        static string Beneath(FlowState from)
         {
-            var t = UiKit.Label(parent, text, size, UiKit.Gold, TextAnchor.MiddleCenter, true);
-            t.rectTransform.Place(0, y0, 1, y1);
-            return t;
+            switch (from)
+            {
+                case FlowState.Paused: return "Hud";
+                case FlowState.MainMenu: return "Menu";
+                case FlowState.Skirmish: return "Skirmish";
+                case FlowState.Room: return "Room";
+                default: return null;
+            }
         }
+
+        // The alpha of a black that leaves this much of what is beneath, as
+        // the eye sees it: in linear colour 0.5 alpha only takes off a quarter.
+        public static float Dim(float seen) =>
+            QualitySettings.activeColorSpace == ColorSpace.Linear ? 1f - Mathf.Pow(seen, 2.2f) : 1f - seen;
 
         // A dimmed screen that takes every click meant for the HUD beneath.
         RectTransform DimScreen(string name, float dim)
@@ -290,6 +301,7 @@ namespace OpenKingdomsUnity.Game.UI
             BuildLeave();
             BuildResult(Mathf.Max(4, root.Backend.Players.Count));
             BuildResults();
+            BuildLoadList();
             foreach (var n in Dialogs) if (screens.TryGetValue(n, out var go)) go.SetActive(false);
         }
 
@@ -360,7 +372,7 @@ namespace OpenKingdomsUnity.Game.UI
         {
             rows.Clear();
             focus = -1;
-            var s = DimScreen("Options", 0.5f);
+            var s = DimScreen("Options", Dim(0.5f));
             var box = layout.Options();
             options = UiKit.MakeDialog(s, box, "Options", OptionsResting);
             var p = options.transform;
@@ -670,7 +682,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         void BuildPause()
         {
-            var s = DimScreen("Pause", 0.5f);
+            var s = DimScreen("Pause", Dim(0.5f));
             bool save = OffersSave;
             var box = layout.Pause(save);
             var d = UiKit.MakeDialog(s, box, "Paused", "Escape or F1 resumes");
@@ -704,7 +716,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         void BuildLeave()
         {
-            var s = DimScreen("Leave", 0.35f);
+            var s = DimScreen("Leave", Dim(0.7f));
             var box = layout.Leave();
             var d = UiKit.MakeDialog(s, box, "Leave the battle?", "Enter leaves. Escape returns to the battle.");
             var p = d.transform;
@@ -843,17 +855,27 @@ namespace OpenKingdomsUnity.Game.UI
 
         // ---- Saved games ----
 
+        // The saved games on the folder screen's page: vellum, the game's name
+        // on its strip, and a dialog of that size with the saves as ruled rows.
         void BuildLoadList()
         {
-            var s = NewScreen("Load", true);
-            Heading(s, "Load a game", 72, 0.88f, 0.98f);
-            var panel = UiKit.Panel(s, "Saves", false).Place(0.5f, 0, 0.5f, 1, -560, 150, -560, 150);
-            saveItems = UiKit.ScrollList(panel, "Items", 10);
-            ((RectTransform)saveItems.parent.parent).Place(0, 0, 1, 1, 24, 24, 24, 24);
-            loadEmpty = UiKit.Label(panel, "No saved games yet. Save one from the pause menu.", 30, UiKit.Dim);
-            loadEmpty.rectTransform.Fill(40);
-            var back = UiKit.MakeButton(s, "Back", () => root.Flow.Fire(FlowEvent.Back), 32);
-            back.GetComponent<RectTransform>().Place(0, 0, 0, 0, 60, 40, -360, -110);
+            var s = NewScreen("Load", false);
+            UiKit.VellumPage(s, "Page");
+            UiKit.TitleStrip(s, GameRoot.Title);
+            var box = layout.Folder();
+            var d = UiKit.MakeDialog(s, box, "Load a game", "Pick a saved battle to play it again. Escape goes back.");
+            var p = d.transform;
+            var well = UiKit.PaintedImage(p, "Saves", box.Local(new Rect(box.List.x, box.Note.y, box.List.width, box.List.yMax - box.Note.y)),
+                "trough", HudArt.TroughSize, HudArt.TroughBorder, HudArt.Trough);
+            well.raycastTarget = true;
+            saveItems = UiKit.ScrollList(well.transform, "Items", 0);
+            ((RectTransform)saveItems.parent.parent).Fill(12);
+            loadEmpty = UiKit.Words(well.transform, "Empty", new Rect(0, 0, 10, 10), "", DialogLayout.Body,
+                new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.6f), UiKit.BodyFont);
+            loadEmpty.rectTransform.Fill(24);
+            var leave = box.Plate("Leave");
+            UiKit.MakePlate(p, "Back", box.Local(new Rect(box.Frame.center.x - DialogLayout.PlateW / 2f, leave.y, DialogLayout.PlateW, leave.height)),
+                () => root.Flow.Fire(FlowEvent.Back), d, "Back to the skirmish");
         }
 
         void RefreshLoadList()
@@ -867,9 +889,11 @@ namespace OpenKingdomsUnity.Game.UI
                 var entry = save;
                 int secs = (int)(entry.Tick / (uint)Mathf.Max(1, root.Backend.TicksPerSecond));
                 string label = $"{entry.Map}    {entry.SavedAt:d MMM yyyy, HH:mm}    {secs / 60}:{secs % 60:00} in";
-                var b = UiKit.MakeButton(saveItems, label, () => root.LoadSave(entry), 26);
-                b.GetComponent<RectTransform>().Size(0, 64);
-                b.name = "Save " + System.IO.Path.GetFileName(entry.Path);
+                UiKit.ListRow(saveItems, "Save " + System.IO.Path.GetFileName(entry.Path), label, DialogLayout.ListRowH, DialogLayout.Row, HudArt.Ink, () =>
+                {
+                    UiKit.Play("menubutton.wav");
+                    root.LoadSave(entry);
+                });
             }
         }
 

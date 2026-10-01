@@ -20,6 +20,7 @@ namespace OpenKingdomsUnity.Tests
             OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = null;
             OpenKingdomsUnity.Game.UI.MenuScreens.SizeOverride = null;
             OpenKingdomsUnity.Game.UI.FadeIn.Off = false;
+            OpenKingdomsUnity.Game.UI.UiKit.Motion.Off = false;
             BuildStamp.Reset();
         }
 
@@ -34,6 +35,7 @@ namespace OpenKingdomsUnity.Tests
             OpenKingdomsUnity.Game.UI.BattleHud.SizeOverride = new Vector2Int(W, H);
             OpenKingdomsUnity.Game.UI.MenuScreens.SizeOverride = new Vector2Int(W, H);
             OpenKingdomsUnity.Game.UI.FadeIn.Off = true;
+            OpenKingdomsUnity.Game.UI.UiKit.Motion.Off = true;
             if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_ALPHA") == "1")
             {
                 BuildStamp.Version = "Alpha (review)";
@@ -168,6 +170,34 @@ namespace OpenKingdomsUnity.Tests
             root.Flow.Fire(FlowEvent.Pause);
             yield return null;
             yield return Shoot(cam, Path.Combine(dir, "7-pause.png"));
+            // The dialogs over the battle, then victory, and defeat in a
+            // second battle on the same map.
+            root.Flow.Fire(FlowEvent.OpenOptions);
+            yield return null;
+            yield return Shoot(cam, Path.Combine(dir, "7b-options.png"));
+            root.Flow.Fire(FlowEvent.Back);
+            yield return null;
+            Press(root, "Pause", "Quit to menu");
+            yield return null;
+            yield return Shoot(cam, Path.Combine(dir, "7c-leave.png"));
+            Press(root, "Leave", "Stay");
+            root.Flow.Fire(FlowEvent.Resume);
+            root.Flow.Fire(FlowEvent.Won);
+            yield return null;
+            yield return Shoot(cam, Path.Combine(dir, "9-victory.png"));
+            root.Flow.Fire(FlowEvent.ToMenu);
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            root.Setup.MapId = map;
+            yield return null;
+            root.Screens.StartGame();
+            deadline = Time.realtimeSinceStartup + 240f;
+            while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.AreEqual(FlowState.Playing, root.Flow.State, "the second game loaded: " + root.LastError);
+            for (int i = 0; i < 30; i++) yield return null;
+            if (cam == null) cam = Camera.main;
+            root.Flow.Fire(FlowEvent.Lost);
+            yield return null;
+            yield return Shoot(cam, Path.Combine(dir, "10-defeat.png"));
 
             if (System.Environment.GetEnvironmentVariable("OKU_CAPTURE_EDITOR") == "1")
             {
@@ -203,7 +233,48 @@ namespace OpenKingdomsUnity.Tests
                 yield return Shoot(cam, Path.Combine(dir, "8-editor.png"));
             }
             Object.Destroy(root.gameObject);
+            yield return null;
+
+            // The game folder screen on a first run, its Browse list, and the
+            // notice for an engine that cannot run.
+            var folder = OpenKingdomsUnity.Engine.GameFolderScreen.Show("", d => { }, null);
+            folder.Keep = d => { };
+            yield return Pin(folder.gameObject);
+            yield return Shoot(Shooter(), Path.Combine(dir, "11-folder.png"));
+            folder.Browser.SetActive(true);
+            folder.Tips.gameObject.SetActive(false);
+            folder.Open("");
+            yield return null;
+            yield return Shoot(Shooter(), Path.Combine(dir, "11b-folder-browse.png"));
+            Object.Destroy(folder.gameObject);
+            yield return null;
+            var notice = OpenKingdomsUnity.Engine.EngineNotice.Show("Unity still has the old engine loaded. Restart Unity to use the new one.");
+            yield return Pin(notice.gameObject);
+            yield return Shoot(Shooter(), Path.Combine(dir, "12-notice.png"));
+            Object.Destroy(notice.gameObject);
         }
+
+        static void Press(GameRoot root, string screen, string button)
+        {
+            foreach (var b in root.Screens.Screen(screen).GetComponentsInChildren<UnityEngine.UI.Button>())
+                if (b.name == button) { b.onClick.Invoke(); return; }
+            Assert.Fail($"{screen} has no {button} button");
+        }
+
+        // A screen of its own scales with the batch window. Pin it to the
+        // picture's scale, as SizeOverride pins the menus, and let it settle.
+        static IEnumerator Pin(GameObject screen)
+        {
+            foreach (var scaler in screen.GetComponentsInChildren<UnityEngine.UI.CanvasScaler>())
+            {
+                scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ConstantPixelSize;
+                scaler.scaleFactor = OpenKingdomsUnity.Game.UI.DialogLayout.ScaleFor(W, H);
+            }
+            yield return null;
+            yield return null;
+        }
+
+        static Camera Shooter() => Camera.main != null ? Camera.main : new GameObject("Capture camera").AddComponent<Camera>();
 
         internal static IEnumerator View(OpenKingdomsUnity.Game.World.GameCamera c, float distance, float pitch, float yaw)
         {

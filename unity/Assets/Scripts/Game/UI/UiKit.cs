@@ -397,6 +397,14 @@ namespace OpenKingdomsUnity.Game.UI
             return HudArt.Density(f > 0.01f ? f : 1f);
         }
 
+        // The scale the canvas under this rect draws at, 1 when it has none.
+        public static float CanvasScale(Transform t)
+        {
+            var c = t.GetComponentInParent<Canvas>(true);
+            float f = c != null ? c.rootCanvas.scaleFactor : 1f;
+            return f > 0.01f ? f : 1f;
+        }
+
         static string Keyed(string key, float density) => key + "@" + density.ToString("0.00", CultureInfo.InvariantCulture);
 
         // A painted sheet as a texture, painted once for each key and density.
@@ -1051,7 +1059,11 @@ namespace OpenKingdomsUnity.Game.UI
             if (rt.parent is RectTransform parent)
             {
                 var size = rt.rect.size;
-                fit = Mathf.Min(1f, (parent.rect.width - 2f * Margin) / Mathf.Max(1f, size.x), (parent.rect.height - 2f * Margin) / Mathf.Max(1f, size.y));
+                // A capture lays out for SizeOverride, not the batch window
+                // the canvas really has, so the room is the override's.
+                var room = parent.rect.size;
+                if (MenuScreens.SizeOverride is Vector2Int o) room = new Vector2(o.x, o.y) / UiKit.CanvasScale(rt);
+                fit = Mathf.Min(1f, (room.x - 2f * Margin) / Mathf.Max(1f, size.x), (room.y - 2f * Margin) / Mathf.Max(1f, size.y));
                 fit = Mathf.Max(0.05f, fit);
             }
             float grow = Mathf.Lerp(From, 1f, Mathf.SmoothStep(0f, 1f, t));

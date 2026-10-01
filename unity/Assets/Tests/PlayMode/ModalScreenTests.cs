@@ -152,6 +152,7 @@ namespace OpenKingdomsUnity.Tests
             UiKit.Motion.Off = false;
             BuildStamp.Reset();
             BuildStamp.SaveInAlpha = true;
+            MenuScreens.SizeOverride = null;
         }
 
         IEnumerator Begin()
@@ -385,6 +386,90 @@ namespace OpenKingdomsUnity.Tests
             var note = Named(root.Screens.Screen("Pause"), "Save note");
             StringAssert.StartsWith("Saved as ", note.text);
             Assert.AreEqual(HudArt.Verdigris, note.color);
+        }
+
+        // ---- Fixes from the review ----
+
+        // A capture lays the dialogs out for its own size, whatever the
+        // batch run's window, so the dialog draws at the size it was built.
+        [UnityTest]
+        public IEnumerator UnderASizeOverrideADialogDrawsAtItsLayoutSize()
+        {
+            UiKit.Motion.Off = true;
+            MenuScreens.SizeOverride = new Vector2Int(3840, 2160);
+            yield return Begin();
+            root.Flow.Fire(FlowEvent.Pause);
+            // Drawn into a small picture, as a capture in a small window is.
+            yield return ViewAt(640, 480);
+            var dialog = root.Screens.Screen("Pause").GetComponentInChildren<Dialog>();
+            Assert.AreEqual(1f, dialog.transform.localScale.x, 0.001f, "the pause dialog is not shrunk to the batch window");
+        }
+
+        // How much of the battle shows through a dim, as the eye sees it: in
+        // linear colour a black at alpha a leaves (1 - a) of the light.
+        static float SeenThrough(GameObject screen)
+        {
+            float a = screen.transform.Find("Dim").GetComponent<Image>().color.a;
+            return QualitySettings.activeColorSpace == ColorSpace.Linear ? Mathf.Pow(1f - a, 1f / 2.2f) : 1f - a;
+        }
+
+        [UnityTest]
+        public IEnumerator TheDimsHalveTheBattleAsTheEyeSeesIt()
+        {
+            root = GameRoot.Boot(new MockBackend { StageSeconds = 0f, DamageScale = 0f });
+            yield return null;
+            Assert.AreEqual(0.5f, SeenThrough(root.Screens.Screen("Pause")), 0.03f, "Pause halves the battle behind it");
+            Assert.AreEqual(0.5f, SeenThrough(root.Screens.Screen("Options")), 0.03f, "and so does Options");
+            Assert.AreEqual(0.7f, SeenThrough(root.Screens.Screen("Leave")), 0.03f, "the question dims the pause menu a little more");
+        }
+
+        [UnityTest]
+        public IEnumerator OptionsOpenOverThePageTheyCameFrom()
+        {
+            UiKit.Motion.Off = true;
+            root = GameRoot.Boot(new MockBackend { StageSeconds = 0f, DamageScale = 0f });
+            yield return null;
+            foreach (var from in new[] { FlowState.MainMenu, FlowState.Skirmish })
+            {
+                if (from == FlowState.Skirmish) root.Flow.Fire(FlowEvent.OpenSkirmish);
+                root.Flow.Fire(FlowEvent.OpenOptions);
+                yield return null;
+                string page = from == FlowState.MainMenu ? "Menu" : "Skirmish";
+                var under = root.Screens.Screen(page);
+                var options = root.Screens.Screen("Options");
+                Assert.IsTrue(under.activeSelf && options.activeSelf, $"{page} stays under Options");
+                Assert.Greater(options.transform.GetSiblingIndex(), under.transform.GetSiblingIndex(), "Options draws over it");
+                root.Flow.Fire(FlowEvent.Back);
+                Assert.AreEqual(from, root.Flow.State);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TheSavedGamesAreOnVellum()
+        {
+            UiKit.Motion.Off = true;
+            yield return Begin();
+            root.Flow.Fire(FlowEvent.Pause);
+            Assert.IsTrue(root.SaveNow(out var path), "a save to list");
+            try
+            {
+                root.Flow.Fire(FlowEvent.ToMenu);
+                root.Flow.Fire(FlowEvent.OpenSkirmish);
+                root.Flow.Fire(FlowEvent.OpenLoad);
+                yield return ViewAt(1280, 720);
+                var load = root.Screens.Screen("Load");
+                var dialog = load.GetComponentInChildren<Dialog>();
+                Assert.IsNotNull(dialog, "the saved games are a dialog on vellum");
+                Assert.AreEqual("Load a game", dialog.Title.text);
+                Assert.IsFalse(load.GetComponentsInChildren<Image>(true).Any(i => i.sprite == UiKit.Stone), "no grey stone left");
+                CheckReadable("Load");
+                var entry = FindButton("Load", "Save " + System.IO.Path.GetFileName(path));
+                Assert.IsNotNull(entry, "the save is a row in the list");
+                Assert.AreEqual(HudArt.Ink, entry.GetComponentInChildren<Text>().color, "in ink on the vellum");
+                Click("Load", entry.name);
+                Assert.AreEqual(FlowState.Loading, root.Flow.State, "a row loads its game");
+            }
+            finally { System.IO.File.Delete(path); }
         }
     }
 }
