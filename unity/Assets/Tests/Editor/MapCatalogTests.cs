@@ -1,6 +1,7 @@
 // MapCatalogTests.cs - the lobby's map browser finds maps by name, filters
 // them by start positions and size, sorts them, shows names in title case,
-// and stays quick with thousands of maps.
+// stays quick with thousands of maps, knows a description that only
+// restates the size, and says why a skirmish cannot start.
 using System.Collections.Generic;
 using System.Diagnostics;
 using NUnit.Framework;
@@ -150,6 +151,38 @@ namespace OpenKingdomsUnity.Tests
             list.Add(Map("New Found Land", 2, 6, 6));
             c.Use(list);
             CollectionAssert.AreEqual(new[] { "New Found Land" }, c.Query(new MapQuery { Text = "found" }).ConvertAll(m => m.Name));
+        }
+
+        [Test]
+        public void ADescriptionThatRestatesTheSizeIsLeftOff()
+        {
+            var m = Map("Abnar's Terrace", 4, 9, 7);
+            Assert.IsTrue(MapCatalog.Restates("9x7 4 Player 32MB", m));
+            Assert.IsTrue(MapCatalog.Restates("9 x 7, 4 players", m));
+            Assert.IsTrue(MapCatalog.Restates("", m), "nothing to show");
+            Assert.IsTrue(MapCatalog.Restates(null, m));
+            Assert.IsFalse(MapCatalog.Restates("Two green islands across a shallow strait.", m));
+            Assert.IsFalse(MapCatalog.Restates("9x7 of rolling hills", m), "a size alone is prose");
+            Assert.IsFalse(MapCatalog.Restates("12x12 4 Player", m), "another map's size");
+        }
+
+        [Test]
+        public void ASkirmishSaysWhyItCannotStart()
+        {
+            var m = Map("Two Castles", 2, 12, 12);
+            var seats = new List<SeatSetup>
+            {
+                new SeatSetup { Kind = SeatKind.Human },
+                new SeatSetup { Kind = SeatKind.Computer },
+                new SeatSetup { Kind = SeatKind.Closed },
+            };
+            Assert.IsNull(SkirmishCheck.WhyNot(seats, m));
+            seats[1].Kind = SeatKind.Closed;
+            Assert.AreEqual("A game needs you and at least one computer player.", SkirmishCheck.WhyNot(seats, m));
+            seats[1].Kind = SeatKind.Computer;
+            seats[2].Kind = SeatKind.Computer;
+            Assert.AreEqual("Two Castles holds 2 players.", SkirmishCheck.WhyNot(seats, m));
+            Assert.IsNull(SkirmishCheck.WhyNot(seats, null), "no map, no limit");
         }
     }
 }

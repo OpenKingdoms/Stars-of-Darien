@@ -1,7 +1,8 @@
 // LobbyPlayTests.cs - the lobby's screens draw and fit at 720p, 1080p and
 // 4K, the map filters read clearly at each, a click on a start jewel takes that start and the battle begins
-// there, the map browser narrows and orders the list, and a room's host
-// moves another seat's start from the seat row.
+// there, the map browser narrows and orders the list, a room's host
+// moves another seat's start from the seat row, Enter and Escape work the
+// skirmish and map choice pages, and Start says why it cannot.
 using System.Collections;
 using System.Collections.Generic;
 using NUnit.Framework;
@@ -339,6 +340,101 @@ namespace OpenKingdomsUnity.Tests
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.AreEqual(FlowState.Playing, root.Flow.State, root.LastError);
             Assert.AreEqual("mock_crossing", root.Setup.MapId);
+        }
+
+        static void Hover(GameObject go) =>
+            ExecuteEvents.Execute(go, new PointerEventData(EventSystem.current), ExecuteEvents.pointerEnterHandler);
+
+        [UnityTest]
+        public IEnumerator EnterStartsTheSkirmishAndEscapeGoesBack()
+        {
+            yield return Boot(1920, 1080);
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            yield return null;
+            var sk = root.Screens.Lobby.Skirmish;
+            Assert.IsTrue(sk.StartButton.Enabled, "the default setup can start");
+
+            // A field with the keys keeps Enter for itself.
+            EventSystem.current.SetSelectedGameObject(sk.Browser.Search.gameObject);
+            Assert.IsFalse(root.Screens.Lobby.Key(KeyCode.Return), "Enter in the search field");
+            Assert.AreEqual(FlowState.Skirmish, root.Flow.State);
+            EventSystem.current.SetSelectedGameObject(null);
+
+            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Escape));
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State, "Escape goes back to the menu");
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            yield return null;
+            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Return));
+            Assert.AreEqual(FlowState.Loading, root.Flow.State, "Enter starts the game");
+        }
+
+        [UnityTest]
+        public IEnumerator StartSaysWhyItCannotAndEnterWaits()
+        {
+            yield return Boot(1920, 1080);
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            yield return null;
+            var sk = root.Screens.Lobby.Skirmish;
+            for (int i = 1; i < root.Setup.Seats.Count; i++) root.Setup.Seats[i].Kind = SeatKind.Closed;
+            sk.Refresh();
+            Assert.IsFalse(sk.StartButton.Enabled, "no computer seat, no start");
+            Hover(sk.StartButton.gameObject);
+            Assert.AreEqual("A game needs you and at least one computer player.", sk.Page.Help.text);
+            root.Screens.Lobby.Key(KeyCode.Return);
+            Assert.AreEqual(FlowState.Skirmish, root.Flow.State, "Enter does not start it");
+            sk.StartButton.Press();
+            Assert.AreEqual(FlowState.Skirmish, root.Flow.State, "nor does a click");
+            root.Setup.Seats[1].Kind = SeatKind.Computer;
+            sk.Refresh();
+            Assert.IsTrue(sk.StartButton.Enabled, "a computer seat opens it again");
+            Hover(sk.StartButton.gameObject);
+            Assert.AreEqual("Start Game", sk.Page.Help.text);
+        }
+
+        [UnityTest]
+        public IEnumerator ThePlaqueLeavesOffADescriptionThatRestatesTheSize()
+        {
+            yield return Boot(1920, 1080);
+            var isles = root.Backend.Maps[0];
+            root.Setup.MapId = isles.Id;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            yield return null;
+            var sk = root.Screens.Lobby.Skirmish;
+            Assert.AreEqual(isles.Description, sk.MapText.text, "prose shows");
+            string prose = isles.Description;
+            try
+            {
+                isles.Description = MapCatalog.SizeLabel(isles).Replace(" ", "") + " " + MapCatalog.PlayersOf(isles) + " Player 32MB";
+                sk.Refresh();
+                Assert.AreEqual("", sk.MapText.text, "the size and players are on the line above already");
+            }
+            finally { isles.Description = prose; }
+        }
+
+        [UnityTest]
+        public IEnumerator EnterAndEscapeWorkTheMapChoice()
+        {
+            yield return Boot(1920, 1080);
+            root.Flow.Fire(FlowEvent.OpenMultiplayer);
+            var rooms = root.Backend.Rooms;
+            rooms.Connect("mock://relay", "Zach");
+            yield return null;
+            Assert.IsTrue(rooms.CreateRoom("", "mock_crossing", RoomRules.LineOfSight));
+            root.Flow.Fire(FlowEvent.EnterRoom);
+            yield return null;
+            root.Flow.Fire(FlowEvent.ChooseMap);
+            yield return null;
+            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.Escape));
+            Assert.AreEqual(FlowState.Room, root.Flow.State, "Escape cancels the choice");
+            Assert.AreEqual("mock_crossing", rooms.Room.MapId);
+            root.Flow.Fire(FlowEvent.ChooseMap);
+            yield return null;
+            var b = root.Screens.Lobby.Choice.Browser;
+            b.Search.text = "fen";
+            Click(b.List.Rows[0].gameObject);
+            Assert.IsTrue(root.Screens.Lobby.Key(KeyCode.KeypadEnter));
+            Assert.AreEqual(FlowState.Room, root.Flow.State, "Enter picks the map");
+            Assert.AreEqual("mock_fens", rooms.Room.MapId);
         }
     }
 }

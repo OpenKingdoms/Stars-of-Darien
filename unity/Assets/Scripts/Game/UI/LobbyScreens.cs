@@ -101,20 +101,45 @@ namespace OpenKingdomsUnity.Game.UI
         public void Tick()
         {
             // Up and down walk the map list, unless a text field has the keys.
-            var es = UnityEngine.EventSystems.EventSystem.current;
-            var focus = es != null ? es.currentSelectedGameObject : null;
-            if (focus == null || focus.GetComponent<InputField>() == null)
+            if (!Typing)
             {
                 int by = Input.GetKeyDown(KeyCode.DownArrow) ? 1 : Input.GetKeyDown(KeyCode.UpArrow) ? -1 : 0;
                 if (by != 0 && root.Flow.State == FlowState.Skirmish) skirmish?.Browser.Step(by);
                 else if (by != 0 && root.Flow.State == FlowState.MapChoice) choice?.Browser.Step(by);
             }
+            foreach (var k in PageKeys)
+                if (Input.GetKeyDown(k)) { Key(k); break; }
             if (Time.unscaledTime < nextNet) return;
             nextNet = Time.unscaledTime + 0.2f;
             switch (root.Flow.State)
             {
                 case FlowState.Multiplayer: net?.Refresh(); break;
                 case FlowState.Room: room?.Refresh(); break;
+            }
+        }
+
+        static readonly KeyCode[] PageKeys = { KeyCode.Return, KeyCode.KeypadEnter, KeyCode.Escape };
+
+        static bool Typing
+        {
+            get
+            {
+                var es = UnityEngine.EventSystems.EventSystem.current;
+                var focus = es != null ? es.currentSelectedGameObject : null;
+                return focus != null && focus.GetComponent<InputField>() != null;
+            }
+        }
+
+        // Enter and Escape on the skirmish and map choice pages, unless a
+        // text field has the keys. True when the page took the key.
+        public bool Key(KeyCode k)
+        {
+            if (Typing) return false;
+            switch (root.Flow.State)
+            {
+                case FlowState.Skirmish: return skirmish != null && skirmish.Key(k);
+                case FlowState.MapChoice: return choice != null && choice.Key(k);
+                default: return false;
             }
         }
 

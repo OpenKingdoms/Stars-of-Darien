@@ -1,8 +1,8 @@
 // MapCatalog.cs - the lobby's map browser as plain rules: search, filters
 // for start positions and size, and sorting, over an index built once per
-// map list, the names in title case as the lobby shows them, and the
-// start positions each seat takes. Pure C#, so the rules are tested
-// without a scene.
+// map list, the names in title case as the lobby shows them, the start
+// positions each seat takes, and why a skirmish cannot start. Pure C#, so
+// the rules are tested without a scene.
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -117,6 +117,15 @@ namespace OpenKingdomsUnity.Game
         public static string SizeLabel(MapInfo m) =>
             $"{Mathf.Max(1, Mathf.RoundToInt(m.Size.x / CellsPerUnit))} x {Mathf.Max(1, Mathf.RoundToInt(m.Size.y / CellsPerUnit))}";
 
+        // A description that only says the size and players again, as
+        // "9x7 4 Player 32MB" does on most of the original's maps, or none.
+        public static bool Restates(string description, MapInfo m)
+        {
+            if (string.IsNullOrWhiteSpace(description)) return true;
+            string folded = description.ToLowerInvariant().Replace(" ", "");
+            return m != null && folded.Contains(SizeLabel(m).Replace(" ", "")) && folded.Contains("player");
+        }
+
         public static readonly string[] SizeNames = { "Any size", "Small", "Medium", "Large", "Huge" };
 
         // A map's name as the lobby shows it. The name itself, and so the
@@ -162,6 +171,24 @@ namespace OpenKingdomsUnity.Game
             while (at < w.Length && !char.IsLetterOrDigit(w[at]) && w[at] != '\'' && w[at] != '\u2019') at++;
             if (at == w.Length || !char.IsLetter(w[at])) return w;
             return w.Substring(0, at) + char.ToUpperInvariant(w[at]) + w.Substring(at + 1);
+        }
+    }
+
+    public static class SkirmishCheck
+    {
+        // Why these seats cannot play on the map, in the words the lobby's
+        // help line gives, or null when they can.
+        public static string WhyNot(IReadOnlyList<SeatSetup> seats, MapInfo map)
+        {
+            int humans = 0, players = 0;
+            foreach (var seat in seats)
+            {
+                if (seat.Kind == SeatKind.Human) humans++;
+                if (seat.Kind != SeatKind.Closed) players++;
+            }
+            if (humans == 0 || players < 2) return "A game needs you and at least one computer player.";
+            if (map != null && players > MapCatalog.PlayersOf(map)) return $"{MapCatalog.DisplayName(map)} holds {MapCatalog.PlayersOf(map)} players.";
+            return null;
         }
     }
 

@@ -339,7 +339,9 @@ namespace OpenKingdomsUnity.Game.UI
             readonly Text mapName, mapInfo, mapText, units;
             readonly RectTransform unitThumb;
             public Text Error;
-            string errorText;
+            public readonly ArtButton StartButton;
+            public Text MapText => mapText;
+            string errorText, lastWhy;
 
             public sealed class SeatParts
             {
@@ -435,7 +437,7 @@ namespace OpenKingdomsUnity.Game.UI
                 ArtButton.Make(p, "Back", "battleskirmscreen.gaf", "CancelButton", 59, 407, 39, 51, "Back", () => root.Flow.Fire(FlowEvent.Back), "Previous Screen");
                 ArtButton.Make(p, "Load", "battleskirmscreen.gaf", "MapButton", 113, 406, 60, 57, "Load", () => root.Flow.Fire(FlowEvent.OpenLoad), "Load Game");
                 ArtButton.Make(p, "Options", "battleskirmscreen.gaf", "OptionsButton", 470, 406, 60, 57, "Options", () => root.Flow.Fire(FlowEvent.OpenOptions), "Options");
-                ArtButton.Make(p, "Start", "battleskirmscreen.gaf", "OKButton", 544, 407, 39, 51, "Play", () => l.screens.StartGame(), "Start Game");
+                StartButton = ArtButton.Make(p, "Start", "battleskirmscreen.gaf", "OKButton", 544, 407, 39, 51, "Play", () => l.screens.StartGame(), "Start Game");
                 Error = l.HelpLine(p, 208, 452, 224, 30, "");
             }
 
@@ -557,6 +559,15 @@ namespace OpenKingdomsUnity.Game.UI
                 Refresh();
             }
 
+            // Enter starts through the same checks as the Start button, so a
+            // setup that cannot play says why in the help line instead.
+            public bool Key(KeyCode k)
+            {
+                if (k == KeyCode.Return || k == KeyCode.KeypadEnter) { l.screens.StartGame(); return true; }
+                if (k == KeyCode.Escape) { l.root.Flow.Fire(FlowEvent.Back); return true; }
+                return false;
+            }
+
             public void ShowError(string text)
             {
                 errorText = text;
@@ -610,8 +621,16 @@ namespace OpenKingdomsUnity.Game.UI
                     GuiPage.Fit(mapName, MapCatalog.DisplayName(map));
                     string climate = string.IsNullOrEmpty(map.Climate) ? "" : ", " + map.Climate;
                     mapInfo.text = $"{MapCatalog.SizeLabel(map)}, {MapCatalog.PlayersOf(map)} players{climate}";
-                    mapText.text = map.Description;
+                    mapText.text = MapCatalog.Restates(map.Description, map) ? "" : map.Description;
                 }
+                // Start greys while the seats cannot play, and its help says why.
+                string why = SkirmishCheck.WhyNot(Setup.Seats, map);
+                StartButton.Enabled = why == null;
+                StartButton.Paint();
+                Page.Hover(StartButton.gameObject, why ?? "Start Game");
+                // A refused start's reason goes once the setup can play.
+                if (errorText != null && errorText == lastWhy && errorText != why) errorText = null;
+                lastWhy = why;
                 if (errorText == null) ShowError(root.LastError);
             }
         }

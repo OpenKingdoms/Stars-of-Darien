@@ -341,6 +341,14 @@ namespace OpenKingdomsUnity.Game.UI
                 l.root.Flow.Fire(FlowEvent.Back);
             }
 
+            // Enter picks the map, as OK does, and Escape cancels.
+            public bool Key(KeyCode k)
+            {
+                if (k == KeyCode.Return || k == KeyCode.KeypadEnter) { Pick(); return true; }
+                if (k == KeyCode.Escape) { l.root.Flow.Fire(FlowEvent.Back); return true; }
+                return false;
+            }
+
             public void Refresh()
             {
                 Browser.Refresh();
@@ -350,7 +358,7 @@ namespace OpenKingdomsUnity.Game.UI
                 GuiPage.Fit(name, MapCatalog.DisplayName(map));
                 string climate = string.IsNullOrEmpty(map.Climate) ? "" : ", " + map.Climate;
                 info.text = $"{MapCatalog.SizeLabel(map)}, {MapCatalog.PlayersOf(map)} players{climate}";
-                text.text = map.Description;
+                text.text = MapCatalog.Restates(map.Description, map) ? "" : map.Description;
             }
         }
     }
