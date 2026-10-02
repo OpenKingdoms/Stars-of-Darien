@@ -229,6 +229,38 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [UnityTest]
+        public IEnumerator TheLoadingScreenKeepsDrawingWhileTheModelsBuild()
+        {
+            double slice = GameRoot.WarmSliceMs;
+            GameRoot.WarmSliceMs = 0;
+            try
+            {
+                yield return Boot(new MockBackend { StageSeconds = 0f });
+                root.Flow.Fire(FlowEvent.OpenSkirmish);
+                root.Screens.StartGame();
+                int frames = 0;
+                float last = 0f;
+                float deadline = Time.realtimeSinceStartup + 60f;
+                while (root.Flow.State == FlowState.Loading && Time.realtimeSinceStartup < deadline)
+                {
+                    if (root.World != null && root.Loading.Stage == GameRoot.PreparingStage)
+                    {
+                        frames++;
+                        Assert.That(root.Loading.Fraction, Is.InRange(GameRoot.EngineShare, 1f));
+                        Assert.GreaterOrEqual(root.Loading.Fraction, last, "the bar never goes back");
+                        last = root.Loading.Fraction;
+                    }
+                    yield return null;
+                }
+                Assert.AreEqual(FlowState.Playing, root.Flow.State, root.LastError);
+                Assert.Greater(frames, 1, "the models took more than one frame, each drawn");
+                Assert.AreEqual(0, root.World.WarmLeft, "every model was built before the battle");
+                Assert.IsTrue(root.Loading.Done);
+            }
+            finally { GameRoot.WarmSliceMs = slice; }
+        }
+
+        [UnityTest]
         public IEnumerator AComputerOpenedInALowerRowIsNotYourAlly()
         {
             yield return Boot(new MockBackend { StageSeconds = 0f });

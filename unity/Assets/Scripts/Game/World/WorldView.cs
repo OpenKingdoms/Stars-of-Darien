@@ -19,16 +19,35 @@ namespace OpenKingdomsUnity.Game.World
 
         public WorldView(IGameBackend backend) => this.backend = backend;
 
-        public void Build(MapInfo map, GameOptions options)
+        // How long each part of the last Build took, for the log.
+        public string BuildTimes { get; private set; } = "";
+
+        // warmNow false leaves the unit models to WarmSome, a slice a
+        // frame, so the loading screen keeps drawing while they build.
+        public void Build(MapInfo map, GameOptions options, bool warmNow = true)
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var times = new System.Text.StringBuilder();
+            void Took(string part)
+            {
+                times.Append(times.Length > 0 ? ", " : "").Append(part).Append(' ').Append((clock.ElapsedMilliseconds / 1000.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)).Append(" s");
+                clock.Restart();
+            }
             Root = new GameObject("World");
             Terrain.Build(backend, Root.transform);
+            Took("terrain");
             var size = backend.Terrain.Size;
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
             Terrain.SetSeaClimate(map != null ? map.Climate : "");
             Models = new ModelCache(backend);
             Entities = new EntityRenderer(backend, Models);
-            Warm();
+            Took("sky");
+            QueueWarm();
+            if (warmNow)
+            {
+                WarmSome(double.MaxValue);
+                Took("unit models");
+            }
             Effects = new EffectRenderer(backend, Models);
             Fog = new FogView(backend);
             Fog.Update(true);
@@ -36,6 +55,7 @@ namespace OpenKingdomsUnity.Game.World
             // Impacts show in sight, and shots also when a friend fired them.
             Effects.Hidden = (at, player) => !Fog.InSight(at) && (player < 0 || !Friendly(player));
             Effects.Warm(backend.WarmEffectStrips());
+            Took("effects and fog");
             Entities.Unseen = p => Fog.State(p) == 0;
 
             var cam = UnityEngine.Camera.main;
@@ -58,6 +78,8 @@ namespace OpenKingdomsUnity.Game.World
             Atmosphere.SetPostEffects(options.PostEffects, cam);
             Fog.Camera = cam;
             Fog.Update(true);
+            Took("camera");
+            BuildTimes = times.ToString();
         }
 
         // Over the local player's first unit, or the map centre.
@@ -73,29 +95,55 @@ namespace OpenKingdomsUnity.Game.World
 
         bool Friendly(int player) => backend.Allied(player, backend.LocalPlayer);
 
-        // Builds the models of every unit on the field and of everything the
-        // players' units can build, and the flyers' clips, now while the
-        // loading screen is up, so a unit seen for the first time does not
-        // stall a frame.
-        void Warm()
+        // The models of every unit on the field and of everything the
+        // players' units can build, and the flyers' clips, are built while
+        // the loading screen is up, so a unit seen for the first time does
+        // not stall a frame.
+        readonly System.Collections.Generic.Queue<System.Action> warming = new System.Collections.Generic.Queue<System.Action>();
+
+        public int WarmLeft => warming.Count;
+
+        void QueueWarm()
         {
+            warming.Clear();
             var units = new UnitState[EntityRenderer.MaxUnits];
             int n = backend.ReadUnits(units);
             var seen = new System.Collections.Generic.HashSet<(int, int)>();
             for (int i = 0; i < n; i++)
             {
-                Models.Get(units[i].Model);
-                Entities.WarmFlight(units[i].Def, units[i].Model);
-                var def = backend.UnitDefs[units[i].Def];
+                int unitDef = units[i].Def, unitModel = units[i].Model;
+                warming.Enqueue(() =>
+                {
+                    Models.Get(unitModel);
+                    Entities.WarmFlight(unitDef, unitModel);
+                });
+                var def = backend.UnitDefs[unitDef];
                 int colour = backend.PlayerById(units[i].Player)?.Colour ?? 0;
                 foreach (int o in def.BuildOptions)
                 {
                     if (o < 0 || o >= backend.UnitDefs.Count || !seen.Add((o, colour))) continue;
-                    int model = backend.LoadModel(backend.UnitDefs[o].ObjectName, colour);
-                    Models.Get(model);
-                    Entities.WarmFlight(o, model);
+                    int option = o;
+                    warming.Enqueue(() =>
+                    {
+                        int model = backend.LoadModel(backend.UnitDefs[option].ObjectName, colour);
+                        Models.Get(model);
+                        Entities.WarmFlight(option, model);
+                    });
                 }
             }
+        }
+
+        // Builds models off the list for about budgetMs, at least one.
+        // True once none are left.
+        public bool WarmSome(double budgetMs)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (warming.Count > 0)
+            {
+                warming.Dequeue()();
+                if (clock.Elapsed.TotalMilliseconds >= budgetMs) break;
+            }
+            return warming.Count == 0;
         }
 
         public void Render()
