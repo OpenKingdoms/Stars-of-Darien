@@ -35,13 +35,17 @@ namespace OpenKingdomsUnity.Game
         public MapEditTool Editor { get; private set; }
         public GameCursorView Pointer { get; private set; }
         float clock, loadingFrom, builtFrom;
-        int warmTotal;
+        int buildTotal;
+        long loadFrameAt;
 
-        // The engine's loading fills this much of the bar, and the models
-        // the rest. WarmSliceMs is about how long a frame builds models.
+        // The engine's loading fills this much of the bar, and the world's
+        // build the rest. BuildSliceMs is about how long a frame builds.
         public const float EngineShare = 0.4f;
-        public const string PreparingStage = "Preparing the kingdoms' models";
-        public static double WarmSliceMs = 25;
+        public const string LandStage = "Laying out the land", PreparingStage = "Preparing the kingdoms' models";
+        public static double BuildSliceMs = 25;
+
+        // The longest frame of the last load, for the log and the map sweep.
+        public double LoadWorstFrameMs { get; private set; }
         string pendingLoad;
         bool loadRefused;
         IGameBackend injected;
@@ -218,6 +222,8 @@ namespace OpenKingdomsUnity.Game
                     LastError = null;
                     Loading = default;
                     loadingFrom = Time.realtimeSinceStartup;
+                    LoadWorstFrameMs = 0;
+                    loadFrameAt = System.Diagnostics.Stopwatch.GetTimestamp();
                     ApplyAudio();
                     if (pendingLoad != null)
                     {
@@ -303,6 +309,14 @@ namespace OpenKingdomsUnity.Game
 #endif
                 return;
             }
+            // Each frame from the start of a load to the first after it.
+            if (loadFrameAt != 0)
+            {
+                long now = System.Diagnostics.Stopwatch.GetTimestamp();
+                LoadWorstFrameMs = System.Math.Max(LoadWorstFrameMs, Ms(loadFrameAt));
+                loadFrameAt = Flow.State == FlowState.Loading ? now : 0;
+                if (loadFrameAt == 0) Debug.Log($"{CurrentMap()?.Id}: the slowest frame while it loaded took {LoadWorstFrameMs:0} ms");
+            }
             switch (Flow.State)
             {
                 case FlowState.Loading:
@@ -331,16 +345,19 @@ namespace OpenKingdomsUnity.Game
                         builtFrom = Time.realtimeSinceStartup;
                         World = new WorldView(Backend);
                         World.Build(CurrentMap(), Options, false);
-                        warmTotal = Mathf.Max(1, World.WarmLeft);
+                        buildTotal = Mathf.Max(1, World.StepsLeft);
                     }
-                    // The models build a slice a frame, so the screen keeps drawing.
-                    if (!World.WarmSome(WarmSliceMs))
+                    // The world builds a slice a frame, so the screen keeps drawing.
+                    if (!World.BuildSome(BuildSliceMs))
                     {
-                        Loading = new LoadProgress { Fraction = EngineShare + (1f - EngineShare) * (1f - World.WarmLeft / (float)warmTotal), Stage = PreparingStage };
+                        Loading = new LoadProgress
+                        {
+                            Fraction = EngineShare + (1f - EngineShare) * (1f - World.StepsLeft / (float)buildTotal), Stage = World.BuildingLand ? LandStage : PreparingStage
+                        };
                         break;
                     }
                     Loading = new LoadProgress { Fraction = 1f, Stage = "ready", Done = true };
-                    Debug.Log($"{CurrentMap()?.Id}: the engine loaded it in {builtFrom - loadingFrom:0.0} s and the world was built in {Time.realtimeSinceStartup - builtFrom:0.0} s ({World.BuildTimes}, {warmTotal} models)");
+                    Debug.Log($"{CurrentMap()?.Id}: the engine loaded it in {builtFrom - loadingFrom:0.0} s and the world was built in {Time.realtimeSinceStartup - builtFrom:0.0} s ({World.BuildTimes}; {World.ModelCount} models)");
                     input = new OrderInput(Backend, World, Options.ClassicControls);
                     Flow.Fire(FlowEvent.Loaded);
                     WorldLoaded?.Invoke(this);
@@ -403,8 +420,8 @@ namespace OpenKingdomsUnity.Game
                 if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null && Flow.State != FlowState.Loading)
                     using (RenderMarker.Auto()) World.Render();
                 RenderMs = Ms(renderFrom);
-                // The first frame builds every feature in sight, so it is the slow one.
-                if (FramesPlayed == 1 && Flow.State == FlowState.Playing) Debug.Log($"The battle's first frame was drawn in {RenderMs / 1000.0:0.0} s");
+                // The frame that ends the loading draws the battle's first.
+                if (FramesPlayed == 0 && Flow.State == FlowState.Playing) Debug.Log($"The battle's first frame was drawn in {RenderMs / 1000.0:0.0} s");
                 if (!Application.isBatchMode) TellView();
             }
             using (ScreensMarker.Auto()) Screens.Tick();

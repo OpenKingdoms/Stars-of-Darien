@@ -74,6 +74,23 @@ namespace OpenKingdomsUnity.Game.World
             return m;
         }
 
+        // Makes one material the model still lacks, for a loading screen
+        // that builds a model's materials a frame at a time. False once the
+        // model is built or has every material.
+        public bool WarmMaterial(int id)
+        {
+            if (id < 0 || models.ContainsKey(id)) return false;
+            var data = backend.GetModel(id);
+            if (data == null) return false;
+            foreach (var batch in data.Batches)
+                if (!materials.ContainsKey(batch.Texture))
+                {
+                    MaterialFor(batch.Texture);
+                    return true;
+                }
+            return false;
+        }
+
         // The original models are one-sided polygons over open shells, such
         // as a tower's cannon port or a flag's cloth seen from behind, so
         // they draw from both sides. Texels are cut below the 3D view's

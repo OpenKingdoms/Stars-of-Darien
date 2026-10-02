@@ -9,6 +9,7 @@ using System.Linq;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.UI;
+using OpenKingdomsUnity.Game.World;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
@@ -229,23 +230,25 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [UnityTest]
-        public IEnumerator TheLoadingScreenKeepsDrawingWhileTheModelsBuild()
+        public IEnumerator TheLoadingScreenKeepsDrawingWhileTheWorldBuilds()
         {
-            double slice = GameRoot.WarmSliceMs;
-            GameRoot.WarmSliceMs = 0;
+            double slice = GameRoot.BuildSliceMs;
+            GameRoot.BuildSliceMs = 0;
             try
             {
                 yield return Boot(new MockBackend { StageSeconds = 0f });
                 root.Flow.Fire(FlowEvent.OpenSkirmish);
                 root.Screens.StartGame();
-                int frames = 0;
+                int landFrames = 0, modelFrames = 0, partLand = 0;
                 float last = 0f;
                 float deadline = Time.realtimeSinceStartup + 60f;
                 while (root.Flow.State == FlowState.Loading && Time.realtimeSinceStartup < deadline)
                 {
-                    if (root.World != null && root.Loading.Stage == GameRoot.PreparingStage)
+                    if (root.World != null && !root.Loading.Done)
                     {
-                        frames++;
+                        if (root.Loading.Stage == GameRoot.LandStage) landFrames++;
+                        if (root.Loading.Stage == GameRoot.PreparingStage) modelFrames++;
+                        if (root.World.Terrain.Regions > 0 && root.World.Part == TerrainView.LandPart) partLand++;
                         Assert.That(root.Loading.Fraction, Is.InRange(GameRoot.EngineShare, 1f));
                         Assert.GreaterOrEqual(root.Loading.Fraction, last, "the bar never goes back");
                         last = root.Loading.Fraction;
@@ -253,11 +256,16 @@ namespace OpenKingdomsUnity.Tests
                     yield return null;
                 }
                 Assert.AreEqual(FlowState.Playing, root.Flow.State, root.LastError);
-                Assert.Greater(frames, 1, "the models took more than one frame, each drawn");
-                Assert.AreEqual(0, root.World.WarmLeft, "every model was built before the battle");
+                Assert.Greater(landFrames, 2, "the land took several frames, each drawn");
+                Assert.Greater(partLand, 0, "a frame was drawn with only some of the land built");
+                Assert.Greater(modelFrames, 1, "the models took more than one frame, each drawn");
+                Assert.AreEqual(0, root.World.StepsLeft, "the whole world was built before the battle");
+                Assert.IsNotNull(root.World.Terrain.Apron, "and the edge ring");
                 Assert.IsTrue(root.Loading.Done);
+                yield return null;
+                Assert.Greater(root.LoadWorstFrameMs, 0.0, "the slowest loading frame was timed");
             }
-            finally { GameRoot.WarmSliceMs = slice; }
+            finally { GameRoot.BuildSliceMs = slice; }
         }
 
         [UnityTest]

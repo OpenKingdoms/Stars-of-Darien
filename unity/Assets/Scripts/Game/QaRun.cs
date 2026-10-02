@@ -262,7 +262,7 @@ namespace OpenKingdomsUnity.Game
 
         // ---- Every map ----
 
-        public const string SweepHeader = "index,map,name,width,height,starts,result,load_s,ticks,real_s,fps,units,units_no_model,features,feature_cards,features_empty,monarch_drawn,state,warnings,errors,exceptions,managed_mb,system_mb,private_mb,card_names,first_problem";
+        public const string SweepHeader = "index,map,name,width,height,starts,result,load_s,load_worst_ms,ticks,real_s,fps,units,units_no_model,features,feature_cards,features_empty,monarch_drawn,state,warnings,errors,exceptions,managed_mb,system_mb,private_mb,card_names,first_problem";
 
         IEnumerator Sweep(string csv)
         {
@@ -292,6 +292,9 @@ namespace OpenKingdomsUnity.Game
                     root.Flow.Fire(FlowEvent.Start);
                     while (root.Flow.State == FlowState.Loading && Time.realtimeSinceStartup - began < SmokeRun.LoadLimit) yield return null;
                     float load = Time.realtimeSinceStartup - began;
+                    // The frame after loading ends closes the slowest-frame count.
+                    yield return null;
+                    double worst = root.LoadWorstFrameMs;
                     string result = "PASS", state = root.Flow.State.ToString(), drawn = "";
                     int units = 0, noModel = 0, features = 0, cards = 0, empty = 0, frames = 0;
                     var cardNames = new List<string>();
@@ -299,7 +302,7 @@ namespace OpenKingdomsUnity.Game
                     float real = 0f;
                     if (root.Flow.State == FlowState.Loading)
                     {
-                        Append(csv, Row(i, map, "FAIL load stuck", load, 0, 0, 0, 0, 0, 0, 0, 0, "", state, used, ""));
+                        Append(csv, Row(i, map, "FAIL load stuck", load, worst, 0, 0, 0, 0, 0, 0, 0, 0, "", state, used, ""));
                         Finish(1, $"{map.Id} was still loading after {SmokeRun.LoadLimit:0} s, so the sweep stops");
                         yield break;
                     }
@@ -341,9 +344,9 @@ namespace OpenKingdomsUnity.Game
                     }
                     if (tally.Exceptions > 0 && result == "PASS") result = "FAIL exception";
                     if (result != "PASS") failures++;
-                    Append(csv, Row(i, map, result, load, ticks, real, frames, units, noModel, features, cards, empty, drawn, state, used, string.Join(" ", cardNames)));
+                    Append(csv, Row(i, map, result, load, worst, ticks, real, frames, units, noModel, features, cards, empty, drawn, state, used, string.Join(" ", cardNames)));
                     swept++;
-                    Say($"map {i} {map.Id}: {result}, loaded in {load:0.0} s, {ticks} ticks in {real:0.0} s, {units} units, {tally.Warnings} warnings, {tally.Errors} errors, {tally.Exceptions} exceptions");
+                    Say($"map {i} {map.Id}: {result}, loaded in {load:0.0} s with no frame over {worst:0} ms, {ticks} ticks in {real:0.0} s, {units} units, {tally.Warnings} warnings, {tally.Errors} errors, {tally.Exceptions} exceptions");
                     if (root.Flow.State != FlowState.Skirmish && root.Flow.State != FlowState.MainMenu)
                     {
                         Finish(1, $"the sweep could not get back to the menu from {root.Flow.State} after {map.Id}");
@@ -354,7 +357,7 @@ namespace OpenKingdomsUnity.Game
             }
         }
 
-        string Row(int i, MapInfo map, string result, float load, uint ticks, float real, int frames, int units, int noModel,
+        string Row(int i, MapInfo map, string result, float load, double worst, uint ticks, float real, int frames, int units, int noModel,
             int features, int cards, int empty, string drawn, string state, ProfilerRecorder used, string cardNames)
         {
             long managed = GC.GetTotalMemory(false);
@@ -362,7 +365,7 @@ namespace OpenKingdomsUnity.Game
             {
                 i.ToString(CultureInfo.InvariantCulture), Field(map.Id), Field(map.Name),
                 F(map.Size.x), F(map.Size.y), MapCatalog.PlayersOf(map).ToString(CultureInfo.InvariantCulture), Field(result),
-                F(load), ticks.ToString(CultureInfo.InvariantCulture), F(real), F(frames / Mathf.Max(0.01f, real)),
+                F(load), worst.ToString("0", CultureInfo.InvariantCulture), ticks.ToString(CultureInfo.InvariantCulture), F(real), F(frames / Mathf.Max(0.01f, real)),
                 units.ToString(CultureInfo.InvariantCulture), noModel.ToString(CultureInfo.InvariantCulture),
                 features.ToString(CultureInfo.InvariantCulture), cards.ToString(CultureInfo.InvariantCulture), empty.ToString(CultureInfo.InvariantCulture),
                 drawn, state, tally.Warnings.ToString(CultureInfo.InvariantCulture), tally.Errors.ToString(CultureInfo.InvariantCulture),

@@ -61,7 +61,8 @@ namespace OpenKingdomsUnity.Game.World
         // Sets up the sea over a map whose ground height at a world x, z
         // `ground` gives, with `margin` world units of sea past each edge.
         // The map's north-west corner is at `at`, the origin for a game.
-        public void Build(Transform parent, Vector2 mapSize, float cellSize, float seaLevel, Func<float, float, float> groundAt, float margin, Vector2 at = default)
+        // A bake made beforehand, off the main thread, goes in as `baked`.
+        public void Build(Transform parent, Vector2 mapSize, float cellSize, float seaLevel, Func<float, float, float> groundAt, float margin, Vector2 at = default, Baked baked = null)
         {
             size = mapSize;
             origin = at;
@@ -78,30 +79,51 @@ namespace OpenKingdomsUnity.Game.World
             tiles = new Mesh[(quadsX + TileQuads - 1) / TileQuads, (quadsZ + TileQuads - 1) / TileQuads];
             tileObjects = new GameObject[tiles.GetLength(0), tiles.GetLength(1)];
             Wakes = new WaterWakes();
-            Bake();
+            Bake(baked ?? BakeData(size, cell, SeaLevel, ground, origin));
             for (int tz = 0; tz < tiles.GetLength(1); tz++)
                 for (int tx = 0; tx < tiles.GetLength(0); tx++) BuildTile(tx, tz);
             Apply(Target(WeatherChoice.Off), 1f);
             SetWaves(WaterWaves.Wind);
         }
 
-        // The ground changed: bake the sea's depth and shore again.
-        public void Bake()
+        // The sea's depth and shore texels, ready for the texture, and
+        // whether any texel is wet.
+        public sealed class Baked
         {
-            if (seaData != null) Looks.Release(seaData);
-            var r = WaterTextures.SeaRect(size, cell);
-            SeaRect = new Vector4(r.x + origin.x, r.y + origin.y, r.z, r.w);
-            var px = WaterTextures.SeaData(SeaRect, cell, SeaLevel, ground, out int w, out int h);
-            AnyWater = false;
-            for (int i = 0; i < px.Length && !AnyWater; i++) AnyWater = px[i].r > 0 || px[i].g > 128;
+            public Vector4 Rect;
+            public Color32[] Pixels;
+            public int Width, Height;
+            public bool AnyWater;
+        }
+
+        // The bake itself, which touches no Unity object, so it can run on
+        // a worker thread while the land builds.
+        public static Baked BakeData(Vector2 mapSize, float cellSize, float seaLevel, Func<float, float, float> groundAt, Vector2 at = default)
+        {
+            var r = WaterTextures.SeaRect(mapSize, cellSize);
+            var rect = new Vector4(r.x + at.x, r.y + at.y, r.z, r.w);
+            var px = WaterTextures.SeaData(rect, cellSize, seaLevel, groundAt, out int w, out int h);
+            bool wet = false;
+            for (int i = 0; i < px.Length && !wet; i++) wet = px[i].r > 0 || px[i].g > 128;
             // Row 0 is north, the top of the texture.
             var flipped = new Color32[px.Length];
             for (int y = 0; y < h; y++) Array.Copy(px, y * w, flipped, (h - 1 - y) * w, w);
-            seaData = new Texture2D(w, h, TextureFormat.RGBA32, false, true)
+            return new Baked { Rect = rect, Pixels = flipped, Width = w, Height = h, AnyWater = wet };
+        }
+
+        // The ground changed: bake the sea's depth and shore again.
+        public void Bake() => Bake(BakeData(size, cell, SeaLevel, ground, origin));
+
+        void Bake(Baked baked)
+        {
+            if (seaData != null) Looks.Release(seaData);
+            SeaRect = baked.Rect;
+            AnyWater = baked.AnyWater;
+            seaData = new Texture2D(baked.Width, baked.Height, TextureFormat.RGBA32, false, true)
             {
                 name = "sea data", hideFlags = HideFlags.DontSave, wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear,
             };
-            seaData.SetPixels32(flipped);
+            seaData.SetPixels32(baked.Pixels);
             seaData.Apply(false);
             SetStatics();
         }

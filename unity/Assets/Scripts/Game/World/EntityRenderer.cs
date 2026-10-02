@@ -900,6 +900,30 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         bool sitesStale;
+        int featuresWarmed;
+
+        // Builds what the features on the field draw, for about budgetMs a
+        // call, so a loading screen can do it a slice a frame and the
+        // battle's first frame finds it done. True once every one is built.
+        public bool WarmFeatures(double budgetMs)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            int n = backend.ReadFeatures(features);
+            bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
+            while (featureEntries.Count < n) featureEntries.Add(new FeatureEntry());
+            while (featuresWarmed < n)
+            {
+                var e = featureEntries[featuresWarmed];
+                if (!e.Same(features[featuresWarmed]))
+                {
+                    Build(e, features[featuresWarmed], seaOn);
+                    sitesStale = true;
+                }
+                featuresWarmed++;
+                if (clock.Elapsed.TotalMilliseconds >= budgetMs) break;
+            }
+            return featuresWarmed >= n;
+        }
 
         void AddFeatures(Camera cam)
         {

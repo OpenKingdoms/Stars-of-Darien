@@ -30,32 +30,77 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Build(IGameBackend backend, Transform parent)
         {
+            foreach (var (_, step) in Steps(backend, parent))
+                while (!step()) System.Threading.Thread.Yield();
+        }
+
+        public const string LandPart = "land", EdgePart = "edge ring", SeaPart = "sea";
+
+        // The ground's build in steps, so a loading screen can draw between
+        // them: each region's picture and then its meshes, the detail
+        // textures, the edge ring and the sea. A step is named by its part
+        // and is true once done, false to be called again next frame.
+        public List<(string part, System.Func<bool> step)> Steps(IGameBackend backend, Transform parent)
+        {
             this.backend = backend;
             var t = backend.Terrain;
             Root = new GameObject("Terrain");
             Root.transform.SetParent(parent, false);
             int rw = TerrainBuilder.RegionsW(t), rh = TerrainBuilder.RegionsH(t);
             regions = new GameObject[rw, rh];
-            for (int ry = 0; ry < rh; ry++)
-                for (int rx = 0; rx < rw; rx++)
-                    regions[rx, ry] = BuildRegion(t, rx, ry);
-            var whole = WholeMap(t, Chunk, 1024);
-            Apron = BuildRing(t, whole, Root.transform);
-            Shader.SetGlobalVector("_OkuMapSize", new Vector4(t.Size.x, t.Size.y, 0, 0));
-            GroundDetail.Apply(true);
-            chunkImages.Clear();
-
             seaParent = parent;
+            // The sea's depths bake on a worker thread while the land builds.
+            System.Threading.Tasks.Task<WaterView.Baked> bake = null;
             if (t.SeaLevel > 0)
             {
-                seaShelf = EdgeRing.Shelf(t);
-                bedLuma = BedLuma(t, whole);
-                BuildSea();
-                // A sea level with no water under it anywhere draws no sea.
-                if (!Sea.AnyWater) { Sea.Dispose(); Sea = null; }
+                float shelf = seaShelf = EdgeRing.Shelf(t);
+                bake = System.Threading.Tasks.Task.Run(() =>
+                {
+                    WaterTextures.PreparePixels();
+                    return WaterView.BakeData(t.Size, t.CellSize, t.SeaLevel, (x, z) => SeaGround(t, shelf, x, z));
+                });
             }
-            if (Sea == null) WaterView.ClearGlobals();
+            var steps = new List<(string, System.Func<bool>)>();
+            for (int ry = 0; ry < rh; ry++)
+                for (int rx = 0; rx < rw; rx++)
+                {
+                    int x = rx, y = ry;
+                    Material mat = null;
+                    steps.Add((LandPart, Done(() => regions[x, y] = BeginRegion(t, x, y, out mat))));
+                    steps.Add((LandPart, Done(() => FinishRegion(t, x, y, regions[x, y], mat))));
+                }
+            // Made once a session, each a step of its own.
+            steps.Add((EdgePart, Done(CliffRock.Apply)));
+            steps.Add((EdgePart, Done(() => GroundDetail.Apply(true))));
+            RgbaImage whole = null;
+            steps.Add((EdgePart, Done(() =>
+            {
+                whole = WholeMap(t, Chunk, 1024);
+                Apron = BuildRing(t, whole, Root.transform);
+                Shader.SetGlobalVector("_OkuMapSize", new Vector4(t.Size.x, t.Size.y, 0, 0));
+                chunkImages.Clear();
+            })));
+            if (bake != null)
+            {
+                steps.Add((SeaPart, () =>
+                {
+                    if (!bake.IsCompleted) return false;
+                    bedLuma = BedLuma(t, whole);
+                    return true;
+                }));
+                steps.Add((SeaPart, Done(() =>
+                {
+                    // GetResult throws what the bake threw, if it did.
+                    BuildSea(bake.GetAwaiter().GetResult());
+                    // A sea level with no water under it anywhere draws no sea.
+                    if (!Sea.AnyWater) { Sea.Dispose(); Sea = null; }
+                })));
+            }
+            steps.Add((SeaPart, Done(() => { if (Sea == null) WaterView.ClearGlobals(); })));
+            return steps;
         }
+
+        static System.Func<bool> Done(System.Action step) => () => { step(); return true; };
 
         Transform seaParent;
         float seaShelf, bedLuma;
@@ -68,11 +113,11 @@ namespace OpenKingdomsUnity.Game.World
             Sea?.SetClimate(seaClimate);
         }
 
-        void BuildSea()
+        void BuildSea(WaterView.Baked baked = null)
         {
             var t = backend.Terrain;
             Sea = new WaterView();
-            Sea.Build(seaParent, t.Size, t.CellSize, t.SeaLevel, SeaGround, EdgeRing.SeaReach(t));
+            Sea.Build(seaParent, t.Size, t.CellSize, t.SeaLevel, SeaGround, EdgeRing.SeaReach(t), default, baked);
             Sea.SetBedLuma(bedLuma);
             Sea.SetClimate(seaClimate);
         }
@@ -80,11 +125,12 @@ namespace OpenKingdomsUnity.Game.World
         // The ground under the sea, read from the backend each time, since
         // an edit in the map editor may replace its terrain. Past the map
         // the sea lies over the ring's own ground.
-        float SeaGround(float x, float z)
+        float SeaGround(float x, float z) => SeaGround(backend.Terrain, seaShelf, x, z);
+
+        static float SeaGround(MapTerrain t, float shelf, float x, float z)
         {
-            var t = backend.Terrain;
             var size = t.Size;
-            return x >= 0 && x <= size.x && z <= 0 && z >= -size.y ? t.Sample(x, z) : EdgeRing.Height(t, new Vector2(x, z), seaShelf);
+            return x >= 0 && x <= size.x && z <= 0 && z >= -size.y ? t.Sample(x, z) : EdgeRing.Height(t, new Vector2(x, z), shelf);
         }
 
         // The usual lightness of the painted ground under the sea, linear,
@@ -109,16 +155,30 @@ namespace OpenKingdomsUnity.Game.World
 
         GameObject BuildRegion(MapTerrain t, int rx, int ry)
         {
+            var region = BeginRegion(t, rx, ry, out var mat);
+            FinishRegion(t, rx, ry, region, mat);
+            return region;
+        }
+
+        // The region's object and its picture, one picture of its ground
+        // near and far alike.
+        GameObject BeginRegion(MapTerrain t, int rx, int ry, out Material mat)
+        {
             var region = new GameObject($"Region {rx},{ry}");
             region.transform.SetParent(Root.transform, false);
             var mine = new List<Object>();
             regionOwned[region] = mine;
-
-            // One picture of the region's ground, near and far alike.
             var picture = RegionTexture(t, rx, ry);
             mine.Add(picture);
-            var mat = Looks.Terrain(picture, t.SeaLevel);
+            mat = Looks.Terrain(picture, t.SeaLevel);
             mine.Add(mat);
+            return region;
+        }
+
+        // Its meshes, near and far, under a LODGroup.
+        void FinishRegion(MapTerrain t, int rx, int ry, GameObject region, Material mat)
+        {
+            var mine = regionOwned[region];
             var only = new List<int> { -1 };
             var near = Child(region, "LOD0", TerrainBuilder.ToMesh(TerrainBuilder.Detail(t, rx, ry), $"terrain {rx},{ry}", only), mine);
             near.sharedMaterial = mat;
@@ -132,7 +192,6 @@ namespace OpenKingdomsUnity.Game.World
             lod.SetLODs(new[] { new LOD(0.12f, new Renderer[] { near }), new LOD(0.0f, new Renderer[] { far }) });
             lod.RecalculateBounds();
             Regions++;
-            return region;
         }
 
         // Rebuilds the regions that cover a rectangle of blocks, after the

@@ -41,5 +41,51 @@ namespace OpenKingdomsUnity.Tests
                 b.Dispose();
             }
         }
+
+        [Test]
+        public void TheGroundBuildsInStepsARegionAtATimeThenTheRingAndTheSea()
+        {
+            var b = new MockBackend { StageSeconds = 0 };
+            var s = GameRoot.DefaultSetup(b);
+            s.MapId = "mock_isles";
+            b.StartSkirmish(s);
+            for (int i = 0; i < 20 && !b.PumpLoading().Done; i++) { }
+            var parent = new GameObject("test world");
+            var view = new TerrainView();
+            try
+            {
+                var t = b.Terrain;
+                int regions = TerrainBuilder.RegionsW(t) * TerrainBuilder.RegionsH(t);
+                Assert.Greater(regions, 1);
+                var steps = view.Steps(b, parent.transform);
+                int k = 0;
+                for (int r = 0; r < regions; r++)
+                    for (int half = 0; half < 2; half++, k++)
+                    {
+                        Assert.AreEqual(TerrainView.LandPart, steps[k].part);
+                        Assert.IsTrue(steps[k].step(), "a region's step is done in one call");
+                        Assert.AreEqual(r + half, view.Regions, "a region counts once its meshes are built");
+                        Assert.IsNull(view.Apron, "the ring waits for the land");
+                    }
+                for (; steps[k].part == TerrainView.EdgePart; k++) Assert.IsTrue(steps[k].step());
+                Assert.IsNotNull(view.Apron, "the ring is built");
+                Assert.IsNull(view.Sea, "the sea waits for its steps");
+                for (; k < steps.Count; k++)
+                {
+                    Assert.AreEqual(TerrainView.SeaPart, steps[k].part);
+                    // The first waits for the depths the worker bakes.
+                    var deadline = System.DateTime.Now.AddSeconds(30);
+                    while (!steps[k].step() && System.DateTime.Now < deadline) System.Threading.Thread.Sleep(1);
+                }
+                Assert.IsNotNull(view.Sea, "the isles have their sea");
+                Assert.IsTrue(view.Sea.AnyWater);
+            }
+            finally
+            {
+                view.Dispose();
+                Object.DestroyImmediate(parent);
+                b.Dispose();
+            }
+        }
     }
 }

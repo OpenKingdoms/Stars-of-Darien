@@ -22,10 +22,40 @@ namespace OpenKingdomsUnity.Game.World
 
         static Texture2D normals, foam, caustics, noise;
 
-        public static Texture2D Normals => normals != null ? normals : normals = Make("sea waves", NormalSize, WaveSlopes(NormalSize, 96, 11), TextureFormat.RGBA32);
-        public static Texture2D Foam => foam != null ? foam : foam = Make("sea foam", FoamSize, FoamPixels(FoamSize, 23), TextureFormat.RGBA32);
-        public static Texture2D Caustics => caustics != null ? caustics : caustics = Make("sea caustics", CausticSize, CausticPixels(CausticSize, 37), TextureFormat.RGBA32);
-        public static Texture2D Noise => noise != null ? noise : noise = Make("sea noise", NoiseSize, NoisePixels(NoiseSize, 5), TextureFormat.RGBA32);
+        public static Texture2D Normals => normals != null ? normals : normals = Make("sea waves", NormalSize, Take(ref normalsPx, () => WaveSlopes(NormalSize, 96, 11)), TextureFormat.RGBA32);
+        public static Texture2D Foam => foam != null ? foam : foam = Make("sea foam", FoamSize, Take(ref foamPx, () => FoamPixels(FoamSize, 23)), TextureFormat.RGBA32);
+        public static Texture2D Caustics => caustics != null ? caustics : caustics = Make("sea caustics", CausticSize, Take(ref causticsPx, () => CausticPixels(CausticSize, 37)), TextureFormat.RGBA32);
+        public static Texture2D Noise => noise != null ? noise : noise = Make("sea noise", NoiseSize, Take(ref noisePx, () => NoisePixels(NoiseSize, 5)), TextureFormat.RGBA32);
+
+        // The pictures' pixels, worked out ahead by PreparePixels.
+        static byte[] normalsPx, foamPx, causticsPx, noisePx;
+        static bool prepared;
+        static readonly object preparing = new object();
+
+        // Works out the pictures' pixels, once a session. It touches no
+        // Unity object, so a worker thread can do it while the land builds.
+        public static void PreparePixels()
+        {
+            lock (preparing)
+            {
+                if (prepared) return;
+                normalsPx = WaveSlopes(NormalSize, 96, 11);
+                foamPx = FoamPixels(FoamSize, 23);
+                causticsPx = CausticPixels(CausticSize, 37);
+                noisePx = NoisePixels(NoiseSize, 5);
+                prepared = true;
+            }
+        }
+
+        static byte[] Take(ref byte[] pixels, System.Func<byte[]> make)
+        {
+            lock (preparing)
+            {
+                var ready = pixels;
+                pixels = null;
+                return ready ?? make();
+            }
+        }
 
         static Texture2D Make(string name, int size, byte[] rgba, TextureFormat format)
         {
