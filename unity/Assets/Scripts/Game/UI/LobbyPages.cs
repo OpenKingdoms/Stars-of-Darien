@@ -454,7 +454,7 @@ namespace OpenKingdomsUnity.Game.UI
                 s.Colour = Clicker.Make(p, p.Root, "Colour", 284, y, 21, 20, 8f, by => { var st = Setup.Seats[i]; st.Colour = (st.Colour + by + 8) % 8; Refresh(); }, "Click to select color");
                 s.Emblem = p.Picture(s.Colour.transform, "Emblem", null, 2, 1.5f, 17, 17);
                 s.Colour.Label.gameObject.SetActive(false);
-                s.Team = Clicker.Make(p, p.Root, "Team", 317, y, 50, 20, 9.5f, by => { var st = Setup.Seats[i]; st.Team = (st.Team + by + 4) % 4; Refresh(); }, "Click to create teams");
+                s.Team = Clicker.Make(p, p.Root, "Team", 317, y, 50, 20, 9.5f, by => { var st = Setup.Seats[i]; st.Team = (st.Team + by + Teams) % Teams; Refresh(); }, "Click to create teams");
                 return s;
             }
 
@@ -554,7 +554,7 @@ namespace OpenKingdomsUnity.Game.UI
                 {
                     int c = 0;
                     while (seats.Exists(x => x.Colour == c) && c < 7) c++;
-                    seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = c, Team = seats.Count % 4 });
+                    seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = c, Team = NewSeatTeam(seats.Count, seats[0].Team) });
                 }
                 Refresh();
             }

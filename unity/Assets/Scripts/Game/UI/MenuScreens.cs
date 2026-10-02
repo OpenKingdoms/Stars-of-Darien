@@ -430,7 +430,7 @@ namespace OpenKingdomsUnity.Game.UI
             Row(list, w, "Display", new[] { "Full screen", "Window" }, x => x.Fullscreen ? 0 : 1, i =>
             {
                 o.Fullscreen = i == 0;
-                if (!Application.isEditor) UnityEngine.Screen.fullScreen = o.Fullscreen;
+                if (!Application.isEditor) GameOptions.ApplyDisplay(o.Fullscreen);
             }, "Display: the whole screen, or a window");
             Row(list, w, "Shadows", new[] { "Soft", "Off" }, x => x.Shadows ? 0 : 1, i =>
             {
@@ -812,6 +812,10 @@ namespace OpenKingdomsUnity.Game.UI
             for (int i = 0; i < b.Players.Count; i++) Kingdom(b.Players[i], new Rect(0, i * DialogLayout.TableRowH, w, DialogLayout.TableRowH));
         }
 
+        // You, as the skirmish page names you, whatever the engine calls
+        // the local seat, and everyone else by name.
+        public static string ResultName(PlayerInfo pl) => pl.IsLocal ? "You" : pl.Name ?? "";
+
         // A row of the table: emblem, player, kingdom, team, standing or fallen.
         void Kingdom(PlayerInfo pl, Rect r)
         {
@@ -823,7 +827,7 @@ namespace OpenKingdomsUnity.Game.UI
             var c = DialogLayout.Columns;
             Emblem(row, c[0], pl);
             var ink = HudArt.Ink;
-            UiKit.Words(row, "Player", c[1], pl.Name ?? "", DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
+            UiKit.Words(row, "Player", c[1], ResultName(pl), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
             UiKit.Words(row, "Kingdom", c[2], SideName(pl.Side, root.Backend.Sides), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
             UiKit.Words(row, "Team", c[3], (pl.Team + 1).ToString(), DialogLayout.Row, ink, UiKit.TitleFont, TextAnchor.MiddleLeft);
             UiKit.Words(row, "State", c[4], pl.Alive ? "Standing" : "Fallen", DialogLayout.Row, pl.Alive ? HudArt.Verdigris : HudArt.Minium, UiKit.BodyFont, TextAnchor.MiddleLeft);

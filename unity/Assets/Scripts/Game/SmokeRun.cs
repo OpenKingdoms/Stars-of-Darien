@@ -51,7 +51,7 @@ namespace OpenKingdomsUnity.Game
             return SceneryViews.Parse(i >= 0 && i + 1 < args.Length ? args[i + 1] : null);
         }
 
-        static int Find(string[] args, string flag)
+        public static int Find(string[] args, string flag)
         {
             if (args == null) return -1;
             for (int i = 0; i < args.Length; i++)
@@ -160,7 +160,7 @@ namespace OpenKingdomsUnity.Game
                 float settle = Time.realtimeSinceStartup + 3f;
                 while (Time.realtimeSinceStartup < settle && GameFlow.InGame(root.Flow.State)) yield return null;
                 string why = null;
-                yield return Picture(r => why = r);
+                yield return Picture(root, ShotsDir(Environment.GetCommandLineArgs()), "smoke-battle", true, (r, share) => why = r);
                 if (why != null)
                 {
                     Quit(Result.NoModels, why);
@@ -195,13 +195,13 @@ namespace OpenKingdomsUnity.Game
 
         // Draws the battle camera's view twice into pictures, with the
         // models and without, and checks the monarch shows where it stands.
-        // failed gets why not, or is not called.
-        IEnumerator Picture(Action<string> failed)
+        // done gets why not, or null, and the share of the monarch drawn.
+        // The pictures are <name>.png and, with bare, <name>-no-models.png.
+        public static IEnumerator Picture(GameRoot root, string dir, string name, bool bare, Action<string, float> done)
         {
             var world = root.World;
             var cam = world?.Camera != null ? world.Camera.GetComponent<Camera>() : null;
-            if (cam == null) { failed("the battle has no camera"); yield break; }
-            string dir = ShotsDir(Environment.GetCommandLineArgs());
+            if (cam == null) { done("the battle has no camera", 0f); yield break; }
             System.IO.Directory.CreateDirectory(dir);
 
             yield return null;
@@ -212,16 +212,17 @@ namespace OpenKingdomsUnity.Game
             var without = Grab(cam);
             world.Entities.HideModels = false;
 
-            string a = System.IO.Path.Combine(dir, "smoke-battle.png"), bare = System.IO.Path.Combine(dir, "smoke-battle-no-models.png");
+            string a = System.IO.Path.Combine(dir, name + ".png"), plain = System.IO.Path.Combine(dir, name + "-no-models.png");
             System.IO.File.WriteAllBytes(a, with.EncodeToPNG());
-            System.IO.File.WriteAllBytes(bare, without.EncodeToPNG());
+            if (bare) System.IO.File.WriteAllBytes(plain, without.EncodeToPNG());
             int whole = Changed(with, without, new RectInt(0, 0, with.width, with.height), out int wholeArea);
-            Say($"pictures {ShotWidth}x{ShotHeight}: {a} and {bare}; the models change {whole} of {wholeArea} pixels");
+            Say($"pictures {ShotWidth}x{ShotHeight}: {a}{(bare ? " and " + plain : "")}; the models change {whole} of {wholeArea} pixels");
             string why = null;
+            float share = 0f;
             if (monarch is RectInt m)
             {
                 int inRect = Changed(with, without, m, out int area);
-                float share = inRect / (float)Mathf.Max(1, area);
+                share = inRect / (float)Mathf.Max(1, area);
                 Say($"monarch {who} in the picture at x {m.x}..{m.xMax}, y {m.y}..{m.yMax} from the bottom: {inRect} of {area} pixels drawn ({share:P0})");
                 if (share < MonarchShare) why = $"the monarch does not draw: {share:P1} of its rect changes with the models, {MonarchShare:P0} expected";
             }
@@ -229,7 +230,7 @@ namespace OpenKingdomsUnity.Game
             if (why == null && whole < wholeArea / 200) why = $"the models change only {whole} pixels of the picture";
             Destroy(with);
             Destroy(without);
-            if (why != null) failed(why);
+            done(why, share);
         }
 
         // Each view's pictures as <map>-<label>-<angle>.png in the shots folder.

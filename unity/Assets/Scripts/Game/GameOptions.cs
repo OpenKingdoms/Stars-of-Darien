@@ -84,6 +84,26 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.Save();
         }
 
+        // A window four fifths of the screen each way, in even pixels, so a
+        // window never runs under the taskbar or off the screen.
+        public static Vector2Int WindowSize(int screenW, int screenH)
+        {
+            int w = Mathf.RoundToInt(screenW * 0.8f) & ~1, h = Mathf.RoundToInt(screenH * 0.8f) & ~1;
+            return new Vector2Int(Mathf.Clamp(w, Mathf.Min(640, screenW), screenW), Mathf.Clamp(h, Mathf.Min(480, screenH), screenH));
+        }
+
+        // Full screen at the display's own size, or a window that fits on it.
+        public static void ApplyDisplay(bool fullscreen)
+        {
+            int w = Display.main.systemWidth, h = Display.main.systemHeight;
+            if (fullscreen) Screen.SetResolution(w, h, FullScreenMode.FullScreenWindow);
+            else
+            {
+                var size = WindowSize(w, h);
+                Screen.SetResolution(size.x, size.y, FullScreenMode.Windowed);
+            }
+        }
+
         // The weather a map gets: the player's choice, or what its climate suggests.
         public static WeatherChoice Resolve(WeatherChoice choice, string climate)
         {

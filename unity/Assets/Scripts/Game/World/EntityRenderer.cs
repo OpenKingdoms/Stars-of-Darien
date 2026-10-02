@@ -386,6 +386,7 @@ namespace OpenKingdomsUnity.Game.World
             halos.Clear(cam);
 
             UnitCount = backend.ReadUnits(Units);
+            UnitsWithoutModel = 0;
             ringVerts.Clear();
             ringTris.Clear();
             DrawnSize.Clear();
@@ -430,6 +431,29 @@ namespace OpenKingdomsUnity.Game.World
         // Each unit drawn this frame and how big it is: height and radius in
         // world units. Picking uses it, so a unit is picked where it shows.
         public readonly Dictionary<int, Vector2> DrawnSize = new Dictionary<int, Vector2>();
+
+        // Units in the last frame that had no model to draw.
+        public int UnitsWithoutModel { get; private set; }
+
+        // The features as last built: how many, how many stand as flat
+        // cards, and how many draw nothing at all, such as the shore's wave
+        // sprites under the sea's own foam. cardNames gets each card's
+        // feature name once.
+        public void FeatureCoverage(out int all, out int cards, out int empty, ICollection<string> cardNames = null)
+        {
+            all = featureEntries.Count;
+            cards = empty = 0;
+            foreach (var e in featureEntries)
+            {
+                if (e.Card)
+                {
+                    cards++;
+                    string name = e.Def >= 0 && e.Def < backend.FeatureDefs.Count ? backend.FeatureDefs[e.Def].Name : "#" + e.Def;
+                    if (cardNames != null && !cardNames.Contains(name)) cardNames.Add(name);
+                }
+                else if (e.Draws.Count == 0) empty++;
+            }
+        }
 
         public bool IsDrawn(int handle) => DrawnSize.ContainsKey(handle);
 
@@ -587,6 +611,7 @@ namespace OpenKingdomsUnity.Game.World
             risingBlock = -1;
             var def = u.Def >= 0 && u.Def < backend.UnitDefs.Count ? backend.UnitDefs[u.Def] : null;
             var model = models.Get(u.Model, OverrideKind.Unit, def?.ModelNames);
+            if (model == null) UnitsWithoutModel++;
             if (model != null && (u.Flags & UnitFlags.Building) != 0 && (u.Flags & UnitFlags.Dying) == 0)
             {
                 float shown = EaseBuild(u.Handle, Mathf.Clamp01(u.BuildProgress));

@@ -103,5 +103,120 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(-1, s.Seats[0].Start);
             mock.Dispose();
         }
+
+        [Test]
+        public void OnlyTheGamesOwnOldSavesMoveAndOnlyOnce()
+        {
+            string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "oku-move-" + System.Guid.NewGuid().ToString("N"));
+            string old = System.IO.Path.Combine(temp, "DefaultCompany", "unity"), now = System.IO.Path.Combine(temp, "OpenKingdoms", "Darien Reforged");
+            void Put(string path) { System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)); System.IO.File.WriteAllText(path, "x"); }
+            try
+            {
+                Put(System.IO.Path.Combine(old, "Saves", "a.oksav"));
+                Put(System.IO.Path.Combine(old, "User", "maps", "mine.tnt"));
+                Put(System.IO.Path.Combine(old, "TestResults.xml"));
+                Put(System.IO.Path.Combine(old, "Another game", "save.dat"));
+                Assert.AreEqual(2, GameRoot.MoveOldData(old, now));
+                Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(now, "Saves", "a.oksav")));
+                Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(now, "User", "maps", "mine.tnt")));
+                Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(old, "TestResults.xml")), "what is not the game's stays");
+                Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(old, "Another game", "save.dat")));
+                Assert.IsFalse(System.IO.File.Exists(System.IO.Path.Combine(now, GameRoot.MovedMark)), "the mark stays behind");
+                Put(System.IO.Path.Combine(old, "Saves", "b.oksav"));
+                Assert.AreEqual(0, GameRoot.MoveOldData(old, now), "once only");
+                Assert.AreEqual(0, GameRoot.MoveOldData(System.IO.Path.Combine(temp, "nowhere"), now));
+            }
+            finally { if (System.IO.Directory.Exists(temp)) System.IO.Directory.Delete(temp, true); }
+        }
+
+        [Test]
+        public void ASeatThePageAddsIsNeverOnYourTeam()
+        {
+            for (int yours = 0; yours < OpenKingdomsUnity.Game.UI.LobbyScreens.Teams; yours++)
+            {
+                var seen = new HashSet<int>();
+                for (int i = 4; i < OpenKingdomsUnity.Game.UI.LobbyScreens.SeatRows; i++)
+                {
+                    int t = OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(i, yours);
+                    Assert.AreNotEqual(yours, t, $"seat {i} with you on team {yours}");
+                    Assert.That(t, Is.InRange(0, OpenKingdomsUnity.Game.UI.LobbyScreens.Teams - 1));
+                    seen.Add(t);
+                }
+                Assert.AreEqual(3, seen.Count, "the other three teams in turn");
+            }
+            Assert.AreEqual(1, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(4, 0));
+            Assert.AreEqual(2, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(5, 0));
+            Assert.AreEqual(3, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(6, 0));
+        }
+
+        [Test]
+        public void AWindowFitsOnTheScreen()
+        {
+            Assert.AreEqual(new Vector2Int(1536, 864), GameOptions.WindowSize(1920, 1080));
+            Assert.AreEqual(new Vector2Int(3072, 1728), GameOptions.WindowSize(3840, 2160));
+            Assert.AreEqual(new Vector2Int(1024, 614), GameOptions.WindowSize(1280, 768), "even pixels");
+            Assert.AreEqual(new Vector2Int(640, 480), GameOptions.WindowSize(700, 500), "never smaller than the original's screen");
+            Assert.AreEqual(new Vector2Int(600, 400), GameOptions.WindowSize(600, 400), "nor larger than the screen");
+        }
+
+        [Test]
+        public void TheQaFlagsTakeTheirValues()
+        {
+            Assert.IsNull(QaRun.SoakMinutes(new[] { "game.exe", "-okSmoke", "20" }));
+            Assert.AreEqual(5f, QaRun.SoakMinutes(new[] { "game.exe", "-okSoak", "5" }));
+            Assert.AreEqual(QaRun.DefaultSoakMinutes, QaRun.SoakMinutes(new[] { "game.exe", "-okSoak", "-batchmode" }));
+            Assert.AreEqual(12, QaRun.SweepFrom(new[] { "-okMapSweep", "D:/qa/maps.csv", "-okSweepFrom", "12" }));
+            Assert.AreEqual(0, QaRun.SweepFrom(new[] { "-okSweepFrom", "x" }));
+            Assert.IsNull(QaRun.SweepOnly(new[] { "-okMapSweep", "maps.csv" }));
+            var only = QaRun.SweepOnly(new[] { "-okSweepOnly", "yew wood; Zhorl Valley;" });
+            Assert.AreEqual(2, only.Count);
+            Assert.IsTrue(only.Contains("zhorl valley"), "names in any case");
+            Assert.AreEqual("D:/qa/maps.csv", QaRun.Arg(new[] { "-okmapsweep", "D:/qa/maps.csv" }, QaRun.SweepFlag));
+            Assert.IsNull(QaRun.Arg(new[] { "-okMapSweep", "-batchmode" }, QaRun.SweepFlag), "a flag is never a value");
+        }
+
+        [Test]
+        public void TheSoakTakesTheLargestMapForEightAndFillsEverySeat()
+        {
+            var maps = new List<MapInfo> { Map("Huge four", 512, 4), Map("Big b", 256, 8), Map("Big a", 256, 8), Map("Small eight", 64, 8) };
+            Assert.AreEqual("Big a", QaRun.LargestFor(maps, 8).Id);
+            Assert.IsNull(QaRun.LargestFor(maps, 10));
+            var mock = new MockBackend();
+            var s = GameRoot.DefaultSetup(mock);
+            QaRun.SeatAll(s, maps[1], QaRun.SoakSeats);
+            Assert.AreEqual(QaRun.SoakSeats, s.Seats.Count);
+            Assert.AreEqual(SeatKind.Human, s.Seats[0].Kind, "the engine plays seat 0 as you");
+            for (int i = 1; i < s.Seats.Count; i++)
+            {
+                Assert.AreEqual(SeatKind.Computer, s.Seats[i].Kind);
+                Assert.AreEqual(i == 1 ? s.Seats[0].Team : i, s.Seats[i].Team, "the first guards you, the rest each its own team");
+            }
+            Assert.IsTrue(s.MapRevealed);
+            Assert.IsFalse(s.LineOfSight);
+            mock.Dispose();
+        }
+
+        [Test]
+        public void QaRowsKeepCommasAndCountWhatIsLogged()
+        {
+            Assert.AreEqual("plain", QaRun.Field("plain"));
+            Assert.AreEqual("\"a, \"\"b\"\"\"", QaRun.Field("a, \"b\""));
+            Assert.AreEqual("one two", QaRun.Field("one\ntwo"));
+            var t = new QaRun.Tally();
+            t.Hear("fine", "", LogType.Log);
+            t.Hear(QaRun.Prefix + "our own line", "", LogType.Warning);
+            t.Hear("a warning", "", LogType.Warning);
+            t.Hear("boom", "at x", LogType.Exception);
+            t.Hear("boom", "at x", LogType.Exception);
+            t.Hear("bad", "", LogType.Error);
+            Assert.AreEqual(1, t.Warnings);
+            Assert.AreEqual(2, t.Exceptions);
+            Assert.AreEqual(1, t.Errors);
+            Assert.AreEqual("Exception: boom", t.First, "the first error or exception beats a warning");
+            Assert.AreEqual(2, t.Lines["Exception: boom"]);
+            t.Reset();
+            Assert.AreEqual(0, t.Exceptions);
+            Assert.IsNull(t.First);
+        }
     }
 }

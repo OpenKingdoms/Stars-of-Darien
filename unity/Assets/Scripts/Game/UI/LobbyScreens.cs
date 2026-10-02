@@ -18,6 +18,17 @@ namespace OpenKingdomsUnity.Game.UI
     public sealed partial class LobbyScreens
     {
         public const int SeatRows = 8;
+        public const int Teams = 4;
+
+        // The team of a seat the page adds: one of the three that are not
+        // yours in turn, so a computer opened in rows five to eight never
+        // starts as your ally.
+        public static int NewSeatTeam(int index, int yours)
+        {
+            yours = ((yours % Teams) + Teams) % Teams;
+            int k = (Mathf.Max(1, index) - 1) % (Teams - 1);
+            return k >= yours ? k + 1 : k;
+        }
         static readonly string[] Owned = { "Menu", "Skirmish", "Multiplayer", "Room", "MapChoice" };
         static readonly string[] Difficulty = { "Easy", "Normal", "Hard", "Brutal" };
 

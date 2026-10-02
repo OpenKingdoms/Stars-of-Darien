@@ -34,7 +34,7 @@ namespace OpenKingdomsUnity.Game
         public OrderInput Orders => input;
         public MapEditTool Editor { get; private set; }
         public GameCursorView Pointer { get; private set; }
-        float clock;
+        float clock, loadingFrom;
         string pendingLoad;
         bool loadRefused;
         IGameBackend injected;
@@ -55,22 +55,40 @@ namespace OpenKingdomsUnity.Game
         // DefaultCompany/unity. They move to the new folder once.
         static void MoveOldData()
         {
+            string now = Application.persistentDataPath;
+            string parent = Path.GetDirectoryName(Path.GetDirectoryName(now));
+            MoveOldData(Path.Combine(parent, "DefaultCompany", "unity"), now);
+        }
+
+        public const string MovedMark = "MOVED.txt";
+
+        // Only the game's own Saves and User folders move, since any Unity
+        // project left with the default names writes to the old folder too,
+        // and MOVED.txt there says it was done. Returns the files moved.
+        public static int MoveOldData(string old, string now)
+        {
+            int moved = 0;
             try
             {
-                string now = Application.persistentDataPath;
-                string parent = Path.GetDirectoryName(Path.GetDirectoryName(now));
-                string old = Path.Combine(parent, "DefaultCompany", "unity");
-                if (!Directory.Exists(old) || string.Equals(Path.GetFullPath(old), Path.GetFullPath(now), StringComparison.OrdinalIgnoreCase)) return;
-                foreach (var file in Directory.GetFiles(old, "*", SearchOption.AllDirectories))
+                if (!Directory.Exists(old) || File.Exists(Path.Combine(old, MovedMark))) return 0;
+                if (string.Equals(Path.GetFullPath(old), Path.GetFullPath(now), StringComparison.OrdinalIgnoreCase)) return 0;
+                foreach (var part in new[] { "Saves", "User" })
                 {
-                    string to = Path.Combine(now, file.Substring(old.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    if (File.Exists(to)) continue;
-                    Directory.CreateDirectory(Path.GetDirectoryName(to));
-                    File.Move(file, to);
+                    string from = Path.Combine(old, part);
+                    if (!Directory.Exists(from)) continue;
+                    foreach (var file in Directory.GetFiles(from, "*", SearchOption.AllDirectories))
+                    {
+                        string to = Path.Combine(now, file.Substring(old.Length).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                        if (File.Exists(to)) continue;
+                        Directory.CreateDirectory(Path.GetDirectoryName(to));
+                        File.Move(file, to);
+                        moved++;
+                    }
                 }
-                File.WriteAllText(Path.Combine(old, "MOVED.txt"), "Moved to " + now);
+                File.WriteAllText(Path.Combine(old, MovedMark), "Moved to " + now);
             }
             catch (Exception e) { Debug.LogWarning("The old saves were not moved: " + e.Message); }
+            return moved;
         }
 
         Func<string, bool> playSound;
@@ -123,6 +141,7 @@ namespace OpenKingdomsUnity.Game
 
         void Start()
         {
+            if (QaRun.Begin(this, Environment.GetCommandLineArgs())) return;
             if (SmokeRun.Seconds(Environment.GetCommandLineArgs()) is float smoke)
             {
                 SmokeRun.Begin(this, smoke);
@@ -191,6 +210,7 @@ namespace OpenKingdomsUnity.Game
                 case FlowState.Loading:
                     LastError = null;
                     Loading = default;
+                    loadingFrom = Time.realtimeSinceStartup;
                     ApplyAudio();
                     if (pendingLoad != null)
                     {
@@ -295,8 +315,10 @@ namespace OpenKingdomsUnity.Game
                     }
                     else if (Loading.Done)
                     {
+                        float built = Time.realtimeSinceStartup;
                         World = new WorldView(Backend);
                         World.Build(CurrentMap(), Options);
+                        Debug.Log($"{CurrentMap()?.Id}: the engine loaded it in {built - loadingFrom:0.0} s and the world was built in {Time.realtimeSinceStartup - built:0.0} s");
                         input = new OrderInput(Backend, World, Options.ClassicControls);
                         Flow.Fire(FlowEvent.Loaded);
                         WorldLoaded?.Invoke(this);
@@ -306,7 +328,9 @@ namespace OpenKingdomsUnity.Game
                     foreach (var k in BattleKeys)
                         if (Input.GetKeyDown(k)) BattleKey(k);
                     if (Flow.State != FlowState.Playing) break;
+                    long simFrom = System.Diagnostics.Stopwatch.GetTimestamp();
                     using (SimMarker.Auto()) RunSim(Time.deltaTime);
+                    SimMs = Ms(simFrom);
                     using (InputMarker.Auto()) input?.Update();
                     FramesPlayed++;
                     if (Backend.Status == GameStatus.Victory) Flow.Fire(FlowEvent.Won);
@@ -353,13 +377,21 @@ namespace OpenKingdomsUnity.Game
                 // The sim's own clock, which stands still while paused.
                 if (World.Entities != null) World.Entities.SimSeconds = Backend.Tick / (double)Mathf.Max(1, Backend.TicksPerSecond) + clock;
                 // A batch run without graphics (the smoke test) has nothing to draw with.
+                long renderFrom = System.Diagnostics.Stopwatch.GetTimestamp();
                 if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null)
                     using (RenderMarker.Auto()) World.Render();
+                RenderMs = Ms(renderFrom);
                 if (!Application.isBatchMode) TellView();
             }
             using (ScreensMarker.Auto()) Screens.Tick();
             using (PointerMarker.Auto()) Pointer.Show(PointerCursor(), Time.unscaledTime);
         }
+
+        // This frame's milliseconds in the simulation and in building the
+        // world's draws, for the soak run in a player without the profiler.
+        public double SimMs { get; private set; }
+        public double RenderMs { get; private set; }
+        static double Ms(long from) => (System.Diagnostics.Stopwatch.GetTimestamp() - from) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
         // Profiler markers for the frame's parts, read by the crowd test.
         static readonly Unity.Profiling.ProfilerMarker SimMarker = new Unity.Profiling.ProfilerMarker("Oku.Sim"),
