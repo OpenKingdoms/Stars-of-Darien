@@ -40,7 +40,10 @@ ROUGH EDGES WE KNOW ABOUT
 - In a big battle with many computers, mostly at Fast speed, the game can
   stall for a moment now and then.
 - Loading a large map takes up to about 15 seconds on a fast PC, and
-  longer on a slow one or the first time after Windows starts.
+  longer on a slow one or the first time after Windows starts. Near the
+  end the bar can stand still for several seconds while the land is
+  built, and Windows may say the game is not responding. Give it a moment
+  and it carries on.
 - In a window the game cannot be resized. Options, then Display, switches
   between full screen and a window that fits your screen.
 
