@@ -68,7 +68,7 @@ namespace OpenKingdomsUnity.Game.UI
                 if (BuildStamp.MapEditor)
                     ArtButton.Make(p, "Map editor", null, null, EditorX, EditorY, EditorW, EditorH, "Map editor", () => root.Flow.Fire(FlowEvent.OpenEditor), "Change a map, or make one");
 
-                var version = p.Label(p.Root, GameRoot.Title + ", free and open, played with your own game files", 172, 442, 296, 13, 8.5f, HudArt.GoldHi, TextAnchor.MiddleCenter);
+                var version = p.Label(p.Root, GameRoot.Title + ", free, played with your own game files", 172, 442, 296, 13, 8.5f, HudArt.GoldHi, TextAnchor.MiddleCenter);
                 version.name = "Version";
                 l.HelpLine(p, 172, 455, 296, 17, Resting(root));
                 if (BuildStamp.Version != null) Stamp(p, BuildStamp.Version);
