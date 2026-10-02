@@ -107,6 +107,13 @@ namespace OpenKingdomsUnity
             Say($"player build {s.result}: {s.totalErrors} errors, {s.totalWarnings} warnings, {s.totalSize / 1048576.0:0.0} MB, {s.totalTime.TotalSeconds:0} s");
             if (s.result != BuildResult.Succeeded) return Fail("the player build did not succeed");
 
+            // Unity's player exe carries Unity's name and version, so the
+            // game's go over them.
+            string exe = Path.Combine(outDir, ExeName);
+            string stamped = ExeVersion.Stamp(exe, PlayerSettings.productName, PlayerSettings.companyName, alpha);
+            if (stamped != null) return Fail(stamped);
+            Say($"exe properties: {PlayerSettings.productName}, {PlayerSettings.companyName}, {alpha}");
+
             string data = Path.Combine(outDir, DataName);
             if (!Directory.Exists(data)) return Fail($"the build has no {DataName} folder");
 
@@ -224,6 +231,85 @@ namespace OpenKingdomsUnity
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             }
             return found.OrderByDescending(f => FileVersionInfo.GetVersionInfo(f).FileVersion, StringComparer.Ordinal).FirstOrDefault();
+        }
+    }
+
+    // Writes the product, company and version into a Windows exe's file
+    // properties, over the version resource it had.
+    public static class ExeVersion
+    {
+        const ushort English = 0x0409, Unicode = 1200;
+        static readonly IntPtr RtVersion = (IntPtr)16, VersionId = (IntPtr)1;
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        static extern IntPtr BeginUpdateResource(string file, bool deleteExisting);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, ExactSpelling = true)]
+        static extern bool UpdateResourceW(IntPtr update, IntPtr type, IntPtr name, ushort language, byte[] data, uint size);
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool EndUpdateResource(IntPtr update, bool discard);
+
+        // Null once written and read back, or why not. "Alpha 1" is file
+        // version 0.1.0.0, since Windows wants numbers there.
+        public static string Stamp(string exe, string product, string company, string version)
+        {
+            string copyright = FileVersionInfo.GetVersionInfo(exe).LegalCopyright ?? "";
+            var digits = new string(version.Where(char.IsDigit).ToArray());
+            ushort minor = ushort.TryParse(digits, out var n) ? n : (ushort)0;
+            var strings = new[]
+            {
+                ("CompanyName", company), ("FileDescription", product), ("FileVersion", version), ("InternalName", product),
+                ("LegalCopyright", copyright), ("OriginalFilename", Path.GetFileName(exe)), ("ProductName", product), ("ProductVersion", version),
+            };
+            byte[] resource = Resource(strings, minor);
+            IntPtr update = BeginUpdateResource(exe, false);
+            if (update == IntPtr.Zero) return $"could not open {exe} to stamp it (error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})";
+            // In US English, as Unity's is, so this one takes its place.
+            if (!UpdateResourceW(update, RtVersion, VersionId, English, resource, (uint)resource.Length))
+            {
+                EndUpdateResource(update, true);
+                return $"could not write the version into {exe} (error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})";
+            }
+            if (!EndUpdateResource(update, false)) return $"could not save {exe} after stamping it (error {System.Runtime.InteropServices.Marshal.GetLastWin32Error()})";
+            var read = FileVersionInfo.GetVersionInfo(exe);
+            if (read.ProductName != product || read.CompanyName != company || read.ProductVersion != version)
+                return $"{exe} reads back as {read.ProductName}, {read.CompanyName}, {read.ProductVersion}";
+            return null;
+        }
+
+        // VS_VERSIONINFO: the fixed numbers, one table of strings and the
+        // language it is in.
+        static byte[] Resource((string key, string value)[] strings, ushort minor)
+        {
+            var fixedInfo = new MemoryStream();
+            using (var w = new BinaryWriter(fixedInfo))
+            {
+                uint ms = minor, ls = 0;
+                foreach (uint v in new uint[] { 0xFEEF04BD, 0x00010000, ms, ls, ms, ls, 0x3F, 0, 0x00040004, 1, 0, 0, 0 }) w.Write(v);
+            }
+            var table = strings.Select(kv => Block(kv.key, System.Text.Encoding.Unicode.GetBytes(kv.value + "\0"), kv.value.Length + 1, true)).ToArray();
+            var stringInfo = Block("StringFileInfo", null, 0, true, Block($"{English:x4}{Unicode:x4}", null, 0, true, table));
+            var varInfo = Block("VarFileInfo", null, 0, true, Block("Translation", BitConverter.GetBytes(English | (uint)Unicode << 16), 4, false));
+            return Block("VS_VERSION_INFO", fixedInfo.ToArray(), 52, false, stringInfo, varInfo);
+        }
+
+        // One block: its length, value length and type, its key, its value
+        // and its children, each on a four-byte boundary.
+        static byte[] Block(string key, byte[] value, int valueLength, bool text, params byte[][] children)
+        {
+            var block = new MemoryStream();
+            var w = new BinaryWriter(block);
+            w.Write((ushort)0);
+            w.Write((ushort)valueLength);
+            w.Write((ushort)(text ? 1 : 0));
+            w.Write(System.Text.Encoding.Unicode.GetBytes(key + "\0"));
+            void Pad() { while (block.Length % 4 != 0) w.Write((byte)0); }
+            Pad();
+            if (value != null) w.Write(value);
+            foreach (var child in children) { Pad(); w.Write(child); }
+            w.Flush();
+            var bytes = block.ToArray();
+            BitConverter.GetBytes((ushort)bytes.Length).CopyTo(bytes, 0);
+            return bytes;
         }
     }
 }
