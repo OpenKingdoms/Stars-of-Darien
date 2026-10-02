@@ -77,6 +77,13 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.Save();
         }
 
+        // The game speed alone, as a QA run puts back the player's.
+        public static void SaveSpeed(int speed)
+        {
+            PlayerPrefs.SetInt(Prefix + "speed", Mathf.Clamp(speed, 1, 2));
+            PlayerPrefs.Save();
+        }
+
         // The shape Tab picked in a drag, kept for the next game.
         public static void SaveFormation(FormationShape shape)
         {

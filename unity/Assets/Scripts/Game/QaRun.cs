@@ -183,13 +183,33 @@ namespace OpenKingdomsUnity.Game
 #endif
         }
 
+        // Fast plays at speed 2, then puts back and saves the player's own
+        // speed, since a screen may save the options in between.
+        public static int Speed(GameOptions o, bool on, int before)
+        {
+            if (on)
+            {
+                if (before == 0) before = o.GameSpeed;
+                o.GameSpeed = 2;
+                return before;
+            }
+            if (before != 0)
+            {
+                o.GameSpeed = before;
+                GameOptions.SaveSpeed(before);
+            }
+            return 0;
+        }
+
+        int speedBefore;
+
         // Every frame counts as TicksPerFrame ticks at the fast speed, and
         // frames come as fast as they can.
         void Fast(bool on)
         {
             if (root == null || root.Options == null) return;
             int tps = Mathf.Max(1, root.Backend.TicksPerSecond);
-            if (on) root.Options.GameSpeed = 2;
+            speedBefore = Speed(root.Options, on, speedBefore);
             Time.captureDeltaTime = on ? (TicksPerFrame + 0.02f) / (2f * tps) : 0f;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = on ? -1 : 60;

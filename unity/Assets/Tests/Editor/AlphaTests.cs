@@ -160,6 +160,25 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AFastQaRunPutsBackThePlayersSpeed()
+        {
+            int saved = PlayerPrefs.GetInt("oku.speed", 1);
+            try
+            {
+                GameOptions.SaveSpeed(1);
+                var o = GameOptions.Load();
+                int before = QaRun.Speed(o, true, 0);
+                Assert.AreEqual(2, o.GameSpeed, "the run plays fast");
+                Assert.AreEqual(before, QaRun.Speed(o, true, before), "a second fast start keeps the first speed");
+                o.Save();
+                Assert.AreEqual(0, QaRun.Speed(o, false, before));
+                Assert.AreEqual(1, o.GameSpeed);
+                Assert.AreEqual(1, GameOptions.Load().GameSpeed, "a screen saved the fast speed, and it is undone");
+            }
+            finally { GameOptions.SaveSpeed(saved); }
+        }
+
+        [Test]
         public void TheQaFlagsTakeTheirValues()
         {
             Assert.IsNull(QaRun.SoakMinutes(new[] { "game.exe", "-okSmoke", "20" }));
