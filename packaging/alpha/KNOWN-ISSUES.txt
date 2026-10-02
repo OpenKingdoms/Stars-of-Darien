@@ -30,8 +30,6 @@ ROUGH EDGES WE KNOW ABOUT
   and the Kandran ruins do not appear yet, so maps such as Path of Pardu,
   Ulasem Arena, Thorn Boscage and Temple of Blood look emptier than in the
   original.
-- A few kinds of scenery on about 20 maps still stand as flat pictures
-  rather than 3D models.
 - Teams go from 1 to 4 across the eight seats, so with more than four
   kingdoms some of them share a team. Check the Team column before you
   start.
