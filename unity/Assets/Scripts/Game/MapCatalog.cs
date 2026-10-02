@@ -188,7 +188,19 @@ namespace OpenKingdomsUnity.Game
             }
             if (humans == 0 || players < 2) return "A game needs you and at least one computer player.";
             if (map != null && players > MapCatalog.PlayersOf(map)) return $"{MapCatalog.DisplayName(map)} holds {MapCatalog.PlayersOf(map)} players.";
+            var teams = new List<int>();
+            foreach (var seat in seats) if (seat.Kind != SeatKind.Closed) teams.Add(seat.Team);
+            if (OnOneTeam(teams)) return "Not everyone can be on one team.";
             return null;
+        }
+
+        // Every kingdom on the same team, the start the original and the
+        // relay refuse. A kingdom alone is on none.
+        public static bool OnOneTeam(IReadOnlyList<int> teams)
+        {
+            if (teams.Count == 0) return false;
+            foreach (int t in teams) if (t < 0 || t != teams[0]) return false;
+            return true;
         }
     }
 

@@ -130,26 +130,6 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void ASeatThePageAddsIsNeverOnYourTeam()
-        {
-            for (int yours = 0; yours < OpenKingdomsUnity.Game.UI.LobbyScreens.Teams; yours++)
-            {
-                var seen = new HashSet<int>();
-                for (int i = 4; i < OpenKingdomsUnity.Game.UI.LobbyScreens.SeatRows; i++)
-                {
-                    int t = OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(i, yours);
-                    Assert.AreNotEqual(yours, t, $"seat {i} with you on team {yours}");
-                    Assert.That(t, Is.InRange(0, OpenKingdomsUnity.Game.UI.LobbyScreens.Teams - 1));
-                    seen.Add(t);
-                }
-                Assert.AreEqual(3, seen.Count, "the other three teams in turn");
-            }
-            Assert.AreEqual(1, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(4, 0));
-            Assert.AreEqual(2, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(5, 0));
-            Assert.AreEqual(3, OpenKingdomsUnity.Game.UI.LobbyScreens.NewSeatTeam(6, 0));
-        }
-
-        [Test]
         public void AWindowFitsOnTheScreen()
         {
             Assert.AreEqual(new Vector2Int(1536, 864), GameOptions.WindowSize(1920, 1080));

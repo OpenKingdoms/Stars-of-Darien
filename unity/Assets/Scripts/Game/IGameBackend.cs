@@ -243,8 +243,16 @@ namespace OpenKingdomsUnity.Game
             if (a == c) return true;
             var pa = b.PlayerById(a);
             var pc = b.PlayerById(c);
-            return pa != null && pc != null && pa.Team == pc.Team;
+            return pa != null && pc != null && SeatTeam.Allied(pa.Team, pc.Team);
         }
+    }
+
+    // Teams count from 0. A kingdom alone is on no team and nobody's ally.
+    public static class SeatTeam
+    {
+        public const int Alone = -1;
+
+        public static bool Allied(int a, int b) => a >= 0 && a == b;
     }
 
     public enum GameStatus { Idle, Loading, Running, Victory, Defeat, Failed }
@@ -411,7 +419,7 @@ namespace OpenKingdomsUnity.Game
         public SeatKind Kind;
         public string Side;         // SideInfo.Id, or "" for random
         public int Colour;
-        public int Team;            // allies share a team
+        public int Team;            // allies share a team, SeatTeam.Alone for none
         public AiDifficulty Difficulty = AiDifficulty.Normal;
         // The start this seat has taken, an index into MapInfo.Starts, or -1
         // to take one of those left (StartPositions.Assign).

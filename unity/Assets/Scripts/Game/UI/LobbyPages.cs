@@ -454,7 +454,7 @@ namespace OpenKingdomsUnity.Game.UI
                 s.Colour = Clicker.Make(p, p.Root, "Colour", 284, y, 21, 20, 8f, by => { var st = Setup.Seats[i]; st.Colour = (st.Colour + by + 8) % 8; Refresh(); }, "Click to select color");
                 s.Emblem = p.Picture(s.Colour.transform, "Emblem", null, 2, 1.5f, 17, 17);
                 s.Colour.Label.gameObject.SetActive(false);
-                s.Team = Clicker.Make(p, p.Root, "Team", 317, y, 50, 20, 9.5f, by => { var st = Setup.Seats[i]; st.Team = (st.Team + by + Teams) % Teams; Refresh(); }, "Click to create teams");
+                s.Team = Clicker.Make(p, p.Root, "Team", 317, y, 50, 20, 9.5f, by => { var st = Setup.Seats[i]; st.Team = NextTeam(st.Team, by); Refresh(); }, "Click to create teams");
                 return s;
             }
 
@@ -595,7 +595,7 @@ namespace OpenKingdomsUnity.Game.UI
                     foreach (var c in new[] { s.Side, s.Team, s.Colour, s.Start }) c.gameObject.SetActive(open);
                     if (!open) continue;
                     GuiPage.Fit(s.Side.Label, l.SideName(st.Side));
-                    s.Team.Label.text = "Team " + (st.Team + 1);
+                    s.Team.Label.text = TeamLabel(st.Team);
                     l.Emblem(Page, s.Emblem, st.Side, st.Colour);
                     int start = st.Start >= 0 ? st.Start : Setup.RandomStarts ? -1 : dealt[i];
                     bool held = st.Start >= 0;

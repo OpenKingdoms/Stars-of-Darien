@@ -126,11 +126,11 @@ namespace OpenKingdomsUnity.Game
             for (int i = 0; i < l.Players; i++)
                 Room.Seats[i] = new RoomSeat
                 {
-                    Kind = RoomSeatKind.Human, Name = names[i % names.Length], Side = sides[i % sides.Length], Colour = i, Team = i,
+                    Kind = RoomSeatKind.Human, Name = names[i % names.Length], Side = sides[i % sides.Length], Colour = i, Team = SeatTeam.Alone,
                     Ready = i > 0, Connected = true, HasMap = true, Start = i == 0 ? 0 : -1,
                 };
             Room.YourSeat = l.Players;
-            Room.Seats[l.Players] = new RoomSeat { Kind = RoomSeatKind.Human, Name = you, Colour = FreeColour(l.Players), Team = l.Players, Connected = true, HasMap = true };
+            Room.Seats[l.Players] = new RoomSeat { Kind = RoomSeatKind.Human, Name = you, Colour = FreeColour(l.Players), Team = SeatTeam.Alone, Connected = true, HasMap = true };
             chat.Clear();
             chat.Add(new ChatLine { From = l.Host, Text = "Welcome. Take any start you like." });
             State = RoomSession.Room;
@@ -171,7 +171,7 @@ namespace OpenKingdomsUnity.Game
                 {
                     case RoomEdit.Side: s.Side = text ?? ""; break;
                     case RoomEdit.Colour: s.Colour = FreeColour(me, value); break;
-                    case RoomEdit.Team: s.Team = Math.Max(0, value); break;
+                    case RoomEdit.Team: s.Team = value < 0 ? SeatTeam.Alone : value; break;
                     case RoomEdit.Name: if (!string.IsNullOrWhiteSpace(text)) s.Name = text.Trim(); break;
                     case RoomEdit.Ready: s.Ready = !s.Ready; return true;
                     case RoomEdit.Start:
@@ -197,7 +197,7 @@ namespace OpenKingdomsUnity.Game
                 case RoomEdit.UnitCap: r.UnitCap = Math.Max(0, value); return true;
                 case RoomEdit.AddComputer:
                     if (!inRange || r.Seats[seat].Kind != RoomSeatKind.Empty) return false;
-                    r.Seats[seat] = new RoomSeat { Kind = RoomSeatKind.Computer, Name = "Computer", Colour = FreeColour(seat), Team = seat, Ready = true, Connected = true, HasMap = true };
+                    r.Seats[seat] = new RoomSeat { Kind = RoomSeatKind.Computer, Name = "Computer", Colour = FreeColour(seat), Team = SeatTeam.Alone, Ready = true, Connected = true, HasMap = true };
                     return true;
                 case RoomEdit.RemoveComputer:
                     if (!inRange || r.Seats[seat].Kind != RoomSeatKind.Computer) return false;
@@ -238,6 +238,7 @@ namespace OpenKingdomsUnity.Game
                 if (s.Kind == RoomSeatKind.Human && Room.Seats.IndexOf(s) != Room.YourSeat && !s.Ready) { Why = s.Name + " is not ready."; return false; }
             }
             if (players < 2) { Why = "A battle needs two kingdoms."; return false; }
+            if (SkirmishCheck.OnOneTeam(Room.Seats.FindAll(Playing).ConvertAll(x => x.Team))) { Why = "Not everyone can be on one team."; return false; }
             if (players > StartCount) { Why = $"This map holds {StartCount} kingdoms."; return false; }
             Why = "";
             State = RoomSession.Loading;

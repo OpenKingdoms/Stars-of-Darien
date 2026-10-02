@@ -319,16 +319,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void StartGame()
         {
-            int humans = 0, players = 0;
-            foreach (var seat in root.Setup.Seats)
-            {
-                if (seat.Kind == SeatKind.Human) humans++;
-                if (seat.Kind != SeatKind.Closed) players++;
-            }
-            var map = root.CurrentMap();
-            string why = null;
-            if (humans == 0 || players < 2) why = "A game needs you and at least one computer player.";
-            else if (map != null && players > MapCatalog.PlayersOf(map)) why = $"{MapCatalog.DisplayName(map)} holds {MapCatalog.PlayersOf(map)} players.";
+            string why = SkirmishCheck.WhyNot(root.Setup.Seats, root.CurrentMap());
             lobby.Skirmish?.ShowError(why);
             if (why != null) return;
             root.Setup.Seed = (uint)Environment.TickCount;
@@ -594,8 +585,10 @@ namespace OpenKingdomsUnity.Game.UI
                 var seat = setup.Seats[i];
                 if (seat.Kind == SeatKind.Closed) continue;
                 string who = seat.Kind == SeatKind.Computer ? $"Computer ({seat.Difficulty})" : i == 0 ? "You" : "Player " + (i + 1);
-                int t = teams.IndexOf(seat.Team);
-                if (t < 0) { teams.Add(seat.Team); members.Add(new List<string>()); t = teams.Count - 1; }
+                // A kingdom alone is a side of its own.
+                int key = seat.Team >= 0 ? seat.Team : -1 - i;
+                int t = teams.IndexOf(key);
+                if (t < 0) { teams.Add(key); members.Add(new List<string>()); t = teams.Count - 1; }
                 members[t].Add(who + ", " + SideName(seat.Side, sides));
             }
             if (members.Count == 2 && members[0].Count == 1 && members[1].Count == 1) return members[0][0] + "  against  " + members[1][0];
@@ -829,7 +822,7 @@ namespace OpenKingdomsUnity.Game.UI
             var ink = HudArt.Ink;
             UiKit.Words(row, "Player", c[1], ResultName(pl), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
             UiKit.Words(row, "Kingdom", c[2], SideName(pl.Side, root.Backend.Sides), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
-            UiKit.Words(row, "Team", c[3], (pl.Team + 1).ToString(), DialogLayout.Row, ink, UiKit.TitleFont, TextAnchor.MiddleLeft);
+            UiKit.Words(row, "Team", c[3], pl.Team < 0 ? "Alone" : (pl.Team + 1).ToString(), DialogLayout.Row, ink, UiKit.TitleFont, TextAnchor.MiddleLeft);
             UiKit.Words(row, "State", c[4], pl.Alive ? "Standing" : "Fallen", DialogLayout.Row, pl.Alive ? HudArt.Verdigris : HudArt.Minium, UiKit.BodyFont, TextAnchor.MiddleLeft);
         }
 

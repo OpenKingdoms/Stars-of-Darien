@@ -173,8 +173,8 @@ namespace OpenKingdomsUnity.Tests
             var seats = new List<SeatSetup>
             {
                 new SeatSetup { Kind = SeatKind.Human },
-                new SeatSetup { Kind = SeatKind.Computer },
-                new SeatSetup { Kind = SeatKind.Closed },
+                new SeatSetup { Kind = SeatKind.Computer, Team = 1 },
+                new SeatSetup { Kind = SeatKind.Closed, Team = 2 },
             };
             Assert.IsNull(SkirmishCheck.WhyNot(seats, m));
             seats[1].Kind = SeatKind.Closed;

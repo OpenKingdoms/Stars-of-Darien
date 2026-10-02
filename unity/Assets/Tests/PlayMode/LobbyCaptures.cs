@@ -23,7 +23,7 @@ namespace OpenKingdomsUnity.Tests
 
         // The menus alone, drawn by a camera at the origin, where the float
         // precision keeps every edge on its pixel.
-        static IEnumerator Shoot(GameRoot root, int w, int h, string path)
+        internal static IEnumerator Shoot(GameRoot root, int w, int h, string path)
         {
             var canvas = root.Screens.Canvas;
             var cam = new GameObject("Lobby capture camera").AddComponent<Camera>();

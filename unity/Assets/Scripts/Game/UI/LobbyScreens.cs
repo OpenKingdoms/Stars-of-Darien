@@ -18,17 +18,23 @@ namespace OpenKingdomsUnity.Game.UI
     public sealed partial class LobbyScreens
     {
         public const int SeatRows = 8;
+        // Team 1 to 4 on the Team clicker, then Alone.
         public const int Teams = 4;
 
-        // The team of a seat the page adds: one of the three that are not
-        // yours in turn, so a computer opened in rows five to eight never
-        // starts as your ally.
-        public static int NewSeatTeam(int index, int yours)
+        // The team of a seat the page adds: yours keeps its own and every
+        // other starts alone, so eight kingdoms are a free for all.
+        public static int NewSeatTeam(int index, int yours) => index <= 0 ? yours : SeatTeam.Alone;
+
+        // The Team clicker's next choice: Team 1 to 4, then Alone, the
+        // order the original's setup cycles them.
+        public static int NextTeam(int team, int by)
         {
-            yours = ((yours % Teams) + Teams) % Teams;
-            int k = (Mathf.Max(1, index) - 1) % (Teams - 1);
-            return k >= yours ? k + 1 : k;
+            int k = team < 0 || team >= Teams ? Teams : team;
+            k = ((k + by) % (Teams + 1) + Teams + 1) % (Teams + 1);
+            return k == Teams ? SeatTeam.Alone : k;
         }
+
+        public static string TeamLabel(int team) => team < 0 ? "Alone" : "Team " + (team + 1);
         static readonly string[] Owned = { "Menu", "Skirmish", "Multiplayer", "Room", "MapChoice" };
         static readonly string[] Difficulty = { "Easy", "Normal", "Hard", "Brutal" };
 

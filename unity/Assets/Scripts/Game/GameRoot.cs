@@ -202,9 +202,9 @@ namespace OpenKingdomsUnity.Game
             string side0 = b.Sides.Count > 0 ? b.Sides[0].Id : "";
             string side1 = b.Sides.Count > 2 ? b.Sides[2].Id : side0;
             s.Seats.Add(new SeatSetup { Kind = SeatKind.Human, Side = side0, Colour = 0, Team = 0 });
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = side1, Colour = 1, Team = 1 });
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 4, Team = 2 });
-            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 5, Team = 3 });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = side1, Colour = 1, Team = SeatTeam.Alone });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 4, Team = SeatTeam.Alone });
+            s.Seats.Add(new SeatSetup { Kind = SeatKind.Closed, Side = "", Colour = 5, Team = SeatTeam.Alone });
             return s;
         }
 

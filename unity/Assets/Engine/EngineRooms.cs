@@ -93,14 +93,17 @@ namespace OpenKingdomsUnity.Engine
                 {
                     Kind = (RoomSeatKind)Math.Max(0, Math.Min(3, e.kind)), Name = e.name ?? "",
                     Side = e.side >= 0 && e.side < EngineBackend.SideIds.Length ? EngineBackend.SideIds[e.side] : "",
-                    // The engine's team 0 is a side alone, the others count from 1.
-                    Colour = e.colour, Team = e.team > 0 ? e.team - 1 : i,
+                    Colour = e.colour, Team = EngineBackend.PlayerTeam(e.team),
                     Ready = e.ready != 0, Connected = e.connected != 0, HasMap = e.hasMap != 0,
                     LoadPercent = e.loadPercent, Start = e.start,
                 });
             }
             return s;
         }
+
+        // Rooms keep the engine's own numbers, as the browser game does:
+        // 0 for a kingdom alone, then Team 1 to 4.
+        public static int RoomTeam(int team) => team >= 0 ? team + 1 : 0;
 
         public bool ListRooms() => OkEngine.okx_net_list_rooms() == 0;
 
@@ -123,7 +126,7 @@ namespace OpenKingdomsUnity.Engine
                     return OkEngine.okx_net_edit((int)field, seat, side, null) == 0;
                 }
                 case RoomEdit.Team:
-                    return OkEngine.okx_net_edit((int)field, seat, Math.Max(0, value) + 1, null) == 0;
+                    return OkEngine.okx_net_edit((int)field, seat, RoomTeam(value), null) == 0;
                 case RoomEdit.UnitCap:
                     // The relay holds the cap to the engine's own bounds.
                     return OkEngine.okx_net_edit((int)field, -1, Math.Max(200, Math.Min(2000, value)), null) == 0;

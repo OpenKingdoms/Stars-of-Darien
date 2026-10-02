@@ -238,9 +238,7 @@ namespace OpenKingdomsUnity.Engine
                 cfg.seats[i] = new OkxSeat
                 {
                     kind = seat.Kind == SeatKind.Closed ? 0 : seat.Kind == SeatKind.Human ? 1 : 2,
-                    // Teams count from 0 here and from 1 in the engine,
-                    // where 0 means a side alone.
-                    side = SideIndex(seat.Side), team = Mathf.Max(0, seat.Team) + 1, color = seat.Colour,
+                    side = SideIndex(seat.Side), team = EngineTeam(seat.Team, i), color = seat.Colour,
                     difficulty = (int)seat.Difficulty, start = seat.Start
                 };
             }
@@ -347,11 +345,23 @@ namespace OpenKingdomsUnity.Engine
                 {
                     Index = s.index, Name = s.name,
                     Side = s.side >= 0 && s.side < SideIds.Length ? SideIds[s.side] : "",
-                    Colour = s.color, Team = Mathf.Max(0, s.team - 1), IsLocal = s.index == me, IsComputer = s.kind == 2,
+                    Colour = s.color, Team = PlayerTeam(s.team), IsLocal = s.index == me, IsComputer = s.kind == 2,
                     Alive = s.alive != 0, Tint = TeamTint(s.color)
                 });
             }
         }
+
+        // TAK_MAX_PLAYERS, the most seats and teams the engine plays.
+        const int EngineSeats = 8;
+
+        // A skirmish seat's team as the engine takes it: Team 1 up, and a
+        // kingdom alone a number past every team and every other seat's.
+        // The embed gives team 0 its seat's number, which a team can share.
+        public static int EngineTeam(int team, int seat) => team >= 0 && team < EngineSeats ? team + 1 : EngineSeats + 1 + seat;
+
+        // A player's or a room seat's team as the engine has it: 0 and the
+        // numbers past the teams are a kingdom alone.
+        public static int PlayerTeam(int team) => team >= 1 && team <= EngineSeats ? team - 1 : SeatTeam.Alone;
 
         static Color32 TeamTint(int colour)
         {

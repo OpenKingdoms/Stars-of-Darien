@@ -612,7 +612,7 @@ namespace OpenKingdomsUnity.Game
             int team = players[u.Player].Team;
             foreach (var o in units)
             {
-                if (o.Dying || players[o.Player].Team == team) continue;
+                if (o.Dying || o.Player == u.Player || SeatTeam.Allied(players[o.Player].Team, team)) continue;
                 float d = (o.Pos - u.Pos).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = o.Handle; }
             }
@@ -662,12 +662,11 @@ namespace OpenKingdomsUnity.Game
                 foreach (var u in units) any |= u.Player == pos && !u.Dying;
                 p.Alive = any;
             }
-            int myTeam = players[0].Team;
             bool mine = false, theirs = false;
-            foreach (var p in players)
+            for (int pos = 0; pos < players.Count; pos++)
             {
-                if (!p.Alive) continue;
-                if (p.Team == myTeam) mine = true; else theirs = true;
+                if (!players[pos].Alive) continue;
+                if (pos == 0 || SeatTeam.Allied(players[pos].Team, players[0].Team)) mine = true; else theirs = true;
             }
             if (!mine) Status = GameStatus.Defeat;
             else if (!theirs) Status = GameStatus.Victory;

@@ -152,7 +152,7 @@ namespace OpenKingdomsUnity.Game.UI
                 r.Colour = Clicker.Make(p, p.Root, "Colour", 294, y, 21, 20, 8f, by => Own(i, RoomEdit.Colour, (Room.Seats[i].Colour + by + 8) % 8, null), "Click to select color");
                 r.Emblem = p.Picture(r.Colour.transform, "Emblem", null, 2, 1.5f, 17, 17);
                 r.Colour.Label.gameObject.SetActive(false);
-                r.Team = Clicker.Make(p, p.Root, "Team", 322, y, 50, 20, 9.5f, by => Own(i, RoomEdit.Team, (Room.Seats[i].Team + by + 4) % 4, null), "Click to create teams");
+                r.Team = Clicker.Make(p, p.Root, "Team", 322, y, 50, 20, 9.5f, by => Own(i, RoomEdit.Team, NextTeam(Room.Seats[i].Team, by), null), "Click to create teams");
                 return r;
             }
 
@@ -263,7 +263,7 @@ namespace OpenKingdomsUnity.Game.UI
                     row.Side.Enabled = row.Colour.Enabled = row.Team.Enabled = mine;
                     row.Start.Enabled = mine || r.YouHost;
                     GuiPage.Fit(row.Side.Label, l.SideName(s.Side));
-                    row.Team.Label.text = "Team " + (s.Team + 1);
+                    row.Team.Label.text = TeamLabel(s.Team);
                     l.Emblem(Page, row.Emblem, s.Side, s.Colour);
                     var stone = s.Start < 0 ? HudArt.Pearl : (Color)Tint(s.Colour);
                     row.Jewel.texture = Page.Paint(s.Start < 0 ? "seatFree" : "seat" + s.Colour, sc => HudArt.Boss(14f, sc, stone));
