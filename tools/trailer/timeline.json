@@ -1,0 +1,41 @@
+{
+  "segments": [
+    {"card": [
+      {"text": "Darien Reforged", "font": "title", "size": 150, "rule": 520},
+      {"text": "Total Annihilation: Kingdoms, remastered", "font": "caps", "size": 44, "delay": 0.5}
+    ], "seconds": 4.0},
+    {"shot": "menu-main", "from": 0.2, "to": 3.4, "trans": 0.6, "style": "fadeblack", "note": "The main menu, on the original's own screen"},
+    {"shot": "menu-lobby", "from": 0.2, "to": 3.2, "trans": 0.4, "note": "The skirmish lobby with all five kingdoms seated"},
+    {"card": [{"text": "Five kingdoms", "font": "caps", "size": 84}], "seconds": 2.2, "trans": 0.5, "style": "fadeblack"},
+    {"shot": "aramon", "from": 0.5, "to": 5.0, "trans": 0.5, "style": "fadeblack", "note": "Aramon marches out of the woods by a lake, clear skies"},
+    {"shot": "zhon", "from": 0.5, "to": 4.8, "trans": 0.5, "note": "Zhon giants, trolls and orcs in the desert"},
+    {"shot": "taros", "from": 0.5, "to": 4.8, "trans": 0.5, "note": "Taros undead in volcanic fog, past their lodestone"},
+    {"shot": "veruna", "from": 0.5, "to": 4.8, "trans": 0.5, "note": "Veruna in the rain, past a lodestone and standing stones"},
+    {"shot": "creon", "from": 0.5, "to": 4.8, "trans": 0.5, "note": "Creon machines in falling snow"},
+    {"shot": "dragons", "from": 0.6, "to": 6.8, "trans": 0.5, "note": "Gold, ancient and black dragons breathe fire on a Veruna base"},
+    {"card": [{"text": "Formations", "font": "caps", "size": 84}], "seconds": 2.2, "trans": 0.5, "style": "fadeblack"},
+    {"shot": "formation-drag", "from": 0.3, "to": 4.3, "trans": 0.5, "style": "fadeblack", "note": "The formation drag: a line on the ground, every place previewed"},
+    {"shot": "formation-ranks", "from": 0.3, "to": 5.6, "trans": 0.4, "note": "The army takes its places in ranks"},
+    {"card": [{"text": "Built from the ground up", "font": "caps", "size": 84}], "seconds": 2.4, "trans": 0.5, "style": "fadeblack"},
+    {"shot": "build", "from": 0.3, "to": 6.6, "trans": 0.5, "style": "fadeblack", "note": "Watch towers rising as mage builders raise them"},
+    {"card": [{"text": "Sea battles", "font": "caps", "size": 84}], "seconds": 2.2, "trans": 0.5, "style": "fadeblack"},
+    {"shot": "sea-1", "from": 0.3, "to": 5.6, "trans": 0.5, "style": "fadeblack", "note": "Veruna's fleet sails on the Taros ghost ships"},
+    {"shot": "sea-2", "from": 0.3, "to": 4.6, "trans": 0.4, "note": "A man of war's broadside, low over the waves"},
+    {"shot": "battle-low", "from": 0.3, "to": 6.6, "trans": 0.5, "style": "fadeblack", "note": "Aramon against Taros, low and close"},
+    {"shot": "battle-wide", "from": 0.3, "to": 5.6, "trans": 0.5, "note": "The whole battle from above, a dragon breathing fire along the shore"},
+    {"shot": "battle-hud", "from": 0.3, "to": 3.8, "trans": 0.4, "note": "The battle HUD"},
+    {"card": [
+      {"text": "Alpha 1", "font": "title", "size": 130, "rule": 380},
+      {"text": "Join us on Discord", "font": "caps", "size": 50, "delay": 0.6},
+      {"text": "[DISCORD LINK]", "font": "body", "size": 56, "delay": 0.9, "colour": "0xE8C67E"}
+    ], "seconds": 5.5, "trans": 0.8, "style": "fadeblack"}
+  ],
+  "stills": [
+    {"shot": "dragons", "frame": 210, "name": "01-dragons-over-a-veruna-base"},
+    {"shot": "battle-wide", "frame": 90, "name": "02-battle-by-the-shore"},
+    {"shot": "formation-drag", "frame": 132, "name": "03-formation-drag"},
+    {"shot": "aramon", "frame": 270, "name": "04-aramon-on-the-march"},
+    {"shot": "sea-1", "frame": 270, "name": "05-veruna-fleet"},
+    {"shot": "build", "frame": 315, "name": "06-towers-rising"}
+  ]
+}
