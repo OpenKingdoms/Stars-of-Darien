@@ -204,12 +204,13 @@ def main():
             out = os.path.join(a.stills, st["name"] + ".png")
             # The director's own lossless picture of that frame when there is
             # one, else the frame from the shot's video.
-            png = os.path.join(review, "%s-%04d.png" % (st["shot"], int(st["frame"])))
+            frame = int(st["frame"]) if "frame" in st else int(round(float(st.get("at", 0)) * FPS))
+            png = os.path.join(review, "%s-%04d.png" % (st["shot"], frame))
             if os.path.exists(png):
                 shutil.copyfile(png, out)
             else:
                 run([ff, "-y", "-loglevel", "error", "-i", os.path.join(a.shots, st["shot"] + ".mp4"),
-                     "-vf", r"select=eq(n\,%d)" % int(st["frame"]), "-frames:v", "1", out])
+                     "-vf", r"select=eq(n\,%d)" % frame, "-frames:v", "1", out])
         print("stills in", a.stills)
     print("wrote", a.out)
 
