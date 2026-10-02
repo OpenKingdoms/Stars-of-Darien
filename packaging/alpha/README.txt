@@ -7,7 +7,8 @@ fans. This is an early alpha for a small group of playtesters. Expect bugs,
 rough edges and things that change from one build to the next.
 
 This alpha has skirmish against the computer. Multiplayer and the campaign
-come in later builds.
+come in later builds. KNOWN-ISSUES.txt lists what is not in yet and the
+rough edges we already know about.
 
 
 YOU NEED YOUR OWN COPY OF THE GAME

@@ -1,5 +1,6 @@
 # Builds the Windows alpha of Darien Reforged for playtesters and packs it as
-# a zip: the game folder, README.txt, LICENSE.txt and THIRD-PARTY-NOTICES.txt.
+# a zip: the game folder, README.txt, KNOWN-ISSUES.txt, LICENSE.txt and
+# THIRD-PARTY-NOTICES.txt.
 # Unity runs in batch mode, through the shared heavy lock when this machine
 # has one. The content report and Unity's log go beside the zip, and so does
 # flat-features.txt, the scenery that still draws flat (coverage.py).
@@ -71,7 +72,9 @@ function Write-Text([string]$path, [string]$text) {
 function Read-Text([string]$path) { [System.IO.File]::ReadAllText($path) }
 
 $pack = Join-Path $root "packaging\alpha"
-Write-Text (Join-Path $stage "README.txt") ((Read-Text (Join-Path $pack "README.txt")) -replace "@VERSION@", $version)
+foreach ($doc in "README.txt", "KNOWN-ISSUES.txt") {
+    Write-Text (Join-Path $stage $doc) ((Read-Text (Join-Path $pack $doc)) -replace "@VERSION@", $version)
+}
 
 $rule = "`n`n" + ("-" * 76) + "`n`n"
 Write-Text (Join-Path $stage "LICENSE.txt") ((Read-Text (Join-Path $root "LICENSE.unity-exception")) + $rule + (Read-Text (Join-Path $root "LICENSE")))

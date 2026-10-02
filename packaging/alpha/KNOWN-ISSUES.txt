@@ -1,0 +1,57 @@
+Known issues in Darien Reforged, @VERSION@
+
+This list is for playtesters. It says what is not in this alpha yet and the
+rough edges we already know about, so you can spend your time on the rest.
+If you hit something on this list and it hurts more than it says here, tell
+us anyway.
+
+
+NOT IN THIS ALPHA YET
+
+- Multiplayer. The Play an Opponent door is shut. Skirmish against the
+  computer is the whole of this alpha.
+- The campaign. The Play the Adventure door only says it comes later.
+- The map editor and Load game on the main menu. To load a saved game, open
+  the skirmish screen and press Load there.
+- A score screen after the battle. Victory or defeat shows the kingdoms and
+  their state, without units built, kills or a score.
+- Veteran ranks and kill counts on units.
+- Game speeds other than Normal and Fast, and a pause key in battle. F1
+  opens the game menu, which stops the battle.
+- Separate volume for music, sound and unit voices, and a resolution
+  setting. The game runs at your desktop's resolution.
+- Key rebinding, chat and the typed + commands of the original.
+- Replays.
+
+
+ROUGH EDGES WE KNOW ABOUT
+
+- On 46 of the 236 maps some Zhon scenery is missing. The jungle plants
+  and the Kandran ruins do not appear yet, so maps such as Path of Pardu,
+  Ulasem Arena, Thorn Boscage and Temple of Blood look emptier than in the
+  original.
+- A few kinds of scenery on about 20 maps still stand as flat pictures
+  rather than 3D models.
+- Teams go from 1 to 4 across the eight seats, so with more than four
+  kingdoms some of them share a team. Check the Team column before you
+  start.
+- When your side is beaten, the battle stops where it stands. Look at the
+  field shows it as it was, and the computers do not play on without you.
+- The battle stops while the game's window is in the background, and so
+  does the sound.
+- In a big battle with many computers, mostly at Fast speed, the game can
+  stall for a moment now and then.
+- Loading a large map takes up to about 15 seconds on a fast PC, and
+  longer on a slow one or the first time after Windows starts.
+- In a window the game cannot be resized. Options, then Display, switches
+  between full screen and a window that fits your screen.
+
+
+WHEN YOU REPORT A BUG
+
+Say what you did and what happened, and attach Player.log from
+
+    %USERPROFILE%\AppData\LocalLow\OpenKingdoms\Darien Reforged
+
+with a screenshot (F9) if you have one. README.txt has more on where things
+are.
