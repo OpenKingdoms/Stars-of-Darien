@@ -271,6 +271,72 @@ namespace OpenKingdomsUnity.Tests
             finally { GameRoot.BuildSliceMs = slice; }
         }
 
+        // Beaten with two computers still at war, Look at the field shows
+        // them fight on, and the defeat stands.
+        [UnityTest, Timeout(900000)]
+        public IEnumerator ALostBattlePlaysOnWhileTheFieldShows()
+        {
+            if (GameRoot.BackendFactory == null) Assert.Ignore("the engine or the game files are missing");
+            yield return Boot();
+            Assert.IsFalse(root.Backend is MockBackend, "the engine runs: " + root.BackendProblem);
+            var b = root.Backend;
+            var map = b.Maps.Where(m => MapCatalog.PlayersOf(m) >= 3).OrderBy(m => m.Size.x * m.Size.y).FirstOrDefault();
+            Assert.IsNotNull(map, "a map for three");
+            Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenSkirmish));
+            yield return null;
+            var s = root.Setup;
+            s.MapId = map.Id;
+            s.MapRevealed = true;
+            s.LineOfSight = false;
+            s.RandomStarts = false;
+            for (int i = 0; i < s.Seats.Count; i++)
+            {
+                s.Seats[i].Kind = i == 0 ? SeatKind.Human : i < 3 ? SeatKind.Computer : SeatKind.Closed;
+                s.Seats[i].Team = SeatTeam.Alone;
+            }
+            root.Screens.StartGame();
+            yield return Until(() => root.Flow.State == FlowState.Playing, 300f);
+            Assert.AreEqual(FlowState.Playing, root.Flow.State, root.LastError);
+
+            // You hand your army to a computer and have nothing left.
+            int other = b.Players.First(p => !p.IsLocal).Index;
+            var units = new UnitState[4096];
+            int n = b.ReadUnits(units);
+            for (int i = 0; i < n; i++)
+                if (units[i].Player == b.LocalPlayer)
+                    b.Command(new GameCommand { Kind = (CommandKind)24, Unit = units[i].Handle, TargetUnit = -1, BuildDef = -1, Arg = other });
+            yield return Until(() => root.Flow.State != FlowState.Playing, 30f);
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State);
+
+            UiKit.Motion.Off = true;
+            yield return null;
+            var result = root.Screens.Screen("Result");
+            Assert.IsTrue(result.activeSelf, "the result shows");
+            uint ended = b.Tick;
+            ButtonOn("Result", "Look at the field").onClick.Invoke();
+            Assert.IsTrue(b.PlaysOn, "the computers fight on");
+            yield return Until(() => b.Tick > ended + 120, 60f);
+            Assert.Greater(b.Tick, ended + 120, "the battle plays on while the field shows");
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State, "and stays lost");
+            Assert.AreEqual(GameStatus.Defeat, b.Status);
+            Assert.IsFalse(result.activeSelf, "the plaque stays away");
+            n = b.ReadUnits(units);
+            var standing = new HashSet<int>();
+            for (int i = 0; i < n; i++)
+                if ((units[i].Flags & UnitFlags.Dying) == 0) standing.Add(units[i].Player);
+            Assert.IsFalse(standing.Contains(b.LocalPlayer), "you have nothing on the field");
+            Assert.AreEqual(2, standing.Count, "both computers stand");
+
+            ButtonOn("Results", "Results").onClick.Invoke();
+            yield return null;
+            Assert.IsTrue(result.activeSelf, "Results brings it back");
+            CollectionAssert.Contains(result.GetComponentsInChildren<Text>().Select(t => t.text).ToList(), "Defeat");
+            ButtonOn("Result", "Return to menu").onClick.Invoke();
+            yield return null;
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
+            Assert.AreEqual(GameStatus.Idle, b.Status, "and the engine let it go");
+        }
+
         [UnityTest]
         public IEnumerator AComputerOpenedInALowerRowIsNotYourAlly()
         {

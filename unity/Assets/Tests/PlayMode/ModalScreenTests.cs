@@ -325,6 +325,115 @@ namespace OpenKingdomsUnity.Tests
             finally { saved.Save(); }
         }
 
+        static IEnumerator Until(System.Func<bool> done, float seconds)
+        {
+            float deadline = Time.realtimeSinceStartup + seconds;
+            while (!done() && Time.realtimeSinceStartup < deadline) yield return null;
+        }
+
+        int OrderButtons()
+        {
+            var grid = GameObject.Find("Orders");
+            return grid == null ? 0 : grid.GetComponentsInChildren<Button>().Count(b => b.name.StartsWith("Action "));
+        }
+
+        [UnityTest]
+        public IEnumerator ALostBattleWatchedFromTheFieldPlaysOnUntilOneSideIsLeft()
+        {
+            UiKit.Motion.Off = true;
+            if (root != null) Object.Destroy(root.gameObject);
+            yield return null;
+            var mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
+            root = GameRoot.Boot(mock);
+            yield return null;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            var seats = root.Setup.Seats;
+            for (int i = 0; i < seats.Count; i++)
+            {
+                seats[i].Kind = i == 0 ? SeatKind.Human : i < 3 ? SeatKind.Computer : SeatKind.Closed;
+                seats[i].Team = SeatTeam.Alone;
+            }
+            root.Screens.StartGame();
+            yield return Until(() => root.Flow.State == FlowState.Playing, 30f);
+            Assert.AreEqual(FlowState.Playing, root.Flow.State);
+            yield return ViewAt(1280, 720);
+
+            // Your army falls while two computers are still at war.
+            mock.Rout(mock.LocalPlayer);
+            root.Backend.Advance(root.Backend.TicksPerSecond);
+            yield return null;
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State);
+            uint ended = root.Backend.Tick;
+            yield return null;
+            yield return null;
+            Assert.AreEqual(ended, root.Backend.Tick, "the battle holds under the plaque");
+
+            Click("Result", "Look at the field");
+            Assert.IsTrue(mock.PlaysOn, "the computers fight on");
+            yield return Until(() => root.Backend.Tick > ended + 30, 10f);
+            Assert.Greater(root.Backend.Tick, ended + 30, "the battle plays on while the field shows");
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State, "and stays lost");
+            Assert.IsFalse(root.Screens.Screen("Result").activeSelf);
+
+            root.BattleKey(KeyCode.F1);
+            Assert.AreEqual(FlowState.Paused, root.Flow.State, "the pause menu still works");
+            uint paused = root.Backend.Tick;
+            yield return null;
+            yield return null;
+            Assert.AreEqual(paused, root.Backend.Tick, "and holds the battle");
+            Click("Pause", "Resume");
+            yield return null;
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State);
+            Assert.IsFalse(root.Screens.Screen("Result").activeSelf, "back to the field, not the plaque");
+            Assert.IsTrue(root.Screens.Screen("Results").activeSelf);
+
+            Click("Results", "Results");
+            var result = root.Screens.Screen("Result");
+            Assert.IsTrue(result.activeSelf, "Results brings the plaque back");
+            Assert.AreEqual("Defeat", Named(result, "Title").text, "the defeat stands");
+            int secs = (int)(ended / (uint)root.Backend.TicksPerSecond);
+            StringAssert.Contains($"after {secs / 60} min {secs % 60} s", Named(result, "Sentence").text, "at the time it fell");
+            Click("Result", "Look at the field");
+
+            // One computer left: the field stays, quietly.
+            mock.Rout(mock.Players[2].Index);
+            yield return Until(() => !mock.PlaysOn, 10f);
+            Assert.IsFalse(mock.PlaysOn, "the war is over");
+            uint over = root.Backend.Tick;
+            yield return null;
+            yield return null;
+            Assert.AreEqual(over, root.Backend.Tick, "and the battle stands still");
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State);
+            Assert.IsFalse(root.Screens.Screen("Result").activeSelf, "with no new plaque");
+
+            Click("Results", "Results");
+            Click("Result", "Return to menu");
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
+            Assert.AreEqual(GameStatus.Idle, root.Backend.Status, "the battle is gone");
+        }
+
+        [UnityTest]
+        public IEnumerator WatchingALostBattleGivesNoOrders()
+        {
+            yield return Begin();
+            var mock = (MockBackend)root.Backend;
+            var units = new UnitState[512];
+            int n = mock.ReadUnits(units);
+            int own = units.Take(n).First(u => u.Player == mock.LocalPlayer && !mock.UnitDefs[u.Def].IsBuilding).Handle;
+            mock.Select(new[] { own }, false);
+            yield return Until(() => OrderButtons() > 0, 5f);
+            Assert.Greater(OrderButtons(), 0, "your unit's orders show while you play");
+
+            mock.Players[0].Alive = false;
+            root.Flow.Fire(FlowEvent.Lost);
+            UiKit.Motion.Off = true;
+            yield return ViewAt(1280, 720);
+            Click("Result", "Look at the field");
+            yield return null;
+            yield return null;
+            Assert.AreEqual(0, OrderButtons(), "the HUD's orders stay off while you watch");
+        }
+
         [UnityTest]
         public IEnumerator TheResultNamesTheKingdomsAndLetsThePlayerLookAtTheField()
         {

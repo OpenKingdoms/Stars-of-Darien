@@ -41,6 +41,7 @@ namespace OpenKingdomsUnity.Game.UI
         Dialog options, result;
         readonly Dictionary<string, Texture2D> previews = new Dictionary<string, Texture2D>();
         float resultShownAt;
+        uint resultTick;
         bool resultWon, leaving, lookingAtField;
         int resultRoom;
         string tip = "";
@@ -123,13 +124,14 @@ namespace OpenKingdomsUnity.Game.UI
         public void Show(FlowState state)
         {
             bool fresh = state != shown;
+            // Back from the pause menu to a lost battle being watched.
+            bool resumed = fresh && shown == FlowState.Paused;
             if (fresh)
             {
                 // Escape leaves Options without its Back, so the leaving saves.
                 if (shown == FlowState.Options) root.Options?.Save();
                 shownFrame = Time.frameCount;
                 leaving = false;
-                lookingAtField = false;
             }
             shown = state;
             string[] on;
@@ -160,7 +162,13 @@ namespace OpenKingdomsUnity.Game.UI
                 case FlowState.Editing: on = new[] { "Editor" }; editor.RefreshTools(); break;
                 case FlowState.Victory:
                 case FlowState.Defeat:
-                    if (fresh) { resultWon = state == FlowState.Victory; resultShownAt = Time.unscaledTime; }
+                    if (fresh && !resumed)
+                    {
+                        resultWon = state == FlowState.Victory;
+                        resultShownAt = Time.unscaledTime;
+                        resultTick = root.Backend.Tick;
+                        lookingAtField = false;
+                    }
                     RefreshResult();
                     on = lookingAtField ? new[] { "Hud", "Results" } : new[] { "Hud", "Result" };
                     break;
@@ -689,7 +697,9 @@ namespace OpenKingdomsUnity.Game.UI
 
         void SaveGame()
         {
-            bool ok = root.SaveNow(out var path);
+            string path = null;
+            // A lost battle being watched is not kept.
+            bool ok = !root.Flow.Decided && root.SaveNow(out path);
             saveNote.text = ok ? "Saved as " + System.IO.Path.GetFileNameWithoutExtension(path) : "This game could not be saved.";
             saveNote.color = ok ? HudArt.Verdigris : HudArt.Minium;
         }
@@ -768,8 +778,10 @@ namespace OpenKingdomsUnity.Game.UI
         {
             if (on)
             {
-                // The whole field, enemies and all, with the battle over.
+                // The whole field, enemies and all. After a defeat the
+                // computers still at war fight on.
                 root.Backend.SeeAll(true);
+                root.Backend.PlayOn();
                 // The HUD may have changed size since the plate was made.
                 DropScreen("Results");
                 BuildResults();
@@ -793,7 +805,8 @@ namespace OpenKingdomsUnity.Game.UI
             if (!screens["Result"].activeSelf) result.GetComponent<Opening>().Delay = Mathf.Max(0f, resultShownAt + ResultHold - Time.unscaledTime);
             result.Title.text = resultWon ? "Victory" : "Defeat";
             result.Title.color = resultWon ? HudArt.GoldHi : HudArt.Silver;
-            int secs = (int)(b.Tick / (uint)Mathf.Max(1, b.TicksPerSecond));
+            // The time of the battle's end, however long it is watched after.
+            int secs = (int)(resultTick / (uint)Mathf.Max(1, b.TicksPerSecond));
             var map = root.CurrentMap();
             resultInfo.text = (resultWon ? "Your enemies are vanquished" : "Your kingdom has fallen") +
                 $" on {MapCatalog.DisplayName(map) ?? "the field"} after {secs / 60} min {secs % 60} s.";

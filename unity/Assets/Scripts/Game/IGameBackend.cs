@@ -211,6 +211,11 @@ namespace OpenKingdomsUnity.Game
         // The whole map clear and every unit drawn, for looking at the field
         // once the battle is over. A new battle starts without it.
         void SeeAll(bool on);
+        // After a defeat the computers fight on while two sides are still at
+        // war, for the player to watch. True when it plays on.
+        bool PlayOn();
+        // True while a lost battle plays on. It stops when one side is left.
+        bool PlaysOn { get; }
 
         // The map editor. Heights are the map's own bytes, one a cell, and
         // the battle ground (Terrain, GroundHeight) follows an edit at once.

@@ -26,8 +26,6 @@ NOT IN THIS ALPHA YET
 
 ROUGH EDGES WE KNOW ABOUT
 
-- When your side is beaten, the battle stops where it stands. Look at the
-  field shows it as it was, and the computers do not play on without you.
 - The battle stops while the game's window is in the background, and so
   does the sound.
 - In a big battle with many computers, the game can still pause for a

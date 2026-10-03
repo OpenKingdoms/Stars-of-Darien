@@ -1121,6 +1121,8 @@ namespace OpenKingdomsUnity.Engine
         byte[] fogCells = Array.Empty<byte>();
 
         public void SeeAll(bool on) => OkEngine.okx_see_all(on ? 1 : 0);
+        public bool PlayOn() => status == GameStatus.Running && OkEngine.okx_play_on() == 1;
+        public bool PlaysOn => status == GameStatus.Running && OkEngine.okx_playing_on() == 1;
 
         // The engine keeps one byte a cell. A height grid has one more
         // sample each way, so the last row and column repeat.

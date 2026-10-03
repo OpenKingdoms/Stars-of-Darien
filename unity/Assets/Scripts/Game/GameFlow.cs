@@ -25,6 +25,8 @@ namespace OpenKingdomsUnity.Game
         public FlowState LoadingFrom { get; private set; } = FlowState.Skirmish;
         // Where Back from the saved games returns: the menu or the skirmish.
         public FlowState LoadListReturn { get; private set; } = FlowState.MainMenu;
+        // Where Resume returns: the battle, or a lost one being watched.
+        public FlowState PausedFrom { get; private set; } = FlowState.Playing;
         public event Action<FlowState, FlowState> Changed;
 
         static readonly Dictionary<(FlowState, FlowEvent), FlowState> Table = new Dictionary<(FlowState, FlowEvent), FlowState>
@@ -53,6 +55,7 @@ namespace OpenKingdomsUnity.Game
             { (FlowState.Loading, FlowEvent.Loaded), FlowState.Playing },
             { (FlowState.Loading, FlowEvent.LoadFailed), FlowState.Skirmish },
             { (FlowState.Playing, FlowEvent.Pause), FlowState.Paused },
+            { (FlowState.Defeat, FlowEvent.Pause), FlowState.Paused },
             { (FlowState.Playing, FlowEvent.Won), FlowState.Victory },
             { (FlowState.Playing, FlowEvent.Lost), FlowState.Defeat },
             { (FlowState.Paused, FlowEvent.Resume), FlowState.Playing },
@@ -76,6 +79,7 @@ namespace OpenKingdomsUnity.Game
             FlowState next;
             if (State == FlowState.Options && e == FlowEvent.Back) next = OptionsReturn;
             else if (State == FlowState.LoadList && e == FlowEvent.Back) next = LoadListReturn;
+            else if (State == FlowState.Paused && e == FlowEvent.Resume) next = PausedFrom;
             else if (State == FlowState.Loading && e == FlowEvent.LoadFailed) next = LoadingFrom;
             else if (State == FlowState.Loading && e == FlowEvent.Loaded && LoadingFrom == FlowState.EditorSetup) next = FlowState.Editing;
             else if (!Table.TryGetValue((State, e), out next)) return false;
@@ -84,6 +88,7 @@ namespace OpenKingdomsUnity.Game
             if (next == FlowState.Loading) LoadingFrom = State;
             if (next == FlowState.Options) OptionsReturn = State;
             if (next == FlowState.LoadList) LoadListReturn = State;
+            if (next == FlowState.Paused && State != FlowState.Options) PausedFrom = State;
             var was = State;
             State = next;
             Changed?.Invoke(was, next);
@@ -95,5 +100,17 @@ namespace OpenKingdomsUnity.Game
             s == FlowState.Playing || s == FlowState.Paused || s == FlowState.Victory || s == FlowState.Defeat || s == FlowState.Editing;
 
         public bool InGameNow => InGame(State) || (State == FlowState.Options && OptionsReturn == FlowState.Paused);
+
+        // The battle is decided for the player, with the pause menu or its
+        // options over a lost one being watched: no more orders.
+        public bool Decided
+        {
+            get
+            {
+                var s = State == FlowState.Options && OptionsReturn == FlowState.Paused ? FlowState.Paused : State;
+                if (s == FlowState.Paused) s = PausedFrom;
+                return s == FlowState.Victory || s == FlowState.Defeat;
+            }
+        }
     }
 }

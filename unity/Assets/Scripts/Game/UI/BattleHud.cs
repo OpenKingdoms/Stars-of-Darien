@@ -796,7 +796,8 @@ namespace OpenKingdomsUnity.Game.UI
             at.y = root.Backend.GroundHeight(at.x, at.z);
             var o = root.Orders;
             bool left = button == PointerEventData.InputButton.Left, right = button == PointerEventData.InputButton.Right;
-            bool send = o == null || o.Classic ? left && OwnSelection() : right;
+            // Once the battle is decided the minimap only looks.
+            bool send = !root.Flow.Decided && (o == null || o.Classic ? left && OwnSelection() : right);
             if (send)
             {
                 if (!drag && o != null) o.MoveBlock(CommandKind.Move, at);
@@ -1143,7 +1144,8 @@ namespace OpenKingdomsUnity.Game.UI
         void RefreshButtons(List<UnitState> chosen)
         {
             var b = root.Backend;
-            bool mine = chosen.Count > 0 && chosen.All(u => u.Player == b.LocalPlayer);
+            // Nothing takes orders once the battle is decided.
+            bool mine = !root.Flow.Decided && chosen.Count > 0 && chosen.All(u => u.Player == b.LocalPlayer);
             // Frames take no orders, only a queue.
             bool frames = chosen.All(u => u.BuildProgress < 1f);
             actions = mine && !frames ? b.SelectionActions() : System.Array.Empty<UnitAction>();

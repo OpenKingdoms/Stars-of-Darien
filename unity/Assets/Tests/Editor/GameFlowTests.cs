@@ -28,6 +28,32 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void ALostBattleBeingWatchedPausesAndResumesToTheField()
+        {
+            var f = new GameFlow();
+            f.Fire(FlowEvent.OpenSkirmish); f.Fire(FlowEvent.Start); f.Fire(FlowEvent.Loaded);
+            Assert.IsFalse(f.Decided);
+            Assert.IsTrue(f.Fire(FlowEvent.Lost));
+            Assert.IsTrue(f.Decided);
+            Assert.IsTrue(f.Fire(FlowEvent.Pause));
+            Assert.IsTrue(f.Decided, "no orders from the pause menu over it");
+            Assert.IsTrue(f.Fire(FlowEvent.OpenOptions));
+            Assert.IsTrue(f.Decided, "nor from its options");
+            Assert.IsTrue(f.Fire(FlowEvent.Back));
+            Assert.IsTrue(f.Fire(FlowEvent.Resume));
+            Assert.AreEqual(FlowState.Defeat, f.State, "back to watching");
+            Assert.IsTrue(f.Fire(FlowEvent.ToMenu));
+
+            f.Fire(FlowEvent.OpenSkirmish); f.Fire(FlowEvent.Start); f.Fire(FlowEvent.Loaded);
+            Assert.IsTrue(f.Fire(FlowEvent.Pause));
+            Assert.IsFalse(f.Decided);
+            Assert.IsTrue(f.Fire(FlowEvent.Resume));
+            Assert.AreEqual(FlowState.Playing, f.State, "a battle in play resumes to play");
+            Assert.IsTrue(f.Fire(FlowEvent.Won));
+            Assert.IsFalse(f.Fire(FlowEvent.Pause), "a won battle has nothing left to play on");
+        }
+
+        [Test]
         public void PauseResumesAndQuitsToTheMenu()
         {
             var f = new GameFlow();

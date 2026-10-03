@@ -306,6 +306,7 @@ namespace OpenKingdomsUnity.Game
             ForgetFormations();
             Terrain = null;
             Tick = 0;
+            PlaysOn = false;
             Status = GameStatus.Idle;
         }
 
@@ -420,7 +421,7 @@ namespace OpenKingdomsUnity.Game
 
         public int Advance(int n)
         {
-            if (Status != GameStatus.Running) return 0;
+            if (Status != GameStatus.Running && !PlaysOn) return 0;
             for (int i = 0; i < n; i++) Step();
             return n;
         }
@@ -663,6 +664,8 @@ namespace OpenKingdomsUnity.Game
                 foreach (var u in units) any |= u.Player == pos && !u.Dying;
                 p.Alive = any;
             }
+            // A lost battle played on keeps its defeat and stops with the war.
+            if (PlaysOn) { PlaysOn = SidesAtWar(); return; }
             bool mine = false, theirs = false;
             for (int pos = 0; pos < players.Count; pos++)
             {
@@ -1297,6 +1300,29 @@ namespace OpenKingdomsUnity.Game
 
         public bool SeesAll { get; private set; }
         public void SeeAll(bool on) => SeesAll = on;
+
+        public bool PlaysOn { get; private set; }
+
+        public bool PlayOn()
+        {
+            if (Status == GameStatus.Defeat && !PlaysOn) PlaysOn = SidesAtWar();
+            return PlaysOn;
+        }
+
+        bool SidesAtWar()
+        {
+            for (int a = 0; a < players.Count; a++)
+                for (int c = a + 1; c < players.Count; c++)
+                    if (players[a].Alive && players[c].Alive && !SeatTeam.Allied(players[a].Team, players[c].Team)) return true;
+            return false;
+        }
+
+        // For tests: every unit of a player falls at once.
+        public void Rout(int player)
+        {
+            foreach (var u in units)
+                if (IdOf(u.Player) == player) Hurt(u, u.Health + 1);
+        }
 
         public int ReadFog(byte[] into, out int width, out int height)
         {

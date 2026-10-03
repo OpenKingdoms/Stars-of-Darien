@@ -377,6 +377,14 @@ namespace OpenKingdomsUnity.Game
                     if (Backend.Status == GameStatus.Victory) Flow.Fire(FlowEvent.Won);
                     else if (Backend.Status == GameStatus.Defeat) Flow.Fire(FlowEvent.Lost);
                     break;
+                case FlowState.Defeat:
+                    // A lost battle the player watches plays on at the chosen speed.
+                    if (!Backend.PlaysOn) break;
+                    foreach (var k in BattleKeys)
+                        if (Input.GetKeyDown(k)) BattleKey(k);
+                    if (Flow.State != FlowState.Defeat) break;
+                    using (SimMarker.Auto()) RunSim(Time.deltaTime);
+                    break;
                 case FlowState.Paused:
                     if (Input.GetKeyDown(KeyCode.Escape)) Flow.Fire(FlowEvent.Resume);
                     break;
@@ -523,7 +531,7 @@ namespace OpenKingdomsUnity.Game
         // still pauses.
         public void BattleKey(KeyCode k)
         {
-            if (Flow.State != FlowState.Playing) return;
+            if (Flow.State != FlowState.Playing && !(Flow.State == FlowState.Defeat && Backend.PlaysOn)) return;
             switch (k)
             {
                 case KeyCode.Escape: input?.Cancel(); break;
