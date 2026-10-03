@@ -426,12 +426,21 @@ namespace OpenKingdomsUnity.Tests
             Assert.Less(offshore, 0.02f, "and not the open water");
         }
 
+        // A ship under way trails foam: its wake's picture holds foam and
+        // churn just behind it, and the sea there is brighter than the same
+        // frame drawn without wakes. Open water beside its path is untouched.
         [UnityTest]
         public IEnumerator AMovingShipLeavesAWake()
         {
             yield return Begin("mock_bay", true, false);
             FogView.Disabled = true;
             root.World.Fog.Update(true);
+            var t = mock.Terrain;
+            var rt = RenderTexture.GetTemporary(960, 540, 24);
+            // A first picture before the boat sets off, so the cost of the
+            // first one can't stall the frames the wake times the boat over.
+            yield return Look(new Vector3(68, t.SeaLevel, -27), 24f, 85f);
+            Object.Destroy(Shot(Cam, rt));
             int boat = mock.SpawnBoat(mock.LocalPlayer, new Vector3(68, 0, -24));
             Assert.GreaterOrEqual(boat, 0);
             Assert.IsTrue(mock.Command(GameCommand.To(CommandKind.Move, boat, new Vector3(68, 0, -110))));
@@ -439,16 +448,24 @@ namespace OpenKingdomsUnity.Tests
             while (Time.realtimeSinceStartup < until) yield return null;
             var u = UnitOf(boat);
             Assert.Less(u.Position.z, -26f, "the boat is under way, south");
-            var t = mock.Terrain;
-            yield return Look(new Vector3(u.Position.x, t.SeaLevel, u.Position.z + 3f), 24f, 85f);
-            // The lace drifts and the churn fades, so three pictures a little
-            // apart are averaged.
-            float lb = 0, la = 0;
-            const int shots = 3;
-            var rt = RenderTexture.GetTemporary(960, 540, 24);
+            var wakes = root.World.Terrain.Sea.Wakes;
+            float speed = wakes.SpeedOf(boat);
+            var (foam, churn) = WakeBehind(wakes, u);
+            Assert.Greater(foam, 0.3f, $"the wake's picture holds foam behind the boat, at {speed:F1} units a second");
+            Assert.Greater(churn, 0.3f, $"and churned water, at {speed:F1} units a second");
+            // The sea's foam gathers in clumps the boat passes over, so
+            // pictures along a few units of its path are averaged.
+            const int shots = 6;
+            float lift = 0, beside = 0;
             for (int k = 0; k < shots; k++)
             {
-                for (int i = 0; i < 10 && k > 0; i++) yield return null;
+                if (k > 0)
+                {
+                    float next = Time.realtimeSinceStartup + 0.4f;
+                    while (Time.realtimeSinceStartup < next) yield return null;
+                }
+                u = UnitOf(boat);
+                yield return Look(new Vector3(u.Position.x, t.SeaLevel, u.Position.z + 3f), 24f, 85f);
                 u = UnitOf(boat);
                 var behind = new List<Vector3>();
                 var aside = new List<Vector3>();
@@ -461,17 +478,51 @@ namespace OpenKingdomsUnity.Tests
                     }
                 var b = OnScreen(rt, behind);
                 var a = OnScreen(rt, aside);
-                var shot = Shot(Cam, rt);
-                if (k == 0) Save(shot, "water-test-wake.png");
                 Assert.Greater(b.Count, 50);
                 Assert.Greater(a.Count, 50);
-                lb += b.Average(p => Luma(Px(shot, p))) / shots;
-                la += a.Average(p => Luma(Px(shot, p))) / shots;
-                Object.Destroy(shot);
+                var on = Shot(Cam, rt);
+                if (k == 0) Save(on, "water-test-wake.png");
+                Shader.SetGlobalVector(WakeRect, Vector4.zero);
+                var off = Shot(Cam, rt);
+                Shader.SetGlobalVector(WakeRect, wakes.Rect);
+                lift += (b.Average(p => Luma(Px(on, p))) - b.Average(p => Luma(Px(off, p)))) / shots;
+                beside += (a.Average(p => Luma(Px(on, p))) - a.Average(p => Luma(Px(off, p)))) / shots;
+                Object.Destroy(on);
+                Object.Destroy(off);
             }
             RenderTexture.ReleaseTemporary(rt);
-            Debug.Log($"Wake: {lb:F1} behind the boat, {la:F1} beside its path");
-            Assert.Greater(lb, la + 6f, "foam trails behind a ship under way");
+            Debug.Log($"Wake: foam {foam:F2} and churn {churn:F2} in its picture, the sea {lift:F1} brighter behind the boat and {beside:F1} beside its path, at {speed:F1} units a second");
+            // Even over sparse foam each picture was 4.4 or more brighter.
+            Assert.Greater(lift, 3f, "foam trails behind a ship under way");
+            Assert.Less(Mathf.Abs(beside), 0.5f, "and leaves the open water beside its path alone");
+        }
+
+        static readonly int WakeRect = Shader.PropertyToID("_OkuWakeRect");
+
+        // The foam and churn the wake's picture holds 1.5 to 3 units behind
+        // the boat, where the ribbon is strongest.
+        static (float foam, float churn) WakeBehind(WaterWakes wakes, UnitState u)
+        {
+            int n = WaterWakes.Size;
+            var tmp = RenderTexture.GetTemporary(n, n, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+            var was = RenderTexture.active;
+            Graphics.Blit(wakes.Texture, tmp);
+            RenderTexture.active = tmp;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false, true);
+            tex.ReadPixels(new Rect(0, 0, n, n), 0, 0);
+            tex.Apply();
+            RenderTexture.active = was;
+            RenderTexture.ReleaseTemporary(tmp);
+            var rect = wakes.Rect;
+            float foam = 0, churn = 0;
+            for (float d = 1.5f; d <= 3f; d += 0.5f)
+            {
+                var c = tex.GetPixelBilinear((u.Position.x - rect.x) * rect.z, (u.Position.z + d - rect.y) * rect.w);
+                foam += c.r / 4;
+                churn += c.g / 4;
+            }
+            Object.Destroy(tex);
+            return (foam, churn);
         }
 
         // Open water has no strong single frequency (stripes) and does not
