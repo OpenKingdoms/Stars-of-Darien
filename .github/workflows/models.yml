@@ -1,0 +1,36 @@
+# Checks the models a pull request adds or changes, with no Unity and no game
+# files. Runs on every pull request so it can be a required check.
+name: Models
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: models-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test the check itself
+        run: python3 scripts/test_check_models.py
+
+      - name: Check the changed models
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.base_ref }}
+        run: python3 scripts/check-models.py --changed "origin/$BASE"
+
+      - name: Check every committed model
+        if: github.event_name == 'workflow_dispatch'
+        run: python3 scripts/check-models.py --all
