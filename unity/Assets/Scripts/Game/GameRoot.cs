@@ -60,7 +60,7 @@ namespace OpenKingdomsUnity.Game
             return root;
         }
 
-        public const string Title = "Darien Reforged";
+        public const string Title = "Stars of Darien";
 
         // Saves and maps made before the game had its name lived under
         // DefaultCompany/unity. They move to the new folder once.

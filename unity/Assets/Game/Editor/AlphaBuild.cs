@@ -26,10 +26,10 @@ namespace OpenKingdomsUnity
     public static class Build
     {
         public const string Alpha = "Alpha 1";
-        public const string ExeName = "Darien Reforged.exe";
-        public const string DataName = "Darien Reforged_Data";
+        public const string ExeName = "Stars of Darien.exe";
+        public const string DataName = "Stars of Darien_Data";
         public const string StampAsset = "Assets/Game/Resources/" + BuildStamp.ResourceName + ".txt";
-        public const string DefaultOut = "D:/OKBuild/alpha/DarienReforged";
+        public const string DefaultOut = "D:/OKBuild/alpha/StarsOfDarien";
 
         // Every line this logs starts with this, for the script to find.
         const string Tag = "OKBUILD ";

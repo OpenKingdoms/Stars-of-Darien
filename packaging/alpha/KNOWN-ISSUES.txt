@@ -1,4 +1,4 @@
-Known issues in Darien Reforged, @VERSION@
+Known issues in Stars of Darien, @VERSION@
 
 This list is for playtesters. It says what is not in this alpha yet and the
 rough edges we already know about, so you can spend your time on the rest.
@@ -40,7 +40,7 @@ WHEN YOU REPORT A BUG
 
 Say what you did and what happened, and attach Player.log from
 
-    %USERPROFILE%\AppData\LocalLow\OpenKingdoms\Darien Reforged
+    %USERPROFILE%\AppData\LocalLow\OpenKingdoms\Stars of Darien
 
 with a screenshot (F9) if you have one. README.txt has more on where things
 are.

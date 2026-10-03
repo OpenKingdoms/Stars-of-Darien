@@ -1,6 +1,6 @@
 # Roadmap
 
-Darien Reforged is a remaster of Total Annihilation: Kingdoms in Unity, running on the OpenKingdoms engine. The engine runs inside Unity as `okengine`, a native library built from the OpenKingdoms branch `unity-embed` with an embedding API, `include/ok_embed.h` (okx API 23 today). `unity/Assets/Engine/OkEngine.cs` binds that API, `EngineBackend.cs` offers it to the game through `IGameBackend`, and the mock engine offers the same interface without game files. The engine owns every rule and all randomness, and every order goes back through its own command queue.
+Stars of Darien is a remaster of Total Annihilation: Kingdoms in Unity, running on the OpenKingdoms engine. The engine runs inside Unity as `okengine`, a native library built from the OpenKingdoms branch `unity-embed` with an embedding API, `include/ok_embed.h` (okx API 23 today). `unity/Assets/Engine/OkEngine.cs` binds that API, `EngineBackend.cs` offers it to the game through `IGameBackend`, and the mock engine offers the same interface without game files. The engine owns every rule and all randomness, and every order goes back through its own command queue.
 
 ## Where it stands
 
@@ -19,9 +19,9 @@ The old milestones are all reached in part or in full. The first real map in 3D,
 
 ## Parity with the browser game
 
-The browser game at openkingdoms.net is the same engine with its own C front end, so everything in its simulation reaches Darien Reforged for free. What does not reach it is what lives only in that front end or has no okx call yet. This table was checked against the code of both, OpenKingdoms at `f520698` and this repository at `d0b8d3d`. Engine work means new okx calls or fields on `unity-embed`, and Unity work means this repository alone.
+The browser game at openkingdoms.net is the same engine with its own C front end, so everything in its simulation reaches Stars of Darien for free. What does not reach it is what lives only in that front end or has no okx call yet. This table was checked against the code of both, OpenKingdoms at `f520698` and this repository at `d0b8d3d`. Engine work means new okx calls or fields on `unity-embed`, and Unity work means this repository alone.
 
-| Browser feature | Darien Reforged | What it takes |
+| Browser feature | Stars of Darien | What it takes |
 | --- | --- | --- |
 | Combat parity, veterans scale attack and armour, standing orders, melee by type, an offensive AI (#342) | Has it, since the rules run in the engine | Nothing |
 | Footprint slope for buildings (#341), dragon breath from the head (#354) | Has it, from the engine | Nothing |
@@ -45,13 +45,13 @@ The browser game at openkingdoms.net is the same engine with its own C front end
 | Notices when someone hosts a game (#345) | Lacks it | Unity: poll the relay's `/api/rooms` and notify |
 | Rejoin after a drop | Lacks it | Engine: rejoin through okx. Unity: the rejoin flow on the loading screen |
 | Campaign, the Book of Deeds, briefings, objectives, mission clips | Lacks it. The Adventure door is shut | Engine: `okx_mission_*` for loading a mission, objectives, briefings and the story's progress. Unity: the book, briefings and clip playback |
-| Map editor, formation drag, Studio Mode | Darien Reforged has these and the browser game does not | Nothing |
+| Map editor, formation drag, Studio Mode | Stars of Darien has these and the browser game does not | Nothing |
 
 Neither game has starting resources, key rebinding or watching a battle as a spectator, although the relay can take watchers.
 
 ## Plan
 
-The order puts first what playtesters of a skirmish-only alpha would miss most, then multiplayer in Darien Reforged, then the campaign.
+The order puts first what playtesters of a skirmish-only alpha would miss most, then multiplayer in Stars of Darien, then the campaign, then a campaign for each kingdom in a beta.
 
 ### Alpha 2
 
@@ -63,7 +63,7 @@ The order puts first what playtesters of a skirmish-only alpha would miss most, 
 6. A chat line in battle that runs typed + commands, with power codes when the rules allow them, and the skirmish rules for power codes, slow game and Crusades balance. This needs `okx_console` and the new `OkxSkirmish` fields. Medium.
 7. Options for music, sound and unit voices apart, and a resolution setting. Small on each side.
 
-### Multiplayer in Darien Reforged
+### Multiplayer in Stars of Darien
 
 8. Open the Multiplayer door, with chat in battle, the waiting line and the desync notice from `okx_net_match`. Mostly Unity. Medium.
 9. Ping in the room list and on each seat, results reported to the relay so battles count on the leaderboard, a way to reach the leaderboard, and notices when someone hosts. This needs ping fields, result reporting from the embedded tick and the device token in the engine. Medium.
@@ -72,6 +72,10 @@ The order puts first what playtesters of a skirmish-only alpha would miss most, 
 ### The campaign
 
 11. The Book of Deeds, mission briefings, objectives and the mission clips, for Darien and then the Iron Plague. This needs `okx_mission_*` and the story's progress in the engine and a book, briefings and clip playback here. Large.
+
+### Beta
+
+12. A campaign for each kingdom, Aramon, Veruna, Taros and Zhon. It belongs in a beta and is not part of Alpha 1, and it builds on the campaign above. Large.
 
 ### Later
 

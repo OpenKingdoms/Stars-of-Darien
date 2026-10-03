@@ -1,8 +1,8 @@
-Darien Reforged, @VERSION@
+Stars of Darien, @VERSION@
 
 WHAT THIS IS
 
-Darien Reforged is a free remaster of Total Annihilation: Kingdoms, made by
+Stars of Darien is a free remaster of Total Annihilation: Kingdoms, made by
 fans. This is an early alpha for a small group of playtesters. Expect bugs,
 rough edges and things that change from one build to the next.
 
@@ -10,10 +10,14 @@ This alpha has skirmish against the computer. Multiplayer and the campaign
 come in later builds. KNOWN-ISSUES.txt lists what is not in yet and the
 rough edges we already know about.
 
+This game was called Darien Reforged until now. The first time it starts
+under its new name, it copies your saved games, screenshots and options
+from the old name's folder, and it leaves the old folder as it was.
+
 
 YOU NEED YOUR OWN COPY OF THE GAME
 
-Darien Reforged ships none of the original game's files. It reads them from
+Stars of Darien ships none of the original game's files. It reads them from
 your own installed copy of Total Annihilation: Kingdoms, such as the GOG
 edition or the original CD. Install that first if you have not.
 
@@ -23,7 +27,7 @@ STARTING THE GAME
 1. Unzip the whole download somewhere you like, such as your Desktop or
    C:\Games. Keep everything in it together.
 
-2. Open the "Darien Reforged" folder and double click "Darien Reforged.exe".
+2. Open the "Stars of Darien" folder and double click "Stars of Darien.exe".
 
 3. The first time, Windows may show a blue box that says "Windows protected
    your PC". This build is not signed yet, so Windows does not know the
@@ -51,7 +55,7 @@ WHEN SOMETHING GOES WRONG
 
 The game writes a log every time it runs, here:
 
-    %USERPROFILE%\AppData\LocalLow\OpenKingdoms\Darien Reforged\Player.log
+    %USERPROFILE%\AppData\LocalLow\OpenKingdoms\Stars of Darien\Player.log
 
 Paste that line into the address bar of File Explorer to open it. The log
 of the run before is Player-prev.log in the same folder, and F9 screenshots
@@ -73,7 +77,7 @@ Bugs, ideas and anything else go to our Discord: [DISCORD LINK]
 
 ABOUT
 
-Darien Reforged is free software under the GNU General Public License,
+Stars of Darien is free software under the GNU General Public License,
 version 3, with an extra permission for the Unity engine. See LICENSE.txt.
 For three years from this release, ask in our Discord ([DISCORD LINK]) and
 you'll get the source code.

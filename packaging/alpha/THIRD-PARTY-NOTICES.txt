@@ -1,12 +1,12 @@
-THIRD-PARTY NOTICES FOR DARIEN REFORGED
+THIRD-PARTY NOTICES FOR STARS OF DARIEN
 
-Darien Reforged includes the software and fonts below. Each keeps its own
+Stars of Darien includes the software and fonts below. Each keeps its own
 license, given or named here. None of Total Annihilation: Kingdoms' own files
 are included. The game reads them from the player's installed copy.
 
 
 1. The OpenKingdoms engine
-   File: Darien Reforged_Data/Plugins/x86_64/okengine.dll
+   File: Stars of Darien_Data/Plugins/x86_64/okengine.dll
 
    Free software under the GNU General Public License, version 3, with an
    additional permission for the Unity engine. Its source is at
@@ -25,7 +25,7 @@ are included. The game reads them from the player's installed copy.
 
 
 2. SDL 2.32
-   File: Darien Reforged_Data/Plugins/x86_64/SDL2.dll
+   File: Stars of Darien_Data/Plugins/x86_64/SDL2.dll
 
    Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
@@ -47,7 +47,7 @@ are included. The game reads them from the player's installed copy.
 
 
 3. Microsoft Visual C++ runtime
-   File: Darien Reforged_Data/Plugins/x86_64/vcruntime140.dll
+   File: Stars of Darien_Data/Plugins/x86_64/vcruntime140.dll
 
    Copyright Microsoft Corporation. Redistributed as distributable code under
    the Microsoft Visual Studio license terms. The game loads it only on a
@@ -56,7 +56,7 @@ are included. The game reads them from the player's installed copy.
 
 4. Unity
    Files: UnityPlayer.dll, UnityCrashHandler64.exe, the MonoBleedingEdge
-   folder and the Unity files in Darien Reforged_Data
+   folder and the Unity files in Stars of Darien_Data
 
    The Unity runtime by Unity Technologies, under Unity's own terms
    (https://unity.com/legal). Unity and the libraries it brings are not
@@ -64,7 +64,7 @@ are included. The game reads them from the player's installed copy.
 
 
 5. Fonts: Cinzel, EB Garamond and Uncial Antiqua
-   Built into Darien Reforged_Data
+   Built into Stars of Darien_Data
 
    Each under the SIL Open Font License, version 1.1. Their notices and the
    license follow at the end of this file.

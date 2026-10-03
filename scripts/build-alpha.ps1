@@ -1,4 +1,4 @@
-# Builds the Windows alpha of Darien Reforged for playtesters and packs it as
+# Builds the Windows alpha of Stars of Darien for playtesters and packs it as
 # a zip: the game folder, README.txt, KNOWN-ISSUES.txt, LICENSE.txt and
 # THIRD-PARTY-NOTICES.txt.
 # Unity runs in batch mode, through the shared heavy lock when this machine
@@ -17,9 +17,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $root "unity"
 $commit = (& git -C $root rev-parse --short HEAD).Trim()
-$name = "DarienReforged-" + ($Alpha -replace '\s', '') + "-" + $commit
+$name = "StarsOfDarien-" + ($Alpha -replace '\s', '') + "-" + $commit
 $stage = Join-Path $Out $name
-$game = Join-Path $stage "Darien Reforged"
+$game = Join-Path $stage "Stars of Darien"
 $report = Join-Path $Out "$name-content-report.txt"
 $log = Join-Path $Out "$name-build.log"
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -48,12 +48,12 @@ if (-not $PackOnly) {
         exit 1
     }
 }
-if (-not (Test-Path (Join-Path $game "Darien Reforged.exe"))) { "No build at $game"; exit 1 }
+if (-not (Test-Path (Join-Path $game "Stars of Darien.exe"))) { "No build at $game"; exit 1 }
 
 # The version as the build stamped it.
 $version = "$Alpha ($commit)"
 if (Test-Path $log) {
-    $done = Select-String -Path $log -Pattern "OKBUILD done: Darien Reforged (.+)$" | Select-Object -Last 1
+    $done = Select-String -Path $log -Pattern "OKBUILD done: Stars of Darien (.+)$" | Select-Object -Last 1
     if ($done) { $version = $done.Matches[0].Groups[1].Value.Trim() }
 }
 
@@ -99,11 +99,11 @@ $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
 $flat = Join-Path $Out "flat-features.txt"
 $python = Get-Command python -ErrorAction SilentlyContinue
 if ($python) {
-    & $python.Source (Join-Path $root "tools\sprite-replace\coverage.py") --models $game --out $flat --title "Darien Reforged $version" |
+    & $python.Source (Join-Path $root "tools\sprite-replace\coverage.py") --models $game --out $flat --title "Stars of Darien $version" |
         ForEach-Object { "  $_" }
 } else { "No python on the path, so no list of flat scenery" }
 
-"Darien Reforged $version"
+"Stars of Darien $version"
 "Zip: $zip ($mb MB)"
 "Content report: $report"
 exit 0

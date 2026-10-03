@@ -89,7 +89,7 @@ def tnt_features(blob):
 
 def model_folder(models):
     """The folder of feature models in a player build or a plain folder."""
-    for sub in (("Darien Reforged_Data", "StreamingAssets", "Assets", "Overrides", "Features"),
+    for sub in (("Stars of Darien_Data", "StreamingAssets", "Assets", "Overrides", "Features"),
                 ("StreamingAssets", "Assets", "Overrides", "Features"), ("Assets", "Overrides", "Features")):
         p = os.path.join(models, *sub)
         if os.path.isdir(p):
@@ -157,7 +157,7 @@ def main(argv=None):
     ap.add_argument("--game", default=os.environ.get("OK_GAME_DIR") or DEFAULT_GAME)
     ap.add_argument("--models", default=FEATURES)
     ap.add_argument("--out")
-    ap.add_argument("--title", default="Darien Reforged")
+    ap.add_argument("--title", default="Stars of Darien")
     a = ap.parse_args(argv)
     if not os.path.isdir(a.game):
         print("COVERAGE no game install at %s" % a.game)

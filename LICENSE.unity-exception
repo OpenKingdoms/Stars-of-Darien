@@ -1,9 +1,9 @@
-Darien Reforged: additional permission for the Unity engine
+Stars of Darien: additional permission for the Unity engine
 (GNU GPL version 3, section 7)
 
 Copyright (C) 2026 Zachary Bennett
 
-Darien Reforged is free software under the GNU General Public License,
+Stars of Darien is free software under the GNU General Public License,
 version 3 or, at your option, any later version (see LICENSE). This file
 grants one additional permission, as section 7 of that license allows.
 
@@ -16,15 +16,15 @@ combination shall include the source code for the parts of this program
 that are used, and the source of any changes made to them, but need not
 include the source code of the Unity libraries.
 
-Scope. This permission covers the code of Darien Reforged. The
+Scope. This permission covers the code of Stars of Darien. The
 OpenKingdoms engine it runs on carries its own permission, and what that
 permission covers is set out in OpenKingdoms' LICENSE.unity-exception.
 
-Contributions. By contributing to Darien Reforged after this file was
+Contributions. By contributing to Stars of Darien after this file was
 added, you agree that your contribution may be used under this
 additional permission as well as under the GPL.
 
-This permission does not change anything else. Darien Reforged stays
+This permission does not change anything else. Stars of Darien stays
 free software, a combined work stays under the GPL for everything except
 the Unity libraries, and nothing here allows selling or distributing the
 original game's files, which players supply from their own copy.

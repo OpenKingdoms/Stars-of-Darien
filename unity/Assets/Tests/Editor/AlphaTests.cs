@@ -108,7 +108,7 @@ namespace OpenKingdomsUnity.Tests
         public void OnlyTheGamesOwnOldSavesMoveAndOnlyOnce()
         {
             string temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "oku-move-" + System.Guid.NewGuid().ToString("N"));
-            string old = System.IO.Path.Combine(temp, "DefaultCompany", "unity"), now = System.IO.Path.Combine(temp, "OpenKingdoms", "Darien Reforged");
+            string old = System.IO.Path.Combine(temp, "DefaultCompany", "unity"), now = System.IO.Path.Combine(temp, "OpenKingdoms", "Stars of Darien");
             void Put(string path) { System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)); System.IO.File.WriteAllText(path, "x"); }
             try
             {
