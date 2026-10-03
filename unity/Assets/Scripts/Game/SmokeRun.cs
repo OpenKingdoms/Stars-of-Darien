@@ -186,7 +186,7 @@ namespace OpenKingdomsUnity.Game
             float ran = Time.realtimeSinceStartup - playFrom;
             int frames = root.FramesPlayed - firstFrame;
             uint ticks = b.Tick - firstTick;
-            Say($"done: {frames} frames and {ticks} sim ticks in {ran:0.0} s ({frames / Mathf.Max(0.01f, ran):0.0} fps, {ticks / Mathf.Max(0.01f, ran):0.0} ticks a second, {b.TicksPerSecond} expected), state {root.Flow.State}, units in sight {Units(b)}, {Players(b)}");
+            Say($"done: {frames} frames and {ticks} sim ticks in {ran:0.0} s ({frames / Mathf.Max(0.01f, ran):0.0} fps, {ticks / Mathf.Max(0.01f, ran):0.0} ticks a second, {b.TicksPerSecond * root.Options.GameSpeed} expected at the saved {(root.Options.GameSpeed > 1 ? "Fast" : "Normal")} speed), state {root.Flow.State}, units in sight {Units(b)}, {Players(b)}");
             if (ticks == 0) Quit(Result.NoTicks, "the simulation did not advance");
             else Quit(Result.Passed, $"{ticks} ticks in {ran:0.0} s");
         }
