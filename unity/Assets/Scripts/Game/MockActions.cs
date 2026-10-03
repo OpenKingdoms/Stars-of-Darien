@@ -201,6 +201,7 @@ namespace OpenKingdomsUnity.Game
                         if (unit < 0 && at == Vector3.zero) break;
                         if (ManaOf(h) < a.ManaCost) break;
                         mana[h] -= a.ManaCost;
+                        NoteCast(u.Player);
                         Cast(u, id, unit, at);
                         break;
                     case ActionKind.Ability when id == "HEAL":

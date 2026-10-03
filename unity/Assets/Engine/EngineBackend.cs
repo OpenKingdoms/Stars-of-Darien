@@ -1011,12 +1011,58 @@ namespace OpenKingdomsUnity.Engine
         public bool PlaySound(string wav, float volume) =>
             !string.IsNullOrEmpty(wav) && OkEngine.okx_play_ui_sound(wav, Mathf.RoundToInt(Mathf.Clamp01(volume) * 127f)) == 0;
 
-        // The engine keeps kills and experience but does not hand them out yet.
+        // A living unit's kills, and its veteran level as the HUD's rank:
+        // Veteran from the first level and Champion from the second.
         public bool UnitRecord(int handle, out int kills, out int rank)
         {
             kills = 0;
             rank = 0;
-            return false;
+            if (status == GameStatus.Idle || OkEngine.okx_unit_record(handle, out kills, out _, out int level) != 0) return false;
+            rank = RankOf(level);
+            return true;
+        }
+
+        public static int RankOf(int level) => Mathf.Clamp(level, 0, 2);
+
+        readonly int[] seriesBuf = new int[1024], madeDefs = new int[64], madeCounts = new int[64];
+        readonly OkxBattleEvent[] momentsBuf = new OkxBattleEvent[64];
+
+        public BattleRecord ReadBattle()
+        {
+            if (status == GameStatus.Idle || players.Count == 0) return null;
+            var r = new BattleRecord { Tick = (int)OkEngine.okx_tick_count(), TicksPerSecond = Mathf.Max(1, OkEngine.okx_tick_rate()) };
+            foreach (var p in players)
+            {
+                if (OkEngine.okx_battle_stats(p.Index, out var st) != 0) continue;
+                var k = new KingdomRecord
+                {
+                    Player = p.Index, UnitsBuilt = st.unitsBuilt, Kills = st.kills, Losses = st.losses, Score = st.score,
+                    LastAliveTick = st.lastAliveTick, Eliminated = st.eliminated != 0,
+                    UnitsTrained = st.unitsTrained, BuildingsRaised = st.buildingsRaised, DamageDealt = st.damageDealt,
+                    DamageTaken = st.damageTaken, SpellsCast = st.spellsCast, FellTick = st.fellTick,
+                    ManaGathered = st.manaGathered, ManaSpent = st.manaSpent,
+                    ChampionDef = st.bestDef, ChampionKills = st.bestKills, ChampionXp = st.bestXp,
+                    ChampionRank = RankOf(st.bestRank), ChampionStanding = st.bestStanding != 0,
+                };
+                for (int s = 0; s < k.Series.Length; s++)
+                {
+                    int n = Mathf.Min(OkEngine.okx_battle_series(p.Index, s, seriesBuf, seriesBuf.Length, out int every), seriesBuf.Length);
+                    if (every > 0) r.Every = every;
+                    var v = new int[Mathf.Max(0, n)];
+                    Array.Copy(seriesBuf, v, v.Length);
+                    k.Series[s] = v;
+                }
+                int m = Mathf.Min(OkEngine.okx_battle_built(p.Index, madeDefs, madeCounts, madeDefs.Length), madeDefs.Length);
+                for (int i = 0; i < m; i++) k.Made.Add(new KeyValuePair<int, int>(madeDefs[i], madeCounts[i]));
+                r.Kingdoms.Add(k);
+            }
+            int e = Mathf.Min(OkEngine.okx_battle_events(momentsBuf, momentsBuf.Length), momentsBuf.Length);
+            for (int i = 0; i < e; i++)
+            {
+                var b = momentsBuf[i];
+                r.Moments.Add(new BattleMoment { Tick = b.tick, Kind = (MomentKind)b.kind, Player = b.player, Other = b.other, Def = b.def, OtherDef = b.otherDef });
+            }
+            return r;
         }
 
         // The game's own controls. The engine keeps the selection, and Click

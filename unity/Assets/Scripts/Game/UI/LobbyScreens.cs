@@ -348,7 +348,7 @@ namespace OpenKingdomsUnity.Game.UI
                 case "VERUNA": entry = "VerTeam"; break;
                 case "ZHON": entry = "ZonTeam"; break;
             }
-            var f = entry != null ? art.Get("colorlogos2.gaf", entry, 2 + (colour & 7)) : default;
+            var f = entry != null ? art.Get("colorlogos2.gaf", entry, LogoFrame(art.Get("colorlogos2.gaf", entry).Frames, colour)) : default;
             if (f.Tex != null)
             {
                 img.texture = f.Tex;
@@ -358,6 +358,14 @@ namespace OpenKingdomsUnity.Game.UI
             var c = (Color)Tint(colour);
             img.texture = p.Paint("emblem" + (colour & 7), s => HudArt.Boss(16f, s, c));
             img.material = null;
+        }
+
+        // The frame of a logo sheet for a player colour: a twelve frame sheet
+        // leads with two greyed states, a ten frame one starts at the colour.
+        public static int LogoFrame(int frames, int colour)
+        {
+            int lead = frames >= 12 ? 2 : 0, colours = Mathf.Max(1, (frames > 0 ? frames : 10) - lead);
+            return lead + ((colour % colours) + colours) % colours;
         }
 
         // The dark well a field or a filter sits in, gold along its foot.

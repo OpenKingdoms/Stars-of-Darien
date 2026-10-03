@@ -41,6 +41,23 @@ namespace OpenKingdomsUnity.Engine
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
     }
 
+    // A kingdom's numbers for the end screen: the original's tallies, then
+    // what the engine keeps beside them.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxBattleStats
+    {
+        public int unitsBuilt, kills, losses, score, lastAliveTick, eliminated;
+        public int unitsTrained, buildingsRaised, damageDealt, damageTaken, spellsCast, fellTick;
+        public float manaGathered, manaSpent;
+        public int bestDef, bestKills, bestXp, bestRank, bestStanding, bestHandle;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxBattleEvent
+    {
+        public int tick, kind, player, other, def, otherDef;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct OkxEconomy
     {
@@ -311,6 +328,11 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern void okx_see_all(int on);
         [DllImport(Lib)] public static extern int okx_play_on();
         [DllImport(Lib)] public static extern int okx_playing_on();
+        [DllImport(Lib)] public static extern int okx_battle_stats(int player, out OkxBattleStats stats);
+        [DllImport(Lib)] public static extern int okx_battle_series(int player, int series, [Out] int[] values, int cap, out int every);
+        [DllImport(Lib)] public static extern int okx_battle_built(int player, [Out] int[] defs, [Out] int[] counts, int cap);
+        [DllImport(Lib)] public static extern int okx_battle_events([Out] OkxBattleEvent[] events, int cap);
+        [DllImport(Lib)] public static extern int okx_unit_record(int handle, out int kills, out int xp, out int rank);
         [DllImport(Lib)] public static extern int okx_select(int[] handles, int n, int add);
         [DllImport(Lib)] public static extern int okx_selection([Out] int[] handles, int cap);
         [DllImport(Lib)] public static extern void okx_click(float x, float z, int unit, int shift);

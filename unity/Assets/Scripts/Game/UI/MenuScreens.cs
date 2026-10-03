@@ -15,8 +15,9 @@ namespace OpenKingdomsUnity.Game.UI
         // Lay out for this size instead of the screen's, for captures and
         // tests that render off screen.
         public static Vector2Int? SizeOverride;
-        // The battlefield is seen this long before the result's plaque fades in.
-        public const float ResultHold = 1.5f, ResultFade = 0.4f;
+        // The banner is seen over the field this long before the result's
+        // page fades in, the original's 90 frames.
+        public const float ResultHold = 3f, ResultFade = 0.4f;
 
         // The screens on the dialog kit, built again when the canvas changes
         // size, and the order modal screens draw in over the battle HUD.
@@ -35,15 +36,15 @@ namespace OpenKingdomsUnity.Game.UI
         BattleHud hud;
         EditorScreens editor;
         LobbyScreens lobby;
-        RectTransform saveItems, resultTable;
-        Text loadingTitle, loadingSeats, loadingStage, loadingTip, loadingPercent, resultInfo;
+        RectTransform saveItems;
+        Text loadingTitle, loadingSeats, loadingStage, loadingTip, loadingPercent;
         Image loadingFill;
-        Dialog options, result;
+        Dialog options;
+        ResultScreen results;
         readonly Dictionary<string, Texture2D> previews = new Dictionary<string, Texture2D>();
         float resultShownAt;
         uint resultTick;
-        bool resultWon, leaving, lookingAtField;
-        int resultRoom;
+        bool resultWon, leaving, lookingAtField, resultFresh;
         string tip = "";
         FlowState shown = (FlowState)(-1);
         int shownFrame = -1;
@@ -77,6 +78,7 @@ namespace OpenKingdomsUnity.Game.UI
         }
 
         public Canvas Canvas => canvas;
+        public ResultScreen Results => results;
         public BattleHud Hud => hud;
         public LobbyScreens Lobby => lobby;
 
@@ -168,6 +170,7 @@ namespace OpenKingdomsUnity.Game.UI
                         resultShownAt = Time.unscaledTime;
                         resultTick = root.Backend.Tick;
                         lookingAtField = false;
+                        resultFresh = true;
                     }
                     RefreshResult();
                     on = lookingAtField ? new[] { "Hud", "Results" } : new[] { "Hud", "Result" };
@@ -183,7 +186,7 @@ namespace OpenKingdomsUnity.Game.UI
         static readonly KeyCode[] DialogKeys =
         {
             KeyCode.Return, KeyCode.KeypadEnter, KeyCode.Escape, KeyCode.F1,
-            KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow,
+            KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow, KeyCode.Tab,
         };
 
         // Pause: Escape, F1 and Enter resume, Enter leaves from the question.
@@ -198,6 +201,11 @@ namespace OpenKingdomsUnity.Game.UI
                     if (leaving && enter) { LeaveBattle(); return true; }
                     if (enter || k == KeyCode.Escape || k == KeyCode.F1) { root.Flow.Fire(FlowEvent.Resume); return true; }
                     return false;
+                case FlowState.Victory:
+                case FlowState.Defeat:
+                    // The original's accelerators on its statistics screen.
+                    if (lookingAtField || results == null) return false;
+                    return results.Key(k, () => LookAtField(true), () => root.Flow.Fire(FlowEvent.ToMenu));
                 case FlowState.Options:
                     if (enter || k == KeyCode.Escape) { CloseOptions(); return true; }
                     if (k == KeyCode.DownArrow || k == KeyCode.UpArrow)
@@ -227,6 +235,7 @@ namespace OpenKingdomsUnity.Game.UI
                 Show(root.Flow.State);
             }
             lobby.Tick();
+            results?.Tick();
             if (root.Flow.State == FlowState.Editing) editor.Tick();
             // Not in the frame a screen opened, so the key that opened it
             // does not close it again.
@@ -307,7 +316,7 @@ namespace OpenKingdomsUnity.Game.UI
             BuildLoading();
             BuildPause();
             BuildLeave();
-            BuildResult(Mathf.Max(4, root.Backend.Players.Count));
+            BuildResult();
             BuildResults();
             BuildLoadList();
             foreach (var n in Dialogs) if (screens.TryGetValue(n, out var go)) go.SetActive(false);
@@ -730,33 +739,13 @@ namespace OpenKingdomsUnity.Game.UI
 
         // ---- Victory and defeat ----
 
-        void BuildResult(int room)
+        // The page itself is built when a battle ends, once the menus' art
+        // and pages are there, and again for a new size.
+        void BuildResult()
         {
-            resultRoom = room;
-            var s = NewScreen("Result", false);
-            var dim = UiKit.Picture(s, "Dim", UiKit.Glow, new Color(0, 0, 0, 0.8f));
-            dim.rectTransform.Place(-0.3f, -0.3f, 1.3f, 1.3f);
-            var box = layout.Result(room);
-            result = UiKit.MakeDialog(s, box, "", "The battle is over. Look at the field, or return to the menu.");
-            result.GetComponent<Opening>().Seconds = ResultFade;
-            var p = result.transform;
-            resultInfo = UiKit.Words(p, "Sentence", box.Local(box.Note), "", DialogLayout.Sentence, HudArt.Ink, UiKit.BodyFont);
-            var head = box.Local(box.Head);
-            string[] headings = { "", "Player", "Kingdom", "Team", "State" };
-            for (int c = 1; c < headings.Length; c++)
-            {
-                var col = DialogLayout.Columns[c];
-                UiKit.Words(p, "Heading " + headings[c], new Rect(head.x + col.x, head.y, col.width, head.height), headings[c], DialogLayout.Heading,
-                    HudArt.Ink, UiKit.TitleFont, TextAnchor.MiddleLeft);
-            }
-            var rule = UiKit.At(p, "Heading rule", new Rect(head.x, head.yMax - 1f, head.width, 1f)).gameObject.AddComponent<Image>();
-            rule.sprite = UiKit.White;
-            rule.color = new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.5f);
-            rule.raycastTarget = false;
-            resultTable = UiKit.At(p, "Kingdoms", box.Local(box.List));
-            UiKit.MakePlate(p, "Return to menu", box.Local(box.Plate("Return to menu")), () => root.Flow.Fire(FlowEvent.ToMenu), result, "Ends the battle and goes to the main menu");
-            UiKit.MakePlate(p, "Look at the field", box.Local(box.Plate("Look at the field")), () => LookAtField(true), result,
-                "Puts this away to look at the battlefield. Results brings it back");
+            NewScreen("Result", false);
+            results?.Dispose();
+            results = null;
         }
 
         // The plate that brings the result back, where the sidebar's Menu
@@ -773,6 +762,8 @@ namespace OpenKingdomsUnity.Game.UI
             int size = Mathf.Clamp(Mathf.RoundToInt(r.height * 0.55f), DialogLayout.Heading, DialogLayout.PlateLabel);
             UiKit.MakePlate(s, "Results", r, () => LookAtField(false), null, null, "menubutton.wav", size);
         }
+
+        public void LookAtTheField() => LookAtField(true);
 
         void LookAtField(bool on)
         {
@@ -793,77 +784,17 @@ namespace OpenKingdomsUnity.Game.UI
 
         void RefreshResult()
         {
-            var b = root.Backend;
-            if (b.Players.Count > resultRoom)
-            {
-                DropScreen("Result");
-                BuildResult(b.Players.Count);
-                screens["Result"].SetActive(false);
-                Order();
-            }
-            // The hold runs from the battle's end, however often the plaque opens.
-            if (!screens["Result"].activeSelf) result.GetComponent<Opening>().Delay = Mathf.Max(0f, resultShownAt + ResultHold - Time.unscaledTime);
-            result.Title.text = resultWon ? "Victory" : "Defeat";
-            result.Title.color = resultWon ? HudArt.GoldHi : HudArt.Silver;
-            // The time of the battle's end, however long it is watched after.
-            int secs = (int)(resultTick / (uint)Mathf.Max(1, b.TicksPerSecond));
-            var map = root.CurrentMap();
-            resultInfo.text = (resultWon ? "Your enemies are vanquished" : "Your kingdom has fallen") +
-                $" on {MapCatalog.DisplayName(map) ?? "the field"} after {secs / 60} min {secs % 60} s.";
-            for (int i = resultTable.childCount - 1; i >= 0; i--)
-            {
-                var row = resultTable.GetChild(i).gameObject;
-                row.SetActive(false);
-                World.Looks.Release(row);
-            }
-            float w = resultTable.sizeDelta.x;
-            for (int i = 0; i < b.Players.Count; i++) Kingdom(b.Players[i], new Rect(0, i * DialogLayout.TableRowH, w, DialogLayout.TableRowH));
+            if (results == null)
+                results = new ResultScreen(root, lobby, (RectTransform)screens["Result"].transform, builtSize, layout.Scale);
+            // The hold runs from the battle's end, however often the page opens.
+            float hold = Mathf.Max(0f, resultShownAt + ResultHold - Time.unscaledTime);
+            results.Show(resultWon, (int)resultTick, MapCatalog.DisplayName(root.CurrentMap()), hold, resultFresh);
+            resultFresh = false;
         }
 
         // You, as the skirmish page names you, whatever the engine calls
         // the local seat, and everyone else by name.
         public static string ResultName(PlayerInfo pl) => pl.IsLocal ? "You" : pl.Name ?? "";
-
-        // A row of the table: emblem, player, kingdom, team, standing or fallen.
-        void Kingdom(PlayerInfo pl, Rect r)
-        {
-            var row = UiKit.At(resultTable, "Kingdom " + pl.Index, r);
-            var rule = UiKit.At(row, "Ruling", new Rect(0, r.height - 1f, r.width, 1f)).gameObject.AddComponent<Image>();
-            rule.sprite = UiKit.White;
-            rule.color = new Color(HudArt.Ink.r, HudArt.Ink.g, HudArt.Ink.b, 0.06f);
-            rule.raycastTarget = false;
-            var c = DialogLayout.Columns;
-            Emblem(row, c[0], pl);
-            var ink = HudArt.Ink;
-            UiKit.Words(row, "Player", c[1], ResultName(pl), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
-            UiKit.Words(row, "Kingdom", c[2], SideName(pl.Side, root.Backend.Sides), DialogLayout.Row, ink, UiKit.BodyFont, TextAnchor.MiddleLeft);
-            UiKit.Words(row, "Team", c[3], pl.Team < 0 ? "Alone" : (pl.Team + 1).ToString(), DialogLayout.Row, ink, UiKit.TitleFont, TextAnchor.MiddleLeft);
-            UiKit.Words(row, "State", c[4], pl.Alive ? "Standing" : "Fallen", DialogLayout.Row, pl.Alive ? HudArt.Verdigris : HudArt.Minium, UiKit.BodyFont, TextAnchor.MiddleLeft);
-        }
-
-        // The original's colour emblem for the kingdom, or a painted jewel.
-        void Emblem(Transform row, Rect r, PlayerInfo pl)
-        {
-            string entry = null;
-            switch ((pl.Side ?? "").ToUpperInvariant())
-            {
-                case "ARAMON": entry = "AraTeam"; break;
-                case "TAROS": entry = "TarTeam"; break;
-                case "VERUNA": entry = "VerTeam"; break;
-                case "ZHON": entry = "ZonTeam"; break;
-            }
-            var f = entry != null ? lobby.Art.Get("colorlogos2.gaf", entry, 2 + (pl.Colour & 7)) : default;
-            if (f.Tex != null)
-            {
-                var img = UiKit.At(row, "Emblem", r).gameObject.AddComponent<RawImage>();
-                img.texture = f.Tex;
-                img.material = lobby.Art.Sharp;
-                img.raycastTarget = false;
-                return;
-            }
-            Color tint = LobbyScreens.Tint(pl.Colour);
-            UiKit.PaintedPicture(row, "Emblem", r, "emblem" + (pl.Colour & 7), s => HudArt.Boss(r.width - 1f, s, tint));
-        }
 
         // ---- Saved games ----
 
@@ -911,6 +842,7 @@ namespace OpenKingdomsUnity.Game.UI
 
         public void Dispose()
         {
+            results?.Dispose();
             hud?.Dispose();
             lobby?.Dispose();
             foreach (var o in owned) World.Looks.Release(o);

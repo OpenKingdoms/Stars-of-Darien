@@ -7,6 +7,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using OpenKingdomsUnity.Engine;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.UI;
 using OpenKingdomsUnity.Game.World;
@@ -269,6 +270,82 @@ namespace OpenKingdomsUnity.Tests
                 Assert.Greater(root.LoadWorstFrameMs, 0.0, "the slowest loading frame was timed");
             }
             finally { GameRoot.BuildSliceMs = slice; }
+        }
+
+        // The end screen on the real engine: a battle fought for a minute
+        // and lost shows the engine's own tallies for every kingdom, and
+        // the graphs and the kingdoms page have its record.
+        [UnityTest, Timeout(900000)]
+        public IEnumerator ADecidedBattleShowsTheEnginesOwnTallies()
+        {
+            if (GameRoot.BackendFactory == null) Assert.Ignore("the engine or the game files are missing");
+            yield return Boot();
+            Assert.IsFalse(root.Backend is MockBackend, "the engine runs: " + root.BackendProblem);
+            var b = root.Backend;
+            Assert.IsTrue(root.Flow.Fire(FlowEvent.OpenSkirmish));
+            yield return null;
+            var s = root.Setup;
+            s.MapId = "king of the hill";
+            s.MapRevealed = true;
+            s.LineOfSight = false;
+            s.RandomStarts = false;
+            for (int i = 0; i < s.Seats.Count; i++)
+            {
+                s.Seats[i].Kind = i == 0 ? SeatKind.Human : i == 1 ? SeatKind.Computer : SeatKind.Closed;
+                s.Seats[i].Team = SeatTeam.Alone;
+            }
+            root.Screens.StartGame();
+            yield return Until(() => root.Flow.State == FlowState.Playing, 300f);
+            Assert.AreEqual(FlowState.Playing, root.Flow.State, root.LastError);
+
+            // A minute of battle, so the computer builds and the record samples.
+            b.Advance(60 * b.TicksPerSecond);
+            int other = b.Players.First(p => !p.IsLocal).Index;
+            var units = new UnitState[4096];
+            int n = b.ReadUnits(units);
+            for (int i = 0; i < n; i++)
+                if (units[i].Player == b.LocalPlayer)
+                    b.Command(new GameCommand { Kind = (CommandKind)24, Unit = units[i].Handle, TargetUnit = -1, BuildDef = -1, Arg = other });
+            yield return Until(() => root.Flow.State != FlowState.Playing, 30f);
+            Assert.AreEqual(FlowState.Defeat, root.Flow.State);
+            UiKit.Motion.Off = true;
+            yield return null;
+            yield return null;
+            var result = root.Screens.Screen("Result");
+            Assert.IsTrue(result.activeSelf, "the result shows");
+
+            List<Text> Texts(string name) => result.GetComponentsInChildren<Text>(false).Where(t => t.name == name).ToList();
+            int tps = b.TicksPerSecond;
+            for (int i = 0; i < b.Players.Count; i++)
+            {
+                var pl = b.Players[i];
+                Assert.AreEqual(0, OkEngine.okx_battle_stats(pl.Index, out var st));
+                Assert.AreEqual(MenuScreens.ResultName(pl), Texts("Player")[i].text);
+                Assert.AreEqual(st.unitsBuilt.ToString("N0"), Texts("Units")[i].text, "units built, the engine's");
+                Assert.AreEqual(st.kills.ToString("N0"), Texts("Kills")[i].text);
+                Assert.AreEqual(st.losses.ToString("N0"), Texts("Losses")[i].text);
+                Assert.AreEqual(BattleRecord.Clock(st.lastAliveTick, tps), Texts("Time")[i].text);
+                Assert.AreEqual(st.score.ToString("N0"), Texts("Score")[i].text);
+                if (!pl.IsLocal) Assert.Greater(st.unitsBuilt, 1, "the computer built");
+            }
+
+            ButtonOn("Result", "Graphs").onClick.Invoke();
+            var graph = result.GetComponentInChildren<LineGraph>();
+            Assert.IsNotNull(graph);
+            Assert.AreEqual(2, graph.Lines.Count, "a line a kingdom");
+            foreach (var line in graph.Lines) Assert.GreaterOrEqual(line.Points.Length, 12, "a minute of samples and now");
+
+            ButtonOn("Result", "Kingdoms").onClick.Invoke();
+            Assert.AreEqual(0, OkEngine.okx_battle_stats(b.LocalPlayer, out var mine));
+            Assert.AreEqual(Mathf.RoundToInt(mine.manaGathered).ToString("N0"), Texts("Mana gathered").Single().text);
+            Assert.AreEqual(mine.fellTick > 0 ? "Fell at " + BattleRecord.Short(mine.fellTick, tps) : "Standing", Texts("Fate").Single().text);
+
+            ButtonOn("Result", "Annals").onClick.Invoke();
+            var moments = Texts("Moment").Select(t => t.text).ToList();
+            Assert.IsTrue(moments.Contains("You have fallen."), string.Join(" | ", moments));
+            ButtonOn("Result", "Return to menu").onClick.Invoke();
+            yield return null;
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
         }
 
         // Beaten with two computers still at war, Look at the field shows

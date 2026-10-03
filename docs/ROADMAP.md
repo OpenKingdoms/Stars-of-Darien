@@ -10,7 +10,7 @@ The first alpha was a Windows build for playtesters with skirmish only. What a p
 - Skirmish setup with the map browser (search, player and size filters, six sort orders), start positions picked by click or drag or dealt at random, kingdoms, up to four seats of computers at four difficulties, teams, line of sight, map revealed, monarch expendable, a unit limit, weather and game speed. The loading screen shows the engine's own progress.
 - The battle with the engine's rules and AI. The HUD follows the original's layout in a Carolingian skin that scales to any screen, with the mana pool, unit panel, build menus with queue badges, the minimap, the clock and the original's cursors. Classic controls leave selection to the engine as the original does, and Modern controls add right-click orders.
 - Orders with Shift to queue and see a selection's orders, Ctrl to replace the order in hand and keep the queue, control groups, the original's select keys such as Ctrl+Z, a formation drag with shapes, pace and facing, patrol, guard, attack ground, spells and stances, rally points, build counts of one or five and repeat on factory buttons, and turned buildings.
-- Fog of war, victory and defeat with the map and the time, save and load from the pause menu, and the engine's own unit voices, battle sounds, interface sounds and music.
+- Fog of war, the original's victory and defeat screens with their tallies and pages of graphs, kingdoms and the battle's annals, save and load from the pause menu, and the engine's own unit voices, battle sounds, interface sounds and music.
 - The modern look: URP, sun and shadows, weather, a new sea with surf and wakes, fog drawn the way the original draws it, the original's effects remastered, and 3D models for every scenery type the maps use. About three hundred are hand-built, and the rest are carved models that the game paints at load from the player's own files.
 - F9 pictures and Shift+F9 clips, a map editor in the game, and in the Unity editor the Unit Browser, Map Browser, animation editor and Studio Mode.
 - Multiplayer rooms over the OpenKingdoms relay: connect, list, host, join by code, seats with sides, teams and ready, the host's rules and map, room chat, and a started battle in lockstep.
@@ -25,14 +25,14 @@ The browser game at openkingdoms.net is the same engine with its own C front end
 | --- | --- | --- |
 | Combat parity, veterans scale attack and armour, standing orders, melee by type, an offensive AI (#342) | Has it, since the rules run in the engine | Nothing |
 | Footprint slope for buildings (#341), dragon breath from the head (#354) | Has it, from the engine | Nothing |
-| Veteran rank shown on units | Partly. The HUD has the rank shield and kill count, but `EngineBackend.UnitRecord` is a stub | Engine: veteran level and kills on `OkxUnit`. Unity: fill `UnitRecord` |
+| Veteran rank shown on units | Has it. `okx_unit_record` gives a living unit's kills and veteran level for the HUD's count and shield | Nothing |
 | Rally points | Has it, by a ground click with a factory selected | Nothing |
 | Build counts with Shift and Ctrl | Has it on factory buttons | Nothing |
 | Shift order overlay (#337) | Has it, from `okx_unit_orders` | Nothing |
 | Right click on a builder's button drops its queued buildings of that kind (#337) | Lacks it | Unity: a right click on a mobile builder's card that calls `okx_factory_add` with a negative count and counts its build legs from `okx_unit_orders`. An engine flag for all would be tidier |
 | Start positions, map search | Has both | Nothing |
 | Game speed levels and pause | Partly. Normal and Fast only, and the pause menu stops the clock | Unity: more speed steps and a pause key, since the host sets the pace of `okx_tick` |
-| End screen with units built, kills, losses, time and score | Lacks it. Victory or defeat shows the map and the time | Engine: `okx_stats` from the world's statistics. Unity: the screen |
+| End screen with units built, kills, losses, time and score | Has it on the original's own screens, with graphs, a page a kingdom and the annals (`docs/BATTLE_RESULTS.md`) | Nothing |
 | Replays of every fresh battle, played from the main menu (#352) | Lacks it | Engine: record through okx battles and `okx_replay_*` to list, open and step. Unity: a Replays page, a playback bar and locked orders |
 | Typed + commands and power codes (#349) | Lacks it, and there is no chat line in battle | Engine: `okx_console` and a power codes field on `OkxSkirmish`. Unity: a chat line in battle |
 | Skirmish rules for power codes, slow game and Crusades balance | Lacks them | Engine: fields on `OkxSkirmish`. Unity: checkboxes |
@@ -55,27 +55,25 @@ The order puts first what playtesters of a skirmish-only alpha would miss most, 
 
 ### Alpha 2
 
-1. An end screen after victory or defeat with units built, kills, losses, time and score for every seat. This needs `okx_stats` on the engine side and a screen here. Medium.
-2. Veteran ranks and kills on units, which the HUD already draws once `OkxUnit` carries them. Small.
-3. A right click on a builder's card drops its queued buildings of that kind, as in the browser game. Unity only. Small.
-4. Finer game speed and a pause key in battle, as the browser game's speed levels. Unity only. Small.
-5. Replays: every fresh skirmish recorded, a Replays page on the main menu, and playback with pause and speed. This needs the engine to record okx battles and a `okx_replay_*` API. Large.
-6. A chat line in battle that runs typed + commands, with power codes when the rules allow them, and the skirmish rules for power codes, slow game and Crusades balance. This needs `okx_console` and the new `OkxSkirmish` fields. Medium.
-7. Options for music, sound and unit voices apart, and a resolution setting. Small on each side.
+1. A right click on a builder's card drops its queued buildings of that kind, as in the browser game. Unity only. Small.
+2. Finer game speed and a pause key in battle, as the browser game's speed levels. Unity only. Small.
+3. Replays: every fresh skirmish recorded, a Replays page on the main menu, and playback with pause and speed. This needs the engine to record okx battles and a `okx_replay_*` API. Large.
+4. A chat line in battle that runs typed + commands, with power codes when the rules allow them, and the skirmish rules for power codes, slow game and Crusades balance. This needs `okx_console` and the new `OkxSkirmish` fields. Medium.
+5. Options for music, sound and unit voices apart, and a resolution setting. Small on each side.
 
 ### Multiplayer in Stars of Darien
 
-8. Open the Multiplayer door, with chat in battle, the waiting line and the desync notice from `okx_net_match`. Mostly Unity. Medium.
-9. Ping in the room list and on each seat, results reported to the relay so battles count on the leaderboard, a way to reach the leaderboard, and notices when someone hosts. This needs ping fields, result reporting from the embedded tick and the device token in the engine. Medium.
-10. Rejoin after a drop, and watching a battle once the browser game offers it too. Large.
+6. Open the Multiplayer door, with chat in battle, the waiting line and the desync notice from `okx_net_match`. Mostly Unity. Medium.
+7. Ping in the room list and on each seat, results reported to the relay so battles count on the leaderboard, a way to reach the leaderboard, and notices when someone hosts. This needs ping fields, result reporting from the embedded tick and the device token in the engine. Medium.
+8. Rejoin after a drop, and watching a battle once the browser game offers it too. Large.
 
 ### The campaign
 
-11. The Book of Deeds, mission briefings, objectives and the mission clips, for Darien and then the Iron Plague. This needs `okx_mission_*` and the story's progress in the engine and a book, briefings and clip playback here. Large.
+9. The Book of Deeds, mission briefings, objectives and the mission clips, for Darien and then the Iron Plague. This needs `okx_mission_*` and the story's progress in the engine and a book, briefings and clip playback here. Large.
 
 ### Beta
 
-12. A campaign for each kingdom, Aramon, Veruna, Taros and Zhon. It belongs in a beta and is not part of Alpha 1, and it builds on the campaign above. Large.
+10. A campaign for each kingdom, Aramon, Veruna, Taros and Zhon. It belongs in a beta and is not part of Alpha 1, and it builds on the campaign above. Large.
 
 ### Later
 

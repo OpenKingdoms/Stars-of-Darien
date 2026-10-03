@@ -453,8 +453,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(HudArt.GoldHi, title.color);
             var words = result.GetComponentsInChildren<Text>().Select(t => t.text).ToList();
             CollectionAssert.Contains(words, "You", "the local player is in the table");
-            CollectionAssert.Contains(words, "Standing");
-            CollectionAssert.Contains(words, "Aramon", "with the kingdom's name");
+            foreach (var column in new[] { "Player", "Units", "Kills", "Losses", "Time", "Score" })
+                CollectionAssert.Contains(words, column, "the original's columns");
             CheckReadable("Result");
 
             var mock = (MockBackend)root.Backend;
@@ -479,7 +479,186 @@ namespace OpenKingdomsUnity.Tests
             title = Named(result, "Title");
             Assert.AreEqual("Defeat", title.text);
             Assert.AreEqual(HudArt.Silver, title.color, "defeat in silver");
-            CollectionAssert.Contains(result.GetComponentsInChildren<Text>().Select(t => t.text).ToList(), "Fallen");
+            StringAssert.StartsWith("Your kingdom has fallen", Named(result, "Sentence").text);
+        }
+
+        // ---- The remastered end screen ----
+
+        List<Text> Texts(string screen, string name) =>
+            root.Screens.Screen(screen).GetComponentsInChildren<Text>(false).Where(t => t.name == name).ToList();
+
+        // A mock battle with these seats, its armies sent at each other for a
+        // while, and won.
+        IEnumerator Fought(int kingdoms, string map, int seconds)
+        {
+            UiKit.Motion.Off = false;
+            if (root != null) Object.Destroy(root.gameObject);
+            yield return null;
+            var mock = new MockBackend { StageSeconds = 0f };
+            root = GameRoot.Boot(mock);
+            yield return null;
+            root.Flow.Fire(FlowEvent.OpenSkirmish);
+            root.Setup.MapId = map;
+            var seats = root.Setup.Seats;
+            for (int i = 0; i < seats.Count; i++)
+            {
+                seats[i].Kind = i == 0 ? SeatKind.Human : i < kingdoms ? SeatKind.Computer : SeatKind.Closed;
+                seats[i].Team = SeatTeam.Alone;
+            }
+            root.Screens.StartGame();
+            yield return Until(() => root.Flow.State == FlowState.Playing, 30f);
+            Assert.AreEqual(FlowState.Playing, root.Flow.State);
+            Assert.AreEqual(kingdoms, root.Backend.Players.Count);
+            var units = new UnitState[4096];
+            int n = mock.ReadUnits(units);
+            var centre = new Vector3(mock.Terrain.Size.x / 2f, 0, -mock.Terrain.Size.y / 2f);
+            for (int i = 0; i < n; i++)
+                if (!mock.UnitDefs[units[i].Def].IsBuilding) mock.Command(GameCommand.To(CommandKind.Move, units[i].Handle, centre));
+            mock.Advance(seconds * MockBackend.Tps);
+            root.Flow.Fire(FlowEvent.Won);
+        }
+
+        [UnityTest]
+        public IEnumerator TheBannerStandsOverTheFieldBeforeThePage()
+        {
+            yield return Fought(2, "mock_frost", 5);
+            yield return ViewAt(1280, 720);
+            var result = root.Screens.Screen("Result");
+            Assert.IsTrue(result.activeSelf);
+            var banner = result.transform.Find("Banner").GetComponent<CanvasGroup>();
+            Assert.AreEqual(1f, banner.alpha, "the word stands over the field");
+            Assert.AreEqual("Victory", result.transform.Find("Banner/Banner word").GetComponent<Text>().text);
+            var page = result.GetComponentInChildren<Opening>();
+            Assert.AreEqual(0f, page.Group.alpha, "the page waits");
+            Assert.AreEqual(3f, MenuScreens.ResultHold, "the original's 90 frames");
+            UiKit.Motion.Off = true;
+            yield return null;
+            yield return null;
+            Assert.AreEqual(1f, page.Group.alpha, "the page has come");
+            Assert.AreEqual(0f, banner.alpha, "and the banner has gone");
+        }
+
+        [UnityTest]
+        public IEnumerator ThePageCarriesTheOriginalsTalliesAndThreePagesMore()
+        {
+            yield return Fought(3, "mock_dunes", 45);
+            UiKit.Motion.Off = true;
+            yield return ViewAt(1280, 720);
+            var record = root.Screens.Results.Record;
+            var b = root.Backend;
+            Assert.Greater(record.Kingdoms.Sum(k => k.Kills), 0, "the armies fought");
+
+            // The original's table: a row a kingdom, its own numbers.
+            var names = Texts("Result", "Player").Where(t => t.text != "").ToList();
+            Assert.AreEqual(3, names.Count);
+            var units = Texts("Result", "Units");
+            var kills = Texts("Result", "Kills");
+            var losses = Texts("Result", "Losses");
+            var time = Texts("Result", "Time");
+            var score = Texts("Result", "Score");
+            for (int i = 0; i < b.Players.Count; i++)
+            {
+                var k = record.Of(b.Players[i].Index);
+                Assert.AreEqual(MenuScreens.ResultName(b.Players[i]), names[i].text);
+                Assert.AreEqual(k.UnitsBuilt.ToString("N0"), units[i].text);
+                Assert.AreEqual(k.Kills.ToString("N0"), kills[i].text);
+                Assert.AreEqual(k.Losses.ToString("N0"), losses[i].text);
+                Assert.AreEqual(BattleRecord.Clock(k.LastAliveTick, record.TicksPerSecond), time[i].text);
+                Assert.AreEqual(k.Score.ToString("N0"), score[i].text);
+            }
+            CheckReadable("Result");
+
+            // Graphs: a line a kingdom over the battle, six to choose from.
+            Click("Result", "Graphs");
+            Assert.AreEqual(1, root.Screens.Results.Tab);
+            var graph = root.Screens.Screen("Result").GetComponentInChildren<LineGraph>();
+            Assert.IsNotNull(graph, "the graph shows");
+            Assert.AreEqual(3, graph.Lines.Count);
+            foreach (var line in graph.Lines) Assert.GreaterOrEqual(line.Points.Length, 9, "a point every 5 s and now");
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+            Assert.Greater(graph.Drawn, 0, "the lines are drawn");
+            // And they show on the picture: pixels in a kingdom's colour.
+            var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+            uiCam.Render();
+            RenderTexture.active = rt;
+            tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+            RenderTexture.active = null;
+            var want = (Color)graph.Lines.Last().Colour;
+            int hits = tex.GetPixels().Count(c => Mathf.Abs(c.r - want.r) + Mathf.Abs(c.g - want.g) + Mathf.Abs(c.b - want.b) < 0.12f);
+            Object.Destroy(tex);
+            Assert.Greater(hits, 20, "the player's line shows");
+            CheckReadable("Result");
+            root.Screens.Results.ShowChart(4);
+            var mine = record.Of(b.LocalPlayer);
+            Assert.AreEqual(mine.Kills, (int)root.Screens.Results.ChartValues(mine, 4).Last(), "the kills chart ends at the tally");
+
+            // A kingdom at a time, the player's own first, by keys too.
+            Assert.IsTrue(root.Screens.Key(KeyCode.RightArrow));
+            Assert.AreEqual(2, root.Screens.Results.Tab);
+            Assert.AreEqual(mine.UnitsTrained.ToString("N0"), Texts("Result", "Units trained").Single().text);
+            Assert.AreEqual(mine.DamageDealt.ToString("N0"), Texts("Result", "Damage dealt").Single().text);
+            Assert.AreEqual(3, root.Screens.Screen("Result").GetComponentsInChildren<Clicker>(false).Count(c => c.name.StartsWith("Kingdom ")));
+            CheckReadable("Result");
+
+            // The annals: the start, the first blood, the verdict, and honours.
+            Assert.IsTrue(root.Screens.Key(KeyCode.RightArrow));
+            Assert.AreEqual(3, root.Screens.Results.Tab);
+            var moments = Texts("Result", "Moment").Select(t => t.text).ToList();
+            StringAssert.StartsWith("The battle begins on", moments[0]);
+            Assert.IsTrue(moments.Any(m => m.StartsWith("First blood")), string.Join(" | ", moments));
+            Assert.AreEqual("Victory.", moments.Last());
+            Assert.Greater(Texts("Result", "Honour").Count, 0);
+            CheckReadable("Result");
+
+            // Round to the tallies again.
+            Assert.IsTrue(root.Screens.Key(KeyCode.Tab));
+            Assert.AreEqual(0, root.Screens.Results.Tab);
+        }
+
+        [UnityTest]
+        public IEnumerator EightKingdomsFitEveryPage()
+        {
+            yield return Fought(8, "mock_marches", 20);
+            UiKit.Motion.Off = true;
+            foreach (var size in new[] { new Vector2Int(1280, 720), new Vector2Int(3840, 2160) })
+            {
+                yield return ViewAt(size.x, size.y);
+                Assert.AreEqual(8, Texts("Result", "Player").Count(t => t.text != ""), $"eight rows at {size}");
+                for (int tab = 0; tab < ResultScreen.Tabs.Length; tab++)
+                {
+                    Click("Result", ResultScreen.Tabs[tab]);
+                    yield return null;
+                    CheckReadable("Result");
+                }
+                Click("Result", "Kingdoms");
+                yield return null;
+                Assert.AreEqual(8, root.Screens.Screen("Result").GetComponentsInChildren<Clicker>(false).Count(c => c.name.StartsWith("Kingdom ")),
+                    "every kingdom can be picked");
+                Click("Result", "Graphs");
+                yield return null;
+                Assert.AreEqual(8, root.Screens.Screen("Result").GetComponentInChildren<LineGraph>().Lines.Count);
+                Click("Result", "Tallies");
+                yield return null;
+                Uncovered(FindButton("Result", "Look at the field"));
+                Uncovered(FindButton("Result", "Return to menu"));
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EnterLooksAtTheFieldAndEscapeReturnsToTheMenu()
+        {
+            yield return Fought(2, "mock_frost", 5);
+            UiKit.Motion.Off = true;
+            yield return ViewAt(1280, 720);
+            Assert.IsTrue(root.Screens.Key(KeyCode.Return), "Enter presses Proceed");
+            Assert.IsFalse(root.Screens.Screen("Result").activeSelf, "the page is put away");
+            Assert.IsTrue(((MockBackend)root.Backend).SeesAll);
+            Click("Results", "Results");
+            Assert.IsTrue(root.Screens.Screen("Result").activeSelf);
+            yield return null;
+            Assert.IsTrue(root.Screens.Key(KeyCode.Escape), "Escape presses Main Menu");
+            Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
         }
 
         [UnityTest]

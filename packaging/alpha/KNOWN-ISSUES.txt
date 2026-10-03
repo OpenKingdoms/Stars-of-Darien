@@ -13,9 +13,6 @@ NOT IN THIS ALPHA YET
 - The campaign. The Play the Adventure door only says it comes later.
 - The map editor and Load game on the main menu. To load a saved game, open
   the skirmish screen and press Load there.
-- A score screen after the battle. Victory or defeat shows the kingdoms and
-  their state, without units built, kills or a score.
-- Veteran ranks and kill counts on units.
 - Game speeds other than Normal and Fast, and a pause key in battle. F1
   opens the game menu, which stops the battle.
 - Separate volume for music, sound and unit voices, and a resolution

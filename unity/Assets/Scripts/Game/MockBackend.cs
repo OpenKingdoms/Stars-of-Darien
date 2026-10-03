@@ -294,6 +294,7 @@ namespace OpenKingdomsUnity.Game
 
         public void EndGame()
         {
+            ForgetRecord();
             units.Clear();
             byHandle.Clear();
             placed.Clear();
@@ -417,6 +418,7 @@ namespace OpenKingdomsUnity.Game
             };
             units.Add(u);
             byHandle[u.Handle] = u;
+            NoteSpawn(u);
             return u;
         }
 
@@ -437,7 +439,9 @@ namespace OpenKingdomsUnity.Game
             for (int i = 0; i < economy.Count; i++)
             {
                 var e = economy[i];
+                float was = e.Mana;
                 e.Mana = Mathf.Min(e.Storage, e.Mana + e.Income * dt);
+                KeptOf(i).Gathered += Mathf.Max(0f, e.Mana - was);
                 economy[i] = e;
             }
 
@@ -481,7 +485,8 @@ namespace OpenKingdomsUnity.Game
             }
             StepFx(dt);
 
-            if (Tick % Tps == 0) CheckOutcome();
+            if (Tick % Tps == 0) { CheckOutcome(); NoteStanding(); }
+            NoteSample();
         }
 
         void Think(Unit u, float dt)
@@ -584,6 +589,7 @@ namespace OpenKingdomsUnity.Game
             if (e.Mana < rate * dt) return;
             e.Mana -= rate * dt;
             economy[u.Player] = e;
+            KeptOf(u.Player).Spent += rate * dt;
             BuildSparkle(u);
             u.BuildLeft -= dt;
             if (u.BuildLeft > 0) return;
@@ -596,6 +602,7 @@ namespace OpenKingdomsUnity.Game
                 made = Spawn(u.BuildDef, u.Player, new Vector2(u.Pos.x + h.x, u.Pos.z + h.z));
             }
             made.Home = u.Home;
+            NoteFinished(made);
             if (u.Rally is Vector2 rally) { made.Goal = rally; made.Home = rally; made.Ordered = true; }
             u.BuildDef = -1;
             u.BuildAt = null;
@@ -624,6 +631,7 @@ namespace OpenKingdomsUnity.Game
 
         void Shoot(Unit u, Unit t)
         {
+            if (RoleOf(u.Def) == Role.Mage) NoteCast(u.Player);
             var from = u.Pos + Vector3.up * 1.2f;
             var to = t.Pos + Vector3.up * 0.8f;
             float time = Mathf.Max(0.3f, (to - from).magnitude / 18f);
@@ -635,11 +643,15 @@ namespace OpenKingdomsUnity.Game
         void Hurt(Unit t, int dmg, int by = -1)
         {
             if (t.Dying || dmg <= 0) return;
+            Unit killer = null;
+            if (by >= 0) byHandle.TryGetValue(by, out killer);
+            NoteHit(killer, t, Mathf.Min(dmg, t.Health));
             t.Health -= dmg;
             if (t.Health > 0) return;
             t.Health = 0;
             t.Dying = true;
-            if (by >= 0 && byHandle.TryGetValue(by, out var killer) && killer.Player != t.Player) killer.Kills++;
+            if (killer != null && killer.Player != t.Player) killer.Kills++;
+            NoteDeath(killer, t);
         }
 
         // Kills as the mock counts them, and a rank at three and at ten.
