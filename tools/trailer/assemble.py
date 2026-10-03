@@ -116,7 +116,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--timeline", default=os.path.join(HERE, "timeline.json"))
     ap.add_argument("--shots", default="D:/OKBuild/video/trailer-work/shots")
-    ap.add_argument("--out", default="D:/OKBuild/video/darien-reforged-alpha-trailer.mp4")
+    ap.add_argument("--out", default="D:/OKBuild/video/stars-of-darien-alpha-trailer.mp4")
     ap.add_argument("--discord", default=os.environ.get("DISCORD_LINK", ""))
     ap.add_argument("--music", default="")
     ap.add_argument("--music-db", default="-14")
@@ -187,7 +187,7 @@ def main():
     run(args)
 
     # The shot list, with each segment's start in the finished trailer.
-    lines = ["# Darien Reforged, Alpha 1 trailer: shot list", "", "Length %d:%05.2f, %dx%d at %d fps." % (int(t // 60), t % 60, W, H, FPS), ""]
+    lines = ["# Stars of Darien, Alpha 1 trailer: shot list", "", "Length %d:%05.2f, %dx%d at %d fps." % (int(t // 60), t % 60, W, H, FPS), ""]
     for (seg, _, frames), s in zip(segs, starts):
         what = ("Card: " + " / ".join(l["text"] for l in seg["card"])) if "card" in seg else seg.get("note", seg["shot"])
         lines.append("%d:%05.2f  %-6s %s" % (int(s // 60), s % 60, "(%.1fs)" % (frames / FPS), what.replace("[DISCORD LINK]", a.discord or "[DISCORD LINK]")))

@@ -51,7 +51,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             cam = camera;
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             w = new StreamWriter(path, false, new UTF8Encoding(false));
-            w.WriteLine("# Darien Reforged trailer sound log, " + TrailerDirector.Fps + " frames a second");
+            w.WriteLine("# Stars of Darien trailer sound log, " + TrailerDirector.Fps + " frames a second");
             // What already runs and flies at the first frame started before
             // the shot and is not heard again.
             Observe(-1, false);

@@ -1,7 +1,7 @@
 {
   "segments": [
     {"card": [
-      {"text": "Darien Reforged", "font": "title", "size": 150, "rule": 520},
+      {"text": "Stars of Darien", "font": "title", "size": 150, "rule": 520},
       {"text": "Total Annihilation: Kingdoms, remastered", "font": "caps", "size": 44, "delay": 0.5}
     ], "seconds": 4.0},
     {"shot": "menu-main", "from": 0.2, "to": 3.4, "trans": 0.6, "style": "fadeblack", "note": "The main menu, on the original's own screen"},

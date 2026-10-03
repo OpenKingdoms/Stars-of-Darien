@@ -1,4 +1,4 @@
-// TrailerDirector.cs - films the Darien Reforged trailer on the real engine
+// TrailerDirector.cs - films the Stars of Darien trailer on the real engine
 // without a window: each scene sets up a skirmish through the engine, puts
 // armies down, gives orders through IGameBackend and films shots with a
 // still or slowly moving camera. Every frame is drawn into a render
