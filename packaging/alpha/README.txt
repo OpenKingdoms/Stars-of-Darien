@@ -11,8 +11,8 @@ come in later builds. KNOWN-ISSUES.txt lists what is not in yet and the
 rough edges we already know about.
 
 This game was called Darien Reforged until now. The first time it starts
-under its new name, it copies your saved games, screenshots and options
-from the old name's folder, and it leaves the old folder as it was.
+under its new name, it copies your saved games, screenshots, options and
+game folder setting from Darien Reforged, and it leaves those as they were.
 
 
 YOU NEED YOUR OWN COPY OF THE GAME
