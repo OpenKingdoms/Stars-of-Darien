@@ -3,7 +3,8 @@
 // clip is sixty frames and a contact sheet, LATEST.txt names the newest,
 // and F9 is free in the game. In batch mode the cameras are drawn again,
 // and run with a window the screen itself is read, which is how the owner
-// takes them.
+// takes them. A picture in the screen's own format, which Metal can't read
+// back, still reads back in its true colours.
 using System;
 using System.Collections;
 using System.IO;
@@ -13,6 +14,8 @@ using NUnit.Framework;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.Capture;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
@@ -77,7 +80,8 @@ namespace OpenKingdomsUnity.Tests
         static void AssertRoute(OwnerCapture cap)
         {
             Debug.Log($"Capture test: route {cap.LastRoute}, screen {Screen.width}x{Screen.height} on {SystemInfo.graphicsDeviceType}, batch {Application.isBatchMode}, " +
-                $"upside down {OwnerCapture.FoundFlipped}, uv starts at top {SystemInfo.graphicsUVStartsAtTop}");
+                $"upside down {OwnerCapture.FoundFlipped}, uv starts at top {SystemInfo.graphicsUVStartsAtTop}, " +
+                $"default format {SystemInfo.GetGraphicsFormat(DefaultFormat.LDR)}, read back as {OwnerCapture.ReadableFormat}");
             Assert.AreEqual(Application.isBatchMode ? OwnerCapture.CamerasRoute : OwnerCapture.ScreenRoute, cap.LastRoute, "the screen is read whenever there is one");
         }
 
@@ -247,6 +251,11 @@ namespace OpenKingdomsUnity.Tests
             Scene();
             var cap = OwnerCapture.Ensure();
             yield return null;
+            // A picture first, so the clip's second isn't spent on what the
+            // first capture of a run sets up.
+            string before = cap.LastPath;
+            cap.Shot();
+            yield return Until(() => cap.LastPath != before, 20f);
             cap.StartClip();
             yield return new WaitForSecondsRealtime(1f);
             Assert.IsTrue(cap.Recording);
@@ -262,6 +271,35 @@ namespace OpenKingdomsUnity.Tests
             int n = Directory.GetFiles(folder, "frame-*.png").Length;
             Assert.That(n, Is.InRange(5, 20), "about a second of frames");
             OwnerCapture.Ensure();
+        }
+
+        // A picture in the default format, which is the screen's own and on
+        // Metal can't be read back, reads back in its own colours.
+        [UnityTest]
+        public IEnumerator APictureInTheDefaultFormatReadsBackInItsColours()
+        {
+            var colour = new Color32(200, 40, 10, 255);
+            var src = new Texture2D(16, 8, TextureFormat.RGBA32, false);
+            src.SetPixels32(Enumerable.Repeat(colour, 16 * 8).ToArray());
+            src.Apply();
+            var screen = new RenderTexture(16, 8, 0);
+            var format = screen.graphicsFormat;
+            Graphics.Blit(src, screen);
+            RenderTexture.active = null;
+            var rt = OwnerCapture.Readable(screen);
+            Debug.Log($"Capture test: {format} read back as {rt.graphicsFormat}, copied {rt != screen}");
+            Assert.IsTrue(SystemInfo.IsFormatSupported(rt.graphicsFormat, GraphicsFormatUsage.ReadPixels), $"{rt.graphicsFormat} can be read back");
+            var req = AsyncGPUReadback.Request(rt, 0, TextureFormat.RGBA32);
+            yield return Until(() => req.done, 10f);
+            Assert.IsTrue(req.done && !req.hasError, "read back");
+            var px = req.GetData<byte>().ToArray();
+            UnityEngine.Object.Destroy(rt);
+            UnityEngine.Object.Destroy(src);
+            for (int i = 0; i < px.Length; i += 4)
+            {
+                var got = new Color32(px[i], px[i + 1], px[i + 2], px[i + 3]);
+                Assert.That(Mathf.Abs(got.r - colour.r) <= 2 && Mathf.Abs(got.g - colour.g) <= 2 && Mathf.Abs(got.b - colour.b) <= 2, $"texel {i / 4} is {got}, not {colour}");
+            }
         }
 
         // The screen read back top first or bottom first, told apart against

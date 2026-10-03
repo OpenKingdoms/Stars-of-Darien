@@ -6,6 +6,7 @@ using System;
 using System.Collections;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Rendering;
 
 namespace OpenKingdomsUnity.Game.Capture
@@ -130,6 +131,9 @@ namespace OpenKingdomsUnity.Game.Capture
             var rt = new RenderTexture(w, h, 0) { name = "owner capture" };
             try { ScreenCapture.CaptureScreenshotIntoRenderTexture(rt); }
             catch (Exception e) { Destroy(rt); Fail(e.Message, failed); return; }
+            // Taken in the screen's own format, which Metal can't read back,
+            // and then copied into one it can.
+            rt = Readable(rt);
             // Some graphics APIs hand the screen back upside down. The first
             // capture is checked against Unity's own picture, read the slow
             // way once, and the answer kept. A screen that reads the same both
@@ -179,7 +183,7 @@ namespace OpenKingdomsUnity.Game.Capture
             var cams = Camera.allCameras.Where(c => c.targetTexture == null).OrderBy(c => c.depth).ToList();
             if (cams.Count == 0) { Fail("no camera draws the screen", failed); return; }
             var top = cams[cams.Count - 1];
-            var rt = new RenderTexture(size.x, size.y, 24) { name = "owner capture" };
+            var rt = new RenderTexture(size.x, size.y, 24, ReadableFormat) { name = "owner capture" };
             var overlays = FindObjectsByType<Canvas>(FindObjectsSortMode.None).Where(c => c.isRootCanvas && c.isActiveAndEnabled && c.renderMode == RenderMode.ScreenSpaceOverlay).ToList();
             try
             {
@@ -208,6 +212,25 @@ namespace OpenKingdomsUnity.Game.Capture
                 if (req.hasError) { Fail("the picture could not be read back", failed); return; }
                 got(req.GetData<byte>().ToArray(), size.x, size.y, false);
             });
+        }
+
+        // A colour format the GPU can read back: RGBA, which Windows gets by
+        // default. Metal's default, BGRA, can't be read back.
+        public static GraphicsFormat ReadableFormat =>
+            SystemInfo.IsFormatSupported(GraphicsFormat.R8G8B8A8_SRGB, GraphicsFormatUsage.ReadPixels) ? GraphicsFormat.R8G8B8A8_SRGB : GraphicsFormat.R8G8B8A8_UNorm;
+
+        // rt when the GPU can read it back, or else a copy drawn from it in
+        // ReadableFormat, with rt let go.
+        public static RenderTexture Readable(RenderTexture rt)
+        {
+            if (SystemInfo.IsFormatSupported(rt.graphicsFormat, GraphicsFormatUsage.ReadPixels)) return rt;
+            var copy = new RenderTexture(rt.width, rt.height, 0, ReadableFormat) { name = rt.name };
+            var was = RenderTexture.active;
+            Graphics.Blit(rt, copy);
+            RenderTexture.active = was == rt ? null : was;
+            rt.Release();
+            Destroy(rt);
+            return copy;
         }
 
         void Fail(string why, Action failed)
