@@ -41,12 +41,28 @@ def textured(k, extras=None):
 
 
 class CheckTests(unittest.TestCase):
-    def problems(self, *a, **kw):
+    def problems(self, *a, own=False, **kw):
         path = glb(*a, **kw)
         try:
-            return okpaint.check(path)
+            return okpaint.check(path, own=own)
         finally:
             os.remove(path)
+
+    def test_an_artists_own_picture_ships_from_a_pull_request(self):
+        self.assertEqual([], self.problems([textured(0)], images=1, own=True))
+        self.assertEqual([0], okpaint.own_pictures({"materials": [textured(0)], "textures": [{"source": 0}], "images": [{}]}))
+
+    def test_a_carved_model_never_holds_a_picture_of_its_own(self):
+        p = self.problems([textured(0)], images=1, own=True, node_extras={"okCarved": "batch.py"})
+        self.assertTrue(any("carved" in m and "img0" in m for m in p), p)
+        self.assertEqual([], self.problems([textured(0, {"okGenerated": True})], images=1, own=True,
+                                           node_extras={"okCarved": "batch.py"}))
+
+    def test_a_review_copy_or_a_kept_picture_fails_from_a_pull_request_too(self):
+        p = self.problems([textured(0)], images=1, own=True, node_extras={"okFromPlayersFiles": True})
+        self.assertTrue(any("okFromPlayersFiles" in m for m in p), p)
+        p = self.problems([textured(0, {"okPaint": PAINT})], images=1, own=True)
+        self.assertTrue(any("still holds a picture" in m for m in p), p)
 
     def test_a_painted_material_without_a_picture_ships(self):
         self.assertEqual([], self.problems([{"name": "walls", "extras": {"okPaint": PAINT}}]))
@@ -92,7 +108,7 @@ class CheckTests(unittest.TestCase):
         bad = []
         for f in sorted(os.listdir(FEATURES)):
             if f.lower().endswith(".glb"):
-                bad += okpaint.check(os.path.join(FEATURES, f))
+                bad += okpaint.check(os.path.join(FEATURES, f), own=True)
         self.assertEqual([], bad)
 
 

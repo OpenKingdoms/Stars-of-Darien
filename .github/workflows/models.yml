@@ -1,5 +1,6 @@
 # Checks the models a pull request adds or changes, with no Unity and no game
-# files. Runs on every pull request so it can be a required check.
+# files. Runs on every pull request so it can be a required check. The
+# texture sheet draws the pull request's new pictures for the reviewers.
 name: Models
 
 on:
@@ -23,14 +24,40 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Only the texture sheet needs it, so the check runs without it.
+      - name: Get Pillow for the texture sheet
+        continue-on-error: true
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --only-binary :all: pillow==12.2.0
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+
       - name: Test the check itself
-        run: python3 scripts/test_check_models.py
+        run: |
+          python3 scripts/test_check_models.py
+          python3 -m unittest tools/sprite-replace/test_okpaint.py
 
       - name: Check the changed models
         if: github.event_name == 'pull_request'
         env:
           BASE: ${{ github.base_ref }}
-        run: python3 scripts/check-models.py --changed "origin/$BASE"
+        run: python3 scripts/check-models.py --changed "origin/$BASE" --sheet new-textures.png
+
+      - name: Attach the texture sheet
+        id: sheet
+        if: always() && github.event_name == 'pull_request' && hashFiles('new-textures.png') != ''
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          path: new-textures.png
+          archive: false
+          retention-days: 30
+
+      - name: Link the texture sheet
+        if: always() && steps.sheet.outputs.artifact-url != ''
+        env:
+          URL: ${{ steps.sheet.outputs.artifact-url }}
+        run: echo "The texture sheet is [new-textures.png]($URL), attached to this run." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check every committed model
         if: github.event_name == 'workflow_dispatch'

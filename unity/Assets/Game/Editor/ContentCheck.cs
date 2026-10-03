@@ -1,10 +1,12 @@
 // ContentCheck.cs - what a built player carries, and whether any of it could
 // hold the original game's pixels. It lists every texture, mesh, font and
 // sound Unity packed by the asset it came from, and every file under
-// StreamingAssets. A model there holds geometry and recipes only: its
-// pictures made by our own generators (okGenerated) or painted at load from
-// the player's files (okPaint, a recipe of names and a few numbers), by the
-// rules of tools/sprite-replace/okpaint.py. Review copies of carved models
+// StreamingAssets. A model there holds geometry, recipes and the pictures
+// that may ship, by the rules of tools/sprite-replace/okpaint.py: pictures
+// made by our own generators (okGenerated), pictures painted at load from
+// the player's files (okPaint, a recipe of names and a few numbers), and an
+// artist's own pictures, which ship once their pull request is merged. A
+// carved model (okCarved) holds no picture of its own, and review copies
 // with the player's pixels live in folders that never ship.
 using System;
 using System.Collections.Generic;
@@ -42,7 +44,7 @@ namespace OpenKingdomsUnity.Studio
         // The kinds of packed object the report lists.
         public static readonly string[] PackedKinds = { "Texture2D", "Texture3D", "Texture2DArray", "Cubemap", "CubemapArray", "Sprite", "Mesh", "Font", "AudioClip", "VideoClip" };
 
-        public enum Kind { Generated, PaintedAtLoad, Plain, Data, Problem }
+        public enum Kind { Generated, Own, PaintedAtLoad, Plain, Data, Problem }
 
         // Unity writes this into StreamingAssets for its service packages.
         public const string UnityServicesFile = "UnityServicesProjectConfiguration.json";
@@ -105,7 +107,7 @@ namespace OpenKingdomsUnity.Studio
             }
             var textures = MiniJson.Arr(root, "textures") ?? new List<object>();
             var images = MiniJson.Arr(root, "images") ?? new List<object>();
-            var allowed = new HashSet<int>();
+            var made = new HashSet<int>();
             bool painted = false;
             int before = problems.Count;
             foreach (var mo in MiniJson.Arr(root, "materials") ?? new List<object>())
@@ -118,6 +120,7 @@ namespace OpenKingdomsUnity.Studio
                 if (extras.ContainsKey("okPaint"))
                 {
                     painted = true;
+                    foreach (var s in sources) made.Add(s);
                     if (used.Count > 0) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} still holds a picture");
                     var paint = MiniJson.Obj(extras, "okPaint");
                     if (paint == null) problems.Add($"painted material {MiniJson.Text(m, "name", "?")} has no recipe");
@@ -131,15 +134,20 @@ namespace OpenKingdomsUnity.Studio
                     }
                 }
                 else if (extras.TryGetValue("okGenerated", out var g) && (g is bool b && b || g is double d && d != 0))
-                    foreach (var s in sources) allowed.Add(s);
+                    foreach (var s in sources) made.Add(s);
             }
-            for (int k = 0; k < images.Count; k++)
-                if (!allowed.Contains(k)) problems.Add($"picture {MiniJson.Text(images[k], "name", k.ToString())} is not from a material marked okGenerated");
+            // The artist's own pictures ship, except from a model the sprite
+            // tools carved from the player's files.
+            var own = Enumerable.Range(0, images.Count).Where(k => !made.Contains(k)).ToList();
+            bool carved = (MiniJson.Arr(root, "nodes") ?? new List<object>()).Any(o => (MiniJson.Obj(o, "extras") ?? new Dictionary<string, object>()).ContainsKey("okCarved"));
+            if (carved)
+                foreach (var k in own) problems.Add($"picture {MiniJson.Text(images[k], "name", k.ToString())} is in a carved model, which holds only pictures marked okGenerated");
             foreach (var list in new[] { "nodes", "meshes", "scenes" })
                 foreach (var o in MiniJson.Arr(root, list) ?? new List<object>())
                     if ((MiniJson.Obj(o, "extras") ?? new Dictionary<string, object>()).ContainsKey("okFromPlayersFiles"))
                         problems.Add("stamped okFromPlayersFiles, a review copy with the player's pixels");
             if (problems.Count > before) return Kind.Problem;
+            if (own.Count > 0) return Kind.Own;
             if (images.Count > 0) return Kind.Generated;
             return painted ? Kind.PaintedAtLoad : Kind.Plain;
         }
@@ -265,6 +273,7 @@ namespace OpenKingdomsUnity.Studio
             switch (k)
             {
                 case Kind.Generated: return "generated textures";
+                case Kind.Own: return "the artist's own pictures";
                 case Kind.PaintedAtLoad: return "painted at load";
                 case Kind.Plain: return "colours only";
                 case Kind.Data: return "data";

@@ -1,6 +1,6 @@
 // ContentCheckTests.cs - the build's content check: which models may ship,
-// that carved folders and the original's own files fail it, and that every
-// hand-built model in the project passes.
+// that an artist's own pictures do, that carved folders and the original's
+// own files fail it, and that every hand-built model in the project passes.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -49,8 +49,8 @@ namespace OpenKingdomsUnity.Studio.Tests
         const string Generated = "{\"materials\":[{\"name\":\"bark\",\"extras\":{\"okGenerated\":true},\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
             "\"textures\":[{\"source\":0}],\"images\":[{\"name\":\"bark\"}]}";
         const string Painted = "{\"materials\":[{\"name\":\"roof\",\"extras\":{\"okPaint\":{\"kind\":\"feature\",\"name\":\"AraHut01\"}}}]}";
-        const string Carved = "{\"materials\":[{\"name\":\"sprite\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
-            "\"textures\":[{\"source\":0}],\"images\":[{\"name\":\"AraHut01 frame 0\"}]}";
+        const string Own = "{\"materials\":[{\"name\":\"thatch\",\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
+            "\"textures\":[{\"source\":0}],\"images\":[{\"name\":\"thatch painted by the artist\"}]}";
         const string PaintedWithPicture = "{\"materials\":[{\"name\":\"roof\",\"extras\":{\"okPaint\":{\"kind\":\"feature\"}},\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
             "\"textures\":[{\"source\":0}],\"images\":[{\"name\":\"x\"}]}";
         const string Review = "{\"nodes\":[{\"name\":\"root\",\"extras\":{\"okFromPlayersFiles\":true}}]}";
@@ -73,11 +73,23 @@ namespace OpenKingdomsUnity.Studio.Tests
         }
 
         [Test]
-        public void APictureNotMarkedGeneratedFails()
+        public void AnArtistsOwnPictureMayShip()
         {
             var why = new List<string>();
-            Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(Glb(Carved), why));
-            StringAssert.Contains("not from a material marked okGenerated", why[0]);
+            Assert.AreEqual(ContentCheck.Kind.Own, ContentCheck.Glb(Glb(Own), why));
+            CollectionAssert.IsEmpty(why);
+        }
+
+        [Test]
+        public void ACarvedModelWithAPictureOfItsOwnFails()
+        {
+            var why = new List<string>();
+            string carved = Own.Substring(0, Own.Length - 1) + ",\"nodes\":[{\"name\":\"AraHut01\",\"extras\":{\"okCarved\":\"batch.py\"}}]}";
+            Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(Glb(carved), why));
+            Assert.IsTrue(why.Any(w => w.Contains("carved")), string.Join("; ", why));
+            string generated = Generated.Substring(0, Generated.Length - 1) + ",\"nodes\":[{\"name\":\"AraHut01\",\"extras\":{\"okCarved\":\"batch.py\"}}]}";
+            Assert.AreEqual(ContentCheck.Kind.Generated, ContentCheck.Glb(Glb(generated), why));
+            Assert.AreEqual(1, why.Count, "a carved model's generated pictures still ship");
         }
 
         [Test]
@@ -111,6 +123,8 @@ namespace OpenKingdomsUnity.Studio.Tests
             var why = new List<string>();
             Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(Glb(Review), why));
             Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(new byte[] { 1, 2, 3 }, why));
+            string reviewWithPicture = Own.Substring(0, Own.Length - 1) + ",\"nodes\":[{\"name\":\"root\",\"extras\":{\"okFromPlayersFiles\":true}}]}";
+            Assert.AreEqual(ContentCheck.Kind.Problem, ContentCheck.Glb(Glb(reviewWithPicture), why), "an own picture never excuses a review copy");
         }
 
         string Put(string rel, byte[] bytes)
@@ -126,6 +140,7 @@ namespace OpenKingdomsUnity.Studio.Tests
         {
             Put("Game_Data/StreamingAssets/Assets/Overrides/Features/Hut.glb", Glb(Generated));
             Put("Game_Data/StreamingAssets/Assets/Overrides/Features/Tree.glb", Glb(Painted));
+            Put("Game_Data/StreamingAssets/Assets/Overrides/Features/Barn.glb", Glb(Own));
             Put("Game_Data/StreamingAssets/Assets/Overrides/Units/flight.json", Encoding.UTF8.GetBytes("{}"));
             Put("Game_Data/Plugins/x86_64/okengine.dll", new byte[] { 0 });
             Put("Game_Data/StreamingAssets/" + ContentCheck.UnityServicesFile, Encoding.UTF8.GetBytes("{}"));
@@ -137,7 +152,8 @@ namespace OpenKingdomsUnity.Studio.Tests
             };
             var r = ContentCheck.Scan(temp, packed);
             CollectionAssert.IsEmpty(r.Problems);
-            Assert.AreEqual(4, r.Streaming.Count);
+            Assert.AreEqual(5, r.Streaming.Count);
+            Assert.AreEqual(ContentCheck.Kind.Own, r.Streaming.Single(e => e.Path.EndsWith("Barn.glb")).Kind);
             Assert.AreEqual(2, r.Assets.Count);
             StringAssert.Contains("RESULT: PASS", ContentCheck.Describe(r, "test"));
         }

@@ -27,7 +27,7 @@ sys.path.insert(0, HERE)
 import okpaint  # noqa: E402
 
 OVERRIDES = os.path.join(os.path.dirname(os.path.dirname(HERE)), "unity", "Assets", "Overrides")
-CARVED = "okCarved"
+CARVED = okpaint.CARVED
 
 
 def read_glb(path):

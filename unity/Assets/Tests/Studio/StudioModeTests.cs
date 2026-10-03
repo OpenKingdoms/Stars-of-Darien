@@ -462,18 +462,25 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
-        public void BudgetsAndPicturesAreChecked()
+        public void TrianglesAndPicturesAreAdviceUpToTheGuardsAndRefusedPastThem()
         {
             var f = Facts(new Bounds(new Vector3(0, 7, 0), new Vector3(3, 14, 3)), 9000);
             f.Textures.Add(new TextureFact { Name = "huge", Width = 4096, Height = 4096 });
             f.Textures.Add(new TextureFact { Name = "odd.webp", Readable = false });
             f.MissingTextures.Add("leaves.png");
             var issues = ModelCheck.Run(f, StudioFix.None, Feature(1, 1, 14f));
-            Assert.IsTrue(issues.Any(i => i.Level == Level.Warning && i.Text.Contains("9,000")), string.Join("\n", issues));
-            Assert.IsTrue(issues.Any(i => i.Level == Level.Warning && i.Text.Contains("huge") && i.Text.Contains("4096")));
+            Assert.IsTrue(issues.Any(i => i.Level == Level.Note && i.Text.Contains("9,000")), string.Join("\n", issues));
+            Assert.IsTrue(issues.Any(i => i.Level == Level.Note && i.Text.Contains("huge") && i.Text.Contains("4096")));
             Assert.IsTrue(issues.Any(i => i.Level == Level.Warning && i.Text.Contains("odd.webp")));
             Assert.IsTrue(issues.Any(i => i.Level == Level.Warning && i.Text.Contains("leaves.png")));
-            Assert.IsFalse(ModelCheck.Blocks(issues), "budgets warn, they do not block");
+            Assert.IsFalse(ModelCheck.Blocks(issues), "advice does not block");
+
+            var heavy = Facts(new Bounds(new Vector3(0, 7, 0), new Vector3(3, 14, 3)), 100001);
+            heavy.Textures.Add(new TextureFact { Name = "photo", Width = 6000, Height = 4000 });
+            issues = ModelCheck.Run(heavy, StudioFix.None, Feature(1, 1, 14f));
+            Assert.IsTrue(issues.Any(i => i.Level == Level.Problem && i.Text.Contains("100,001")), string.Join("\n", issues));
+            Assert.IsTrue(issues.Any(i => i.Level == Level.Problem && i.Text.Contains("photo")));
+            Assert.IsTrue(ModelCheck.Blocks(issues), "past the guards the pull request check would fail it");
         }
 
         [Test]

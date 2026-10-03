@@ -35,6 +35,11 @@ one with keys it does not know or more than MAX_NUMBERS numbers. A texture made 
 (bark, leaves, tiles) is not the original's art and ships as it is, once
 its maker marks it with generated().
 
+Everything the tools here make must pass check(), since they work beside
+the player's files. An artist's own picture in a model sent as a pull
+request ships once the pull request is merged, and scripts/check-models.py
+takes it with own=True. A carved model (okCarved) never holds one.
+
 In Blender:
 
     okpaint.generated(img)                   mark a texture made from noise and numbers
@@ -57,6 +62,7 @@ GENERATED = "okGenerated"
 PAINT = "okPaint"
 FALLBACK = "okFallback"
 PLAYERS_FILES = "okFromPlayersFiles"
+CARVED = "okCarved"
 TEXTURE_SLOTS = ("baseColorTexture", "metallicRoughnessTexture")
 PAINT_KEYS = ("kind", "name", "world", "gain", "bleed", "alpha", "size", "border", "tint", "mask", "delit")
 MASK_KEYS = ("cover", "hotspot")
@@ -231,33 +237,54 @@ def paint_problems(p):
     return out
 
 
-def check(path):
-    """Why the file may not ship, as a list, empty when it may: every
-    picture in it must belong to materials marked generated, a painted
-    material holds no picture and only a recipe, and it carries no
-    okFromPlayersFiles."""
-    j = glb_json(path)
-    name = os.path.basename(path)
+def _extras(o):
+    return o.get("extras") if isinstance(o, dict) and isinstance(o.get("extras"), dict) else {}
+
+
+def own_pictures(j):
+    """The indices of the pictures in no material marked generated or
+    painted at load: the artist's own."""
+    textures = j.get("textures", [])
+    made = set()
+    for m in j.get("materials", []):
+        ex = _extras(m)
+        if PAINT in ex or ex.get(GENERATED):
+            made |= {textures[t].get("source") for t in _textures_of(m) if isinstance(t, int) and 0 <= t < len(textures)}
+    return [k for k in range(len(j.get("images", []))) if k not in made]
+
+
+def content_problems(j, own=False):
+    """Why a model's glTF JSON may not ship, as a list, empty when it may:
+    a painted material holds no picture and only a recipe, nothing is
+    stamped okFromPlayersFiles, and every picture is marked generated,
+    except that with own the artist's own pictures ship unless the model
+    is carved."""
     problems = []
     textures = j.get("textures", [])
-    allowed = set()
     for m in j.get("materials", []):
-        ex = m.get("extras", {})
-        idx = [t for t in _textures_of(m) if t is not None and t < len(textures)]
-        srcs = {textures[t].get("source") for t in idx}
+        ex = _extras(m)
         if PAINT in ex:
-            problems += ["%s: material %s: %s" % (name, m.get("name"), w) for w in paint_problems(ex[PAINT])]
-        if PAINT in ex and idx:
-            problems.append("%s: painted material %s still holds a picture" % (name, m.get("name")))
-        elif ex.get(GENERATED):
-            allowed |= srcs
-    for k, im in enumerate(j.get("images", [])):
-        if k not in allowed:
-            problems.append("%s: picture %s is not from a material marked generated" % (name, im.get("name", k)))
+            problems += ["material %s: %s" % (m.get("name"), w) for w in paint_problems(ex[PAINT])]
+            if any(isinstance(t, int) and 0 <= t < len(textures) for t in _textures_of(m)):
+                problems.append("painted material %s still holds a picture" % m.get("name"))
+    carved = any(CARVED in _extras(nd) for nd in j.get("nodes", []))
+    if carved or not own:
+        images = j.get("images", [])
+        why = "a carved model holds only generated pictures" if carved else "it is not from a material marked generated"
+        for k in own_pictures(j):
+            label = images[k].get("name", k) if isinstance(images[k], dict) else k
+            problems.append("picture %s may not ship, since %s" % (label, why))
     for nd in j.get("nodes", []) + j.get("meshes", []) + j.get("scenes", []):
-        if PLAYERS_FILES in nd.get("extras", {}):
-            problems.append("%s: stamped %s" % (name, PLAYERS_FILES))
+        if PLAYERS_FILES in _extras(nd):
+            problems.append("stamped %s, a review copy holding the player's pixels" % PLAYERS_FILES)
+            break
     return problems
+
+
+def check(path, own=False):
+    """Why the file may not ship, as a list, empty when it may, by
+    content_problems."""
+    return ["%s: %s" % (os.path.basename(path), p) for p in content_problems(glb_json(path), own)]
 
 
 def main(paths):

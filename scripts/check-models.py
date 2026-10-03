@@ -4,8 +4,13 @@
     python3 scripts/check-models.py --changed origin/main   what a branch adds or changes
     python3 scripts/check-models.py --all                   every committed model
     python3 scripts/check-models.py path/to/model.glb ...   any files
+
+--sheet FILE draws the new and changed pictures into one PNG for review,
+from the checked files alone. It needs Pillow.
 """
 import argparse
+import hashlib
+import io
 import json
 import math
 import os
@@ -23,9 +28,12 @@ UNITS = "unity/Assets/Overrides/Units/"
 SAMPLES = "unity/Assets/Game/Studio/Samples/"
 NEVER = ("unity/Assets/Overrides/Generated", "unity/Assets/Overrides/Drop")
 
-# Studio Mode's limits (ModelCheck.cs), in map cells. A foundation may reach a
-# quarter of the model's whole height below the ground.
+# Studio Mode's advice (ModelCheck.cs), which reviewers see as notes, and the
+# guards past which a model fails, set to catch mistakes rather than to
+# budget. Sizes in map cells. A foundation may reach a quarter of the
+# model's whole height below the ground.
 FEATURE_TRIANGLES, UNIT_TRIANGLES, TEXTURE_SIDE = 3000, 6000, 1024
+GUARD_TRIANGLES, GUARD_TEXTURE = 100000, 4096
 BIGGEST, SMALLEST = 150.0, 1 / 16
 FLOATS, FOUNDATION = 0.15, 0.25
 MAX_BYTES = 16 << 20
@@ -44,8 +52,19 @@ class Model:
         self.path = path
         self.problems, self.notes = [], []
         self.triangles = 0
+        self.advice = 0
         self.size = None
-        self.pictures = 0
+        self.pictures = []
+
+
+class Picture:
+    def __init__(self, name, fmt, width, height, data, own):
+        self.name, self.format, self.width, self.height, self.own = name, fmt, width, height, own
+        self.data = data
+        self.sha = hashlib.sha256(data).hexdigest()
+
+    def describe(self):
+        return "%s %dx%d %s" % (self.name, self.width, self.height, self.format) if self.format else "%s (unreadable)" % self.name
 
 
 def git(*args):
@@ -120,6 +139,15 @@ def picture(b):
             i += 2 + struct.unpack(">H", b[i + 2:i + 4])[0]
         return "JPEG", 0, 0
     return None, 0, 0
+
+
+def picture_bytes(j, bin_, im):
+    views = j.get("bufferViews", [])
+    if not isinstance(im, dict) or not isinstance(im.get("bufferView"), int) or not 0 <= im["bufferView"] < len(views):
+        return None
+    v = views[im["bufferView"]]
+    start = v.get("byteOffset", 0)
+    return bin_[start:start + v.get("byteLength", 0)]
 
 
 def matmul(a, b):
@@ -202,29 +230,36 @@ def check_glb(path, data, m):
             m.problems.append("keeps its data in a separate file. Export as glTF Binary (.glb) so everything travels inside.")
             break
 
-    views = j.get("bufferViews", [])
+    own = set(okpaint.own_pictures(j))
     for k, im in enumerate(j.get("images", [])):
         label = im.get("name") or "picture %d" % k
-        if "bufferView" not in im or im["bufferView"] >= len(views):
+        data = picture_bytes(j, bin_, im)
+        if data is None:
             m.problems.append("names the picture %s outside the file. Export as glTF Binary (.glb) so pictures travel inside." % label)
             continue
-        v = views[im["bufferView"]]
-        start = v.get("byteOffset", 0)
-        fmt, w, h = picture(bin_[start:start + v.get("byteLength", 0)])
+        fmt, w, h = picture(data)
+        m.pictures.append(Picture(label, fmt, w, h, data, k in own))
         if fmt is None:
             m.problems.append("has the picture %s in a format the game cannot read. Use PNG or JPEG." % label)
+        elif max(w, h) > GUARD_TEXTURE:
+            m.problems.append("has the picture %s at %d by %d, more than %d on a side, which no model in the game needs. Scale it down to %d or less."
+                              % (label, w, h, GUARD_TEXTURE, TEXTURE_SIDE))
         elif max(w, h) > TEXTURE_SIDE:
-            m.problems.append("has the picture %s at %d by %d. Keep pictures at most %d on a side." % (label, w, h, TEXTURE_SIDE))
+            m.notes.append("its picture %s is %d by %d. Studio Mode suggests %d on a side, which is plenty at the game's zoom."
+                           % (label, w, h, TEXTURE_SIDE))
 
     box = measure(j, m)
     if box is None or m.triangles == 0:
         m.problems.append("has nothing to draw. Check that the export included the meshes.")
         return
-    budget = UNIT_TRIANGLES if kind == "unit" else FEATURE_TRIANGLES
+    m.advice = UNIT_TRIANGLES if kind == "unit" else FEATURE_TRIANGLES
     what = {"unit": "a unit", "card": "a unit card"}.get(kind, "scenery")
-    if m.triangles > budget:
-        m.problems.append("has %s triangles. Keep %s under %s, since a map can show hundreds at once."
-                          % (format(m.triangles, ","), what, format(budget, ",")))
+    if m.triangles > GUARD_TRIANGLES:
+        m.problems.append("has %s triangles, more than the %s any model may have. So many usually means a modifier such as "
+                          "Subdivision Surface was applied by mistake." % (format(m.triangles, ","), format(GUARD_TRIANGLES, ",")))
+    elif m.triangles > m.advice:
+        m.notes.append("it has %s triangles, more than the %s Studio Mode suggests for %s, since a map can show hundreds at once."
+                       % (format(m.triangles, ","), format(m.advice, ","), what))
     lo, hi = box
     size = [h - l for l, h in zip(lo, hi)]
     m.size = size
@@ -242,23 +277,9 @@ def check_glb(path, data, m):
     if off > max(0.3, 0.2 * across):
         m.notes.append("its middle is %.1f cells from the origin. The origin should be the middle of its base." % off)
 
-    # The paint-at-load rules: recipes only, and nothing made from the player's own files.
-    textures = j.get("textures", [])
-    painted = set()
-    for mat in j.get("materials", []):
-        ex = mat.get("extras", {}) if isinstance(mat.get("extras"), dict) else {}
-        idx = [t for t in okpaint._textures_of(mat) if t is not None and t < len(textures)]
-        if okpaint.PAINT in ex:
-            m.problems += ["material %s: %s" % (mat.get("name"), w) for w in okpaint.paint_problems(ex[okpaint.PAINT])]
-            if idx:
-                m.problems.append("material %s is painted at load and still holds a picture." % mat.get("name"))
-        if okpaint.PAINT in ex or ex.get(okpaint.GENERATED):
-            painted |= {textures[t].get("source") for t in idx}
-    for n in j.get("nodes", []) + j.get("meshes", []) + j.get("scenes", []):
-        if isinstance(n.get("extras"), dict) and okpaint.PLAYERS_FILES in n["extras"]:
-            m.problems.append("is stamped %s, a review copy holding the original's pixels." % okpaint.PLAYERS_FILES)
-            break
-    m.pictures = sum(1 for k in range(len(j.get("images", []))) if k not in painted)
+    # okpaint.py's rules: recipes only, nothing made from the player's own
+    # files, and the artist's own pictures, which ship once merged.
+    m.problems += okpaint.content_problems(j, own=True)
 
 
 def check_json(path, data, m):
@@ -315,26 +336,125 @@ def everything():
     return [p for p in out.splitlines() if p.lower().endswith((".glb", ".json"))]
 
 
-def summary(models, out):
-    lines = ["## Model check", "", "| Model | Result | Triangles | Size in cells (across, deep, tall) | Notes |", "| --- | --- | --- | --- | --- |"]
+def pictures_at(rev, path):
+    """The hashes of the pictures in path as it was at rev."""
+    r = subprocess.run(["git", "-C", ROOT, "show", "%s:%s" % (rev, path)], capture_output=True)
+    if r.returncode != 0 or not path.lower().endswith(".glb"):
+        return set()
+    j, bin_ = read_glb(r.stdout, Model(path))
+    if j is None:
+        return set()
+    return {hashlib.sha256(d).hexdigest() for d in (picture_bytes(j, bin_, im) for im in j.get("images", [])) if d is not None}
+
+
+def new_pictures(models, base=None):
+    """(model, picture) for each picture that is not in the model's file at
+    base's merge base, each picture once."""
+    rev = git("merge-base", base, "HEAD").strip() if base else None
+    seen, out = set(), []
+    for m in models:
+        old = pictures_at(rev, m.path) if rev else set()
+        for p in m.pictures:
+            if p.sha not in old and p.sha not in seen:
+                seen.add(p.sha)
+                out.append((m, p))
+    return out
+
+
+def own_note(m):
+    n = sum(p.own for p in m.pictures)
+    if not n:
+        return ""
+    them = "them" if n > 1 else "it"
+    return "%d picture%s of the artist's own. A reviewer confirms the artist made %s or may share %s." % (n, "s" if n > 1 else "", them, them)
+
+
+def summary(models, out, fresh=None, drawn=0):
+    lines = ["## Model check", "",
+             "| Model | Result | Triangles | Studio's advice | Pictures | Size in cells (across, deep, tall) | Notes |",
+             "| --- | --- | --- | --- | --- | --- | --- |"]
     for m in models:
         size = "%.2f, %.2f, %.2f" % (m.size[0], m.size[2], m.size[1]) if m.size else ""
-        notes = list(m.notes)
-        if m.pictures:
-            notes.append("%d picture(s) of its own. Reviewers confirm they are the artist's own work or properly licensed." % m.pictures)
+        pics = ", ".join(p.describe() + (" (own)" if p.own else "") for p in m.pictures)
+        notes = " ".join(n[0].upper() + n[1:] for n in m.notes + [own_note(m)] if n)
         result = "fails: " + " ".join(m.problems) if m.problems else "passes"
-        lines.append("| `%s` | %s | %s | %s | %s |" % (m.path, result.replace("|", "/"), format(m.triangles, ",") if m.triangles else "",
-                                                       size, " ".join(notes).replace("|", "/")))
+        cells = (m.path, result, format(m.triangles, ",") if m.triangles else "", format(m.advice, ",") if m.advice else "",
+                 pics, size, notes)
+        lines.append("| `%s` | %s | %s | %s | %s | %s | %s |" % tuple(c.replace("|", "/") for c in cells))
     if not models:
-        lines.append("| | No models changed | | | |")
+        lines.append("| | No models changed | | | | | |")
+    lines += ["", "Studio Mode suggests %s triangles for scenery and unit cards, %s for units, and pictures of at most %d on a side. "
+              "A model fails only past %s triangles or with a picture over %d on a side."
+              % (format(FEATURE_TRIANGLES, ","), format(UNIT_TRIANGLES, ","), TEXTURE_SIDE, format(GUARD_TRIANGLES, ","), GUARD_TEXTURE)]
+    if fresh is not None:
+        lines += ["", "### New and changed pictures", ""]
+        if not fresh:
+            lines.append("None.")
+        for m, p in fresh:
+            lines.append("- `%s`: %s, %s" % (m.path, p.describe(), "the artist's own" if p.own else "marked as made by the project's generators"))
+        if drawn:
+            lines += ["", "The texture sheet draws %s from the checked files alone." % ("them" if drawn == len(fresh) else "the first %d" % drawn)]
     with open(out, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
+
+
+SHEET_MOST, TILE = 120, 192
+
+
+def sheet(fresh, out):
+    """Draws each picture from its own bytes over a checkerboard, so
+    see-through parts show, with its model, name and size under it.
+    Returns how many it drew."""
+    from PIL import Image, ImageDraw, ImageFont
+    Image.MAX_IMAGE_PIXELS = GUARD_TEXTURE * GUARD_TEXTURE
+    fresh = fresh[:SHEET_MOST]
+    try:
+        font = ImageFont.load_default(size=13)
+    except TypeError:
+        font = ImageFont.load_default()
+    cols = min(6, len(fresh))
+    rows = (len(fresh) + cols - 1) // cols
+    gap, label = 16, 52
+    img = Image.new("RGB", (gap + cols * (TILE + gap), gap + rows * (TILE + label + gap)), (36, 36, 40))
+    d = ImageDraw.Draw(img)
+
+    def fit(text):
+        while len(text) > 1 and d.textlength(text, font=font) > TILE:
+            text = text[:-2] + "~"
+        return text
+
+    for i, (m, p) in enumerate(fresh):
+        x, y = gap + i % cols * (TILE + gap), gap + i // cols * (TILE + label + gap)
+        for cy in range(0, TILE, 16):
+            for cx in range(0, TILE, 16):
+                d.rectangle([x + cx, y + cy, x + cx + 15, y + cy + 15], fill=(150, 150, 150) if (cx + cy) // 16 % 2 else (110, 110, 110))
+        try:
+            if p.format is None or max(p.width, p.height) > GUARD_TEXTURE:
+                raise ValueError(p.name)
+            pic = Image.open(io.BytesIO(p.data))
+            pic.load()
+            pic = pic.convert("RGBA")
+            k = TILE / max(pic.width, pic.height)
+            if k >= 2:
+                pic = pic.resize((pic.width * int(k), pic.height * int(k)), Image.NEAREST)
+            else:
+                pic.thumbnail((TILE, TILE), Image.LANCZOS)
+            img.paste(pic, (x + (TILE - pic.width) // 2, y + (TILE - pic.height) // 2), pic)
+        except Exception:
+            d.text((x + 8, y + TILE // 2 - 8), "cannot be drawn", fill=(255, 120, 120), font=font)
+        d.text((x, y + TILE + 3), fit(os.path.basename(m.path)), fill=(235, 235, 235), font=font)
+        d.text((x, y + TILE + 19), fit(p.name), fill=(200, 200, 200), font=font)
+        d.text((x, y + TILE + 35), fit("%dx%d %s, %s" % (p.width, p.height, p.format or "?", "own" if p.own else "generated")),
+               fill=(255, 210, 120) if p.own else (160, 200, 160), font=font)
+    img.save(out, optimize=True)
+    return len(fresh)
 
 
 def main(argv):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--changed", metavar="BASE", help="check the files changed since BASE")
     ap.add_argument("--all", action="store_true", help="check every committed model")
+    ap.add_argument("--sheet", metavar="FILE", help="draw the new and changed pictures into FILE, a PNG")
     ap.add_argument("paths", nargs="*")
     a = ap.parse_args(argv)
     paths = changed(a.changed) if a.changed else everything() if a.all else [rel(p) for p in a.paths]
@@ -343,14 +463,21 @@ def main(argv):
     for m in models:
         for p in m.problems:
             print("FAIL %s: %s" % (m.path, p))
-        for n in m.notes:
-            print("note %s: %s" % (m.path, n))
-        if m.pictures:
-            print("note %s: %d picture(s) of its own, for the reviewer to confirm as the artist's own or licensed." % (m.path, m.pictures))
+        for n in m.notes + [own_note(m)]:
+            if n:
+                print("note %s: %s" % (m.path, n))
         bad += bool(m.problems)
     print("MODEL_CHECK %d files, %d failed" % (len(models), bad))
+    fresh = new_pictures(models, a.changed) if a.changed or a.sheet else None
+    drawn = 0
+    if a.sheet and fresh:
+        try:
+            drawn = sheet(fresh, a.sheet)
+            print("SHEET %d of %d new or changed pictures in %s" % (drawn, len(fresh), a.sheet))
+        except ImportError:
+            print("note: the texture sheet needs Pillow (python3 -m pip install pillow)")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
-        summary(models, os.environ["GITHUB_STEP_SUMMARY"])
+        summary(models, os.environ["GITHUB_STEP_SUMMARY"], fresh, drawn)
     return 1 if bad else 0
 
 

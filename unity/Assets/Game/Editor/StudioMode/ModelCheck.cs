@@ -1,5 +1,5 @@
 // ModelCheck.cs - the plain-words checks a model goes through before it goes
-// in the game (size, anchor, turn, budgets, pictures), with one-click fixes
+// in the game (size, anchor, turn, triangles, pictures), with one-click fixes
 // where they are safe.
 using System.Collections.Generic;
 using System.Globalization;
@@ -22,6 +22,9 @@ namespace OpenKingdomsUnity.Studio
             public override string ToString() => $"{Level}: {Text}";
         }
 
+        // Past these guards a model is refused, as the pull request check,
+        // scripts/check-models.py, fails it. The numbers below are advice.
+        public const int GuardTriangles = 100000, GuardTextureSide = 4096;
         public const int FeatureTriangles = 3000, UnitTriangles = 6000, TextureSide = 1024, TextureCount = 4;
 
         // A base may reach below the ground as a foundation, so the model
@@ -139,16 +142,20 @@ namespace OpenKingdomsUnity.Studio
 
             int budget = t != null && t.Kind == TargetKind.Unit ? UnitTriangles : FeatureTriangles;
             string kind = t == null ? "a feature" : t.Kind == TargetKind.Unit ? "a unit" : t.Kind == TargetKind.UnitCard ? "a card model" : "a feature";
-            if (f.Triangles > budget)
-                Add(Level.Warning, $"It has {N(f.Triangles)} triangles. Keep {kind} under {N(budget)}, since a map can hold hundreds of them.");
-            else Add(Level.Good, $"{N(f.Triangles)} triangles, inside the budget of {N(budget)}.");
+            if (f.Triangles > GuardTriangles)
+                Add(Level.Problem, $"It has {N(f.Triangles)} triangles, more than the {N(GuardTriangles)} any model may have. So many usually means a modifier such as Subdivision Surface was applied by mistake.");
+            else if (f.Triangles > budget)
+                Add(Level.Note, $"It has {N(f.Triangles)} triangles. The studio suggests {N(budget)} for {kind}, since a map can hold hundreds of them.");
+            else Add(Level.Good, $"{N(f.Triangles)} triangles, inside the studio's advice of {N(budget)}.");
 
             foreach (var tex in f.Textures)
             {
                 if (!tex.Readable)
                     Add(Level.Warning, $"The picture {tex.Name} is in a format the game cannot read. Use PNG or JPEG.");
+                else if (Mathf.Max(tex.Width, tex.Height) > GuardTextureSide)
+                    Add(Level.Problem, $"The picture {tex.Name} is {tex.Width} by {tex.Height}, more than {GuardTextureSide} on a side, which no model in the game needs. Scale it down to {TextureSide} or less.");
                 else if (Mathf.Max(tex.Width, tex.Height) > TextureSide)
-                    Add(Level.Warning, $"The picture {tex.Name} is {tex.Width} by {tex.Height}. {TextureSide} on a side is plenty at the game's zoom and keeps memory low.");
+                    Add(Level.Note, $"The picture {tex.Name} is {tex.Width} by {tex.Height}. {TextureSide} on a side is plenty at the game's zoom and keeps memory low.");
             }
             if (f.Textures.Count > TextureCount)
                 Add(Level.Note, $"It uses {f.Textures.Count} pictures. Fewer, shared ones draw faster.");
