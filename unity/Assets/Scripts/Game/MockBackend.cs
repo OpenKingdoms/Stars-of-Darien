@@ -245,6 +245,7 @@ namespace OpenKingdomsUnity.Game
         public void StartSkirmish(SkirmishSetup s)
         {
             EndGame();
+            SeesAll = false;
             setup = s;
             map = maps.Find(x => x.Id == s.MapId) ?? maps[0];
             rng = new System.Random((int)s.Seed);
@@ -1294,6 +1295,9 @@ namespace OpenKingdomsUnity.Game
 
         bool[] sight;
 
+        public bool SeesAll { get; private set; }
+        public void SeeAll(bool on) => SeesAll = on;
+
         public int ReadFog(byte[] into, out int width, out int height)
         {
             width = Terrain != null ? Terrain.HeightsW : 0;
@@ -1301,7 +1305,7 @@ namespace OpenKingdomsUnity.Game
             int need = width * height;
             if (into == null || into.Length < need || need == 0) return need;
             Look();
-            bool revealed = setup != null && setup.MapRevealed;
+            bool revealed = SeesAll || setup != null && setup.MapRevealed;
             bool lineOfSight = setup == null || setup.LineOfSight;
             for (int i = 0; i < need; i++)
             {

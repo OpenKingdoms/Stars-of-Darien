@@ -305,6 +305,7 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_play_ui_sound(string wav, int volume);
         [DllImport(Lib)] public static extern int okx_unit_order(int handle, out OkxOrder order);
         [DllImport(Lib)] public static extern int okx_fog([Out] byte[] cells, int cap, out int w, out int h);
+        [DllImport(Lib)] public static extern void okx_see_all(int on);
         [DllImport(Lib)] public static extern int okx_select(int[] handles, int n, int add);
         [DllImport(Lib)] public static extern int okx_selection([Out] int[] handles, int cap);
         [DllImport(Lib)] public static extern void okx_click(float x, float z, int unit, int shift);

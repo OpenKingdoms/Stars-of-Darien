@@ -768,6 +768,8 @@ namespace OpenKingdomsUnity.Game.UI
         {
             if (on)
             {
+                // The whole field, enemies and all, with the battle over.
+                root.Backend.SeeAll(true);
                 // The HUD may have changed size since the plate was made.
                 DropScreen("Results");
                 BuildResults();

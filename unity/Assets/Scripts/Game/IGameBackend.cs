@@ -208,6 +208,9 @@ namespace OpenKingdomsUnity.Game
         // 2 clear (in sight, or seen before with line of sight off). Returns the byte count, and with into null or
         // too small only reports the size. Read it a few times a second.
         int ReadFog(byte[] into, out int width, out int height);
+        // The whole map clear and every unit drawn, for looking at the field
+        // once the battle is over. A new battle starts without it.
+        void SeeAll(bool on);
 
         // The map editor. Heights are the map's own bytes, one a cell, and
         // the battle ground (Terrain, GroundHeight) follows an edit at once.

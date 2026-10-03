@@ -348,9 +348,12 @@ namespace OpenKingdomsUnity.Tests
             CollectionAssert.Contains(words, "Aramon", "with the kingdom's name");
             CheckReadable("Result");
 
+            var mock = (MockBackend)root.Backend;
+            Assert.IsFalse(mock.SeesAll);
             Click("Result", "Look at the field");
             yield return null;
             Assert.AreEqual(FlowState.Victory, root.Flow.State, "the battle stays won");
+            Assert.IsTrue(mock.SeesAll, "the whole field is in view");
             Assert.IsFalse(result.activeSelf, "the plaque is put away");
             Assert.IsTrue(root.Screens.Screen("Hud").activeSelf, "the battlefield and the HUD stay");
             Click("Results", "Results");
@@ -359,6 +362,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(FlowState.MainMenu, root.Flow.State);
 
             yield return Begin();
+            Assert.IsFalse(((MockBackend)root.Backend).SeesAll, "a new battle starts in the player's own sight");
             ((MockBackend)root.Backend).Players[0].Alive = false;
             root.Flow.Fire(FlowEvent.Lost);
             yield return ViewAt(1280, 720);

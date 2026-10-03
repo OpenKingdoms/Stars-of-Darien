@@ -1118,6 +1118,8 @@ namespace OpenKingdomsUnity.Engine
 
         byte[] fogCells = Array.Empty<byte>();
 
+        public void SeeAll(bool on) => OkEngine.okx_see_all(on ? 1 : 0);
+
         // The engine keeps one byte a cell. A height grid has one more
         // sample each way, so the last row and column repeat.
         public int ReadFog(byte[] into, out int width, out int height)

@@ -212,6 +212,9 @@ namespace OpenKingdomsUnity.Tests
             yield return null;
             Assert.IsFalse(result.activeSelf, "the plaque is put away");
             Assert.IsNotNull(root.World, "the field stays");
+            var fog = new byte[root.Backend.ReadFog(null, out _, out _)];
+            root.Backend.ReadFog(fog, out _, out _);
+            Assert.IsTrue(fog.Length > 0 && fog.All(f => f == 2), "the whole field is clear");
             ButtonOn("Results", "Results").onClick.Invoke();
             yield return null;
             Assert.IsTrue(result.activeSelf, "Results brings it back");
