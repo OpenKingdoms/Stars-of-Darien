@@ -1141,6 +1141,9 @@ namespace OpenKingdomsUnity.Engine
 
         // Not in IGameBackend yet: the engine's own sound and music, and the
         // view it places sounds by. Volume 0 to 1.
+        // Outside a battle okx_tick runs no ticks and moves the music on.
+        public void PumpAudio() => OkEngine.okx_tick(0);
+
         public bool SetAudio(float volume, bool music) =>
             OkEngine.okx_audio(volume > 0f ? 1 : 0, Mathf.RoundToInt(Mathf.Clamp01(volume) * 127f), music ? 1 : 0) == 0;
 

@@ -1060,6 +1060,8 @@ namespace OpenKingdomsUnity.Game
 
         // The mock is silent.
         public bool SetAudio(float volume, bool music) => false;
+        public int AudioPumps { get; private set; }
+        public void PumpAudio() => AudioPumps++;
         public void SetView(Vector3 centre, float width, float depth) { }
 
         public Economy ReadEconomy(int player) => PosOf(player) is int k && k >= 0 && k < economy.Count ? economy[k] : default;

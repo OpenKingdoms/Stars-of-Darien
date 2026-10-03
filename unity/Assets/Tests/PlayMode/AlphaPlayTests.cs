@@ -55,6 +55,16 @@ namespace OpenKingdomsUnity.Tests
             under.GetComponentsInChildren<Text>(true).FirstOrDefault(t => t.name == name);
 
         [UnityTest]
+        public IEnumerator TheMenusKeepTheEnginesMusicGoing()
+        {
+            yield return Boot();
+            var mock = (MockBackend)root.Backend;
+            int before = mock.AudioPumps;
+            for (int i = 0; i < 5; i++) yield return null;
+            Assert.GreaterOrEqual(mock.AudioPumps - before, 5, "every frame in the menus");
+        }
+
+        [UnityTest]
         public IEnumerator TheAlphaMenuShowsItsVersionAndClosesMultiplayer()
         {
             BuildStamp.Version = "Alpha 1 (test)";

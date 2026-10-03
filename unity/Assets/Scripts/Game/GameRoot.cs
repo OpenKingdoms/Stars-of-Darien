@@ -111,6 +111,8 @@ namespace OpenKingdomsUnity.Game
             Backend = injected ?? StartBackend();
             GlbLoader.SetPainter(Backend);
             Options = GameOptions.Load();
+            // The menus have the interface's music and sounds from the start.
+            ApplyAudio();
             UiKit.Sound = playSound = wav => Backend != null && Backend.PlaySound(wav, Options.Volume);
             Setup = DefaultSetup(Backend);
             Pointer = new GameCursorView(Backend.CursorArt, Options.CursorScale);
@@ -309,6 +311,7 @@ namespace OpenKingdomsUnity.Game
 #endif
                 return;
             }
+            if (World == null) Backend.PumpAudio();
             // Each frame from the start of a load to the first after it.
             if (loadFrameAt != 0)
             {

@@ -112,6 +112,8 @@ namespace OpenKingdomsUnity.Game
         // music follows the local kingdom, and whenever the options change.
         // False when there is no audio device, and the game plays on.
         bool SetAudio(float volume, bool music);
+        // Once a frame outside a battle, so the menu's music moves on.
+        void PumpAudio();
         // The ground the camera looks at, its centre and the width and depth
         // in view in world units, once a frame, so sounds pan and fade.
         void SetView(Vector3 centre, float width, float depth);
