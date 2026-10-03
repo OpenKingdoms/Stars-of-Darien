@@ -367,12 +367,56 @@ namespace OpenKingdomsUnity.Tests
             var t = Feature(2, 2, 3f);
             var issues = ModelCheck.Run(f, StudioFix.None, t);
             Assert.IsTrue(Has(issues, Level.Warning, FixKind.Recentre));
+            Assert.IsTrue(Has(issues, Level.Warning, FixKind.StandOnGround), string.Join("\n", issues));
             var fix = ModelCheck.Apply(FixKind.Recentre, f, StudioFix.None, t);
             var b = fix.Apply(f.Bounds);
-            Assert.AreEqual(0f, b.min.y, 1e-4f);
+            Assert.AreEqual(1f, b.min.y, 1e-4f, "centring keeps the ground line");
             Assert.AreEqual(0f, b.center.x, 1e-4f);
             Assert.AreEqual(0f, b.center.z, 1e-4f);
             Assert.IsFalse(Has(ModelCheck.Run(f, fix, t), Level.Warning, FixKind.Recentre));
+            fix = ModelCheck.Apply(FixKind.StandOnGround, f, fix, t);
+            Assert.AreEqual(0f, fix.Apply(f.Bounds).min.y, 1e-4f);
+            Assert.AreEqual(0f, fix.Apply(f.Bounds).center.x, 1e-4f);
+            Assert.IsFalse(ModelCheck.Run(f, fix, t).Any(i => i.Level >= Level.Warning), string.Join("\n", ModelCheck.Run(f, fix, t)));
+        }
+
+        [Test]
+        public void AFoundationBelowTheGroundStandsWhereItWasExported()
+        {
+            // A standing stone 4 cells tall with 0.6 of it below the ground.
+            var f = Facts(new Bounds(new Vector3(0.2f, 1.4f, 0), new Vector3(1.5f, 4, 1.5f)));
+            var t = Feature(1, 1, 4f);
+            var issues = ModelCheck.Run(f, StudioFix.None, t);
+            Assert.IsFalse(issues.Any(i => i.Level >= Level.Warning), string.Join("\n", issues));
+            Assert.IsTrue(issues.Any(i => i.Level == Level.Good && i.Text.Contains("foundation")), string.Join("\n", issues));
+
+            var b = ModelCheck.Apply(FixKind.Recentre, f, StudioFix.None, t).Apply(f.Bounds);
+            Assert.AreEqual(-0.6f, b.min.y, 1e-4f, "centring keeps the foundation");
+            Assert.AreEqual(0f, b.center.x, 1e-4f);
+
+            // Resizes scale about the anchor on the ground, foundation and all.
+            var grown = ModelCheck.Apply(FixKind.MatchSize, f, StudioFix.None, Feature(1, 1, 8f));
+            Assert.AreEqual(8f, grown.Apply(f.Bounds).size.y, 1e-3f);
+            Assert.AreEqual(-1.2f, grown.Apply(f.Bounds).min.y, 1e-3f);
+            var cm = Facts(new Bounds(new Vector3(0, 140, 0), new Vector3(150, 400, 150)));
+            var shrunk = ModelCheck.Apply(FixKind.Shrink100, cm, StudioFix.None, t);
+            Assert.AreEqual(-0.6f, shrunk.Apply(cm.Bounds).min.y, 1e-3f);
+            Assert.IsFalse(ModelCheck.Run(cm, shrunk, t).Any(i => i.Level >= Level.Warning), string.Join("\n", ModelCheck.Run(cm, shrunk, t)));
+        }
+
+        [Test]
+        public void AModelExportedTooLowStillWarns()
+        {
+            // Half of it under the ground: the origin was put at its middle.
+            var f = Facts(new Bounds(Vector3.zero, new Vector3(1.5f, 4, 1.5f)));
+            var t = Feature(1, 1, 4f);
+            var issues = ModelCheck.Run(f, StudioFix.None, t);
+            Assert.IsTrue(Has(issues, Level.Warning, FixKind.StandOnGround), string.Join("\n", issues));
+            Assert.IsFalse(Has(issues, Level.Warning, FixKind.Recentre), "it is centred");
+            var fix = ModelCheck.Apply(FixKind.StandOnGround, f, StudioFix.None, t);
+            Assert.AreEqual(0f, fix.Apply(f.Bounds).min.y, 1e-4f);
+            var deep = Facts(new Bounds(new Vector3(0, 2f - 1.2f, 0), new Vector3(1.5f, 4, 1.5f)));
+            Assert.IsTrue(Has(ModelCheck.Run(deep, StudioFix.None, t), Level.Warning, FixKind.StandOnGround), "deeper than a quarter of its height");
         }
 
         [Test]

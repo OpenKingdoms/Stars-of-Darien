@@ -11,7 +11,7 @@ namespace OpenKingdomsUnity.Studio
     public static class ModelCheck
     {
         public enum Level { Good, Note, Warning, Problem }
-        public enum FixKind { None, Recentre, MatchSize, FitFootprint, TurnQuarter, Shrink100 }
+        public enum FixKind { None, Recentre, MatchSize, FitFootprint, TurnQuarter, Shrink100, StandOnGround }
 
         public sealed class Issue
         {
@@ -23,6 +23,12 @@ namespace OpenKingdomsUnity.Studio
         }
 
         public const int FeatureTriangles = 3000, UnitTriangles = 6000, TextureSide = 1024, TextureCount = 4;
+
+        // A base may reach below the ground as a foundation, so the model
+        // never floats on a slope, down to this share of its whole height.
+        // Within OnGround of the ground line a model stands on it. The pull
+        // request check, scripts/check-models.py, uses the same numbers.
+        public const float FoundationShare = 0.25f, OnGround = 0.15f;
 
         // How tall the original stands, in cells, or 0 when unknown or not to
         // scale: a unit's model, a feature as the game draws it, and only
@@ -102,17 +108,20 @@ namespace OpenKingdomsUnity.Studio
             if (!sized && t != null && t.Kind == TargetKind.None && across > 0) Add(Level.Note, $"It is {across:0.#} cells across and {tall:0.#} tall. One cell is 16 pixels of the original.");
 
             // The anchor is where the game stands the model: the middle of its
-            // base, on the ground.
+            // base, on the ground line.
             float slack = Mathf.Max(0.3f, 0.2f * across);
             float off = new Vector2(b.center.x, b.center.z).magnitude;
-            bool floats = Mathf.Abs(b.min.y) > 0.15f;
-            if (off > slack || floats)
-            {
-                string where = off > slack ? $"its middle is {off:0.#} cells from the anchor" : "";
-                if (floats) where += (where.Length > 0 ? " and " : "") + (b.min.y > 0 ? $"it floats {b.min.y:0.##} cells above the ground" : $"it sinks {-b.min.y:0.##} cells into the ground");
-                Add(Level.Warning, "The game stands the model on its anchor, and " + where + ".", FixKind.Recentre, "Centre it on the anchor");
-            }
-            else Add(Level.Good, "It stands on its anchor.");
+            float below = -b.min.y, deepest = Mathf.Max(OnGround, FoundationShare * tall);
+            if (off > slack)
+                Add(Level.Warning, $"The game stands the model on its anchor, and its middle is {off:0.#} cells from the anchor.", FixKind.Recentre, "Centre it on the anchor");
+            if (b.min.y > OnGround)
+                Add(Level.Warning, $"It floats {b.min.y:0.##} cells above the ground.", FixKind.StandOnGround, "Stand it on the ground");
+            else if (below > deepest)
+                Add(Level.Warning, $"It sinks {below:0.##} cells into the ground, more than a foundation needs ({deepest:0.##} cells, a quarter of its height), so it was probably exported too low.",
+                    FixKind.StandOnGround, "Stand it on the ground");
+            else if (below > OnGround)
+                Add(Level.Good, $"{(off > slack ? "Its" : "It stands on its anchor, and its")} foundation reaches {below:0.##} cells below the ground, so it never floats on a slope.");
+            else if (off <= slack) Add(Level.Good, "It stands on its anchor.");
 
             // A long footprint or original that the model crosses the other way
             // was probably exported a quarter turn off.
@@ -174,7 +183,9 @@ namespace OpenKingdomsUnity.Studio
             switch (k)
             {
                 case FixKind.Recentre:
-                    return fix.Moved(new Vector3(-b.center.x, -b.min.y, -b.center.z));
+                    return Recentred(fix, f);
+                case FixKind.StandOnGround:
+                    return fix.Moved(new Vector3(0, -b.min.y, 0));
                 case FixKind.MatchSize:
                 {
                     float want = ExpectedHeight(t, original);
@@ -196,12 +207,13 @@ namespace OpenKingdomsUnity.Studio
             }
         }
 
-        // Scaling about the model's own origin can lift it off the anchor,
-        // so a resize also recentres.
+        // Centred across, with the ground line kept where it was exported. A
+        // resize scales about the anchor on the ground, so it keeps the
+        // ground line and a foundation's share, and centres across after.
         static StudioFix Recentred(StudioFix fix, ModelFacts f)
         {
             var b = fix.Apply(f.Bounds);
-            return fix.Moved(new Vector3(-b.center.x, -b.min.y, -b.center.z));
+            return fix.Moved(new Vector3(-b.center.x, 0, -b.center.z));
         }
 
         public static bool Blocks(IEnumerable<Issue> issues) => issues.Any(i => i.Level == Level.Problem);

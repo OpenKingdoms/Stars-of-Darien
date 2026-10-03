@@ -59,6 +59,8 @@ One Blender unit (one metre) is one cell of the map, and a cell is 16 pixels of 
 
 The model's origin is its anchor. Put the origin in the middle of the model's base, on the ground, at 0, 0, 0. The studio can do this for you, but getting it right in Blender saves a step every time.
 
+A model may reach below the ground on purpose. The game stands a model at the height of the ground under its anchor, so on a slope the downhill side of a flat base floats. Extrude the bottom of a standing stone or a rock straight down a little, and the extra stone fills that gap, on a slope or on ground drawn in another colour. The studio calls that a foundation and stands the model where you exported it. Keep the foundation to a quarter of the model's whole height or less, so a stone 4 cells tall can reach 1 cell below the ground and stand 3 above it. On the hilly maps the ground under a stone's base mostly falls by less than a cell, so half a cell to a cell covers most of them. A model sunk deeper than a quarter of its height, or one that floats above the ground, gets a warning.
+
 The front of the model faces south, toward the classic camera. In Blender that is the side you see in Front view (numpad 1), which is the -Y side. If you see the back of your model in the classic view, give it a half turn.
 
 ## Picking what it replaces
@@ -85,11 +87,14 @@ Some warnings come with a button that fixes them.
 
 | Button | What it does |
 | --- | --- |
-| Centre it on the anchor | Moves the model so the middle of its base is on the anchor and its lowest point is on the ground |
+| Centre it on the anchor | Moves the model across so the middle of its base is on the anchor, and keeps the height you exported it at, foundation and all |
+| Stand it on the ground | Lifts or lowers the model so its lowest point is on the ground, for a model that floats or was exported too low |
 | Match the original's height | Scales the model to the height the game draws the original at, or to the original model |
 | Fit it to the footprint | Scales the model to the width of the footprint, for features with no known height |
 | Make it 100 times smaller | For a model exported in centimetres |
 | Turn it a quarter | For a model that lies across the other way from the original |
+
+The fixes that change the size scale the model about its anchor on the ground, so a foundation keeps its share of the height.
 
 The height check says where its number comes from. When the studio has only the feature's definition to go by, it says the number is a rough guide, since the game often draws a feature shorter than its definition says.
 
@@ -184,7 +189,7 @@ On your fork's page on GitHub, press Sync fork, then Update branch. Then in GitH
 - The model is huge or tiny. It was probably exported in centimetres, or at the wrong scale. Use the fix button, or set the scale in Blender to 1 unit per metre.
 - The model lies on its back or on its face. Export as `.glb` with +Y Up ticked. FBX files from some tools carry a turn the studio can't always undo.
 - You see the back of the model in the classic view. Press Half turn.
-- The model floats or sinks. Press Centre it on the anchor, or move the origin to the bottom of the model in Blender.
+- The model floats or sinks. Press Stand it on the ground, or move the origin to the bottom of the model in Blender. A foundation down to a quarter of its height is fine and stays as it is.
 - Parts are missing or look inside out. Check the face normals in Blender (Mesh, then Normals, then Recalculate Outside).
 - A part looks plain grey or white. Its picture was not found. Export as `.glb` so the pictures travel inside, or keep the pictures beside the `.fbx` or `.obj`.
 - The model doesn't load and the message mentions compression. Untick Compression in Blender's glTF export and export again.
