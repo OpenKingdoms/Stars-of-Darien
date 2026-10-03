@@ -11,7 +11,14 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 project="$root/unity"
 version=$(sed -n 's/^m_EditorVersion: //p' "$project/ProjectSettings/ProjectVersion.txt")
-unity="${UNITY:-/Applications/Unity/Hub/Editor/$version/Unity.app/Contents/MacOS/Unity}"
+# Hub puts the Apple silicon editor in <version> or <version>-arm64.
+unity="${UNITY:-}"
+if [ -z "$unity" ]; then
+    for d in "$version" "$version-arm64"; do
+        unity="/Applications/Unity/Hub/Editor/$d/Unity.app/Contents/MacOS/Unity"
+        [ -x "$unity" ] && break
+    done
+fi
 out="${OKU_TEST_OUT:-$HOME/unity-test}"
 platforms=("$@")
 [ ${#platforms[@]} -gt 0 ] || platforms=(EditMode PlayMode)
