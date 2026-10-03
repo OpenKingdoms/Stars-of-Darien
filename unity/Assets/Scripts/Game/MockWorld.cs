@@ -282,15 +282,17 @@ namespace OpenKingdomsUnity.Game
                 }
                 return b.Finish(obj);
             }
-            if (obj == "mockboat")
+            if (obj == "mockboat" || obj == "mockgalley")
             {
-                // Keel at y = 0, as the original ship models have it.
+                // Keel at y = 0, as the original ship models have it. The
+                // galley is the same boat at a War Galley's length.
+                float k = obj == "mockgalley" ? 2.9f : 1f;
                 int root = b.AddPiece("base", -1, Vector3.zero);
-                b.Box(root, new Vector3(0, 0.35f, 0), new Vector3(1.1f, 0.7f, 3.2f), Wood);
-                b.Box(root, new Vector3(0, 0.8f, -0.9f), new Vector3(0.9f, 0.3f, 0.8f), Wood);
-                int mast = b.AddPiece("mast", root, new Vector3(0, 0.7f, 0.2f));
-                b.Box(mast, new Vector3(0, 1.1f, 0), new Vector3(0.1f, 2.2f, 0.1f), Wood);
-                b.Box(mast, new Vector3(0, 1.3f, 0.06f), new Vector3(1.4f, 1.2f, 0.04f), team);
+                b.Box(root, new Vector3(0, 0.35f, 0) * k, new Vector3(1.1f, 0.7f, 3.2f) * k, Wood);
+                b.Box(root, new Vector3(0, 0.8f, -0.9f) * k, new Vector3(0.9f, 0.3f, 0.8f) * k, Wood);
+                int mast = b.AddPiece("mast", root, new Vector3(0, 0.7f, 0.2f) * k);
+                b.Box(mast, new Vector3(0, 1.1f, 0) * k, new Vector3(0.1f, 2.2f, 0.1f) * k, Wood);
+                b.Box(mast, new Vector3(0, 1.3f, 0.06f) * k, new Vector3(1.4f, 1.2f, 0.04f) * k, team);
                 return b.Finish(obj);
             }
             if (obj == "mockarrow" || obj == "mockbolt" || obj == "mockspear")

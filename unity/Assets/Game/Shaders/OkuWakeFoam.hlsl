@@ -3,7 +3,8 @@
 // is (across -1 to 1, along in units from the stern, strength, age) and
 // size (half its width here, the hull's half beam), both in units. For the
 // hull's collar uv is (across, along) in units from the hull's middle,
-// z its speed, w -1, and size its half beam and half length.
+// z how much foam its speed throws, w -1, and size its half beam and
+// half length.
 #ifndef OKU_WAKE_FOAM_INCLUDED
 #define OKU_WAKE_FOAM_INCLUDED
 

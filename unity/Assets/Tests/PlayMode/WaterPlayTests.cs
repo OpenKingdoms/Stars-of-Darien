@@ -1,10 +1,12 @@
 // WaterPlayTests.cs - the sea as it is drawn: ships sit in its surface at
 // their hull's waterline, a lake inside a high border shows as water in
 // either pipeline, fogged water is dimmed water, shallows are lighter than
-// the deep, a lace of foam lines the shore, a moving ship leaves a wake,
-// the open sea shows no stripes or tiling, the sea runs on past a sea
-// edge into the haze, a frame throws nothing away per unit, a dry map
-// after a sea map copies no scene for a sea, and what the sea costs.
+// the deep, a lace of foam lines the shore, a moving ship leaves a wake, a
+// ship turning on the spot throws none and its wake holds still about it
+// however often it is clicked round, the open sea shows no stripes or
+// tiling, the sea runs on past a sea edge into the haze, a frame throws
+// nothing away per unit, a dry map after a sea map copies no scene for a
+// sea, and what the sea costs.
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -48,6 +50,8 @@ namespace OpenKingdomsUnity.Tests
             float deadline = Time.realtimeSinceStartup + 30f;
             while (root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;
             Assert.AreEqual(FlowState.Playing, root.Flow.State);
+            // At the normal speed, whatever the player last chose.
+            root.Options.GameSpeed = 1;
             root.Orders.Frozen = true;
             root.World.Atmosphere.SetWeather(WeatherChoice.Off);
             root.Screens.Screen("Hud").SetActive(false);
@@ -503,26 +507,328 @@ namespace OpenKingdomsUnity.Tests
         // the boat, where the ribbon is strongest.
         static (float foam, float churn) WakeBehind(WaterWakes wakes, UnitState u)
         {
-            int n = WaterWakes.Size;
-            var tmp = RenderTexture.GetTemporary(n, n, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
-            var was = RenderTexture.active;
-            Graphics.Blit(wakes.Texture, tmp);
-            RenderTexture.active = tmp;
-            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false, true);
-            tex.ReadPixels(new Rect(0, 0, n, n), 0, 0);
-            tex.Apply();
-            RenderTexture.active = was;
-            RenderTexture.ReleaseTemporary(tmp);
-            var rect = wakes.Rect;
+            var (tex, rect) = WakePicture(wakes);
             float foam = 0, churn = 0;
             for (float d = 1.5f; d <= 3f; d += 0.5f)
             {
-                var c = tex.GetPixelBilinear((u.Position.x - rect.x) * rect.z, (u.Position.z + d - rect.y) * rect.w);
+                var c = WakeAt(tex, rect, new Vector2(u.Position.x, u.Position.z + d));
                 foam += c.r / 4;
                 churn += c.g / 4;
             }
             Object.Destroy(tex);
             return (foam, churn);
+        }
+
+        // The wake's picture as it stands, read back, and where it lies.
+        static (Texture2D tex, Vector4 rect) WakePicture(WaterWakes wakes)
+        {
+            int n = WaterWakes.Size;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false, true);
+            if (wakes.Texture == null) return (tex, Vector4.zero);
+            var tmp = RenderTexture.GetTemporary(n, n, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+            var was = RenderTexture.active;
+            Graphics.Blit(wakes.Texture, tmp);
+            RenderTexture.active = tmp;
+            tex.ReadPixels(new Rect(0, 0, n, n), 0, 0);
+            tex.Apply();
+            RenderTexture.active = was;
+            RenderTexture.ReleaseTemporary(tmp);
+            return (tex, wakes.Rect);
+        }
+
+        // Foam (r) and churn (g) in the wake's picture at a point of the sea.
+        static Color WakeAt(Texture2D tex, Vector4 rect, Vector2 p)
+        {
+            if (rect.z <= 0) return Color.clear;
+            float u = (p.x - rect.x) * rect.z, v = (p.y - rect.y) * rect.w;
+            return u < 0 || v < 0 || u > 1 || v > 1 ? Color.clear : tex.GetPixelBilinear(u, v);
+        }
+
+        // The wake's picture over a square of sea seen from above, north up:
+        // foam white, churn blue.
+        static Texture2D WakeMap(Texture2D tex, Vector4 rect, Vector2 centre, float half, int size)
+        {
+            var map = new Texture2D(size, size, TextureFormat.RGB24, false);
+            var px = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    var c = WakeAt(tex, rect, centre + new Vector2(-half + 2 * half * (x + 0.5f) / size, -half + 2 * half * (y + 0.5f) / size));
+                    float f = Mathf.Clamp01(c.r), g = Mathf.Clamp01(c.g) * (1 - f);
+                    px[y * size + x] = new Color(0.08f + 0.92f * f + 0.1f * g, 0.12f + 0.88f * f + 0.4f * g, 0.2f + 0.8f * f + 0.6f * g);
+                }
+            map.SetPixels32(px);
+            map.Apply();
+            return map;
+        }
+
+        // ---- Ships turning ----
+
+        // A ship moved as the engine moves one (units.c), 60 ticks a second:
+        // it turns at its turn rate toward a point 80 px ahead on the way to
+        // its goal, speeds up while the turn left fits in half the way to that
+        // point and brakes otherwise, and steps along its heading in whole
+        // pixels. Told to go behind itself it crawls round on the spot. The
+        // numbers are the War Galley's, and a unit is 16 px.
+        sealed class EngineShip
+        {
+            const float MaxV = 1.45f, Accel = 0.0775f, BrakeFrame = 0.062f, Brake = 0.0155f, TurnRate = 186f;
+            static readonly float Turn = TurnRate * (2 * Mathf.PI / 65536f) * 0.5f;
+            public int X, Y, Ticks;
+            public float Heading, Speed;
+            float fx, fy;
+            Vector2Int from, goal;
+            bool going;
+
+            public EngineShip(Vector2 at, float heading)
+            {
+                X = Mathf.RoundToInt(at.x * 16);
+                Y = Mathf.RoundToInt(-at.y * 16);
+                Heading = heading;
+            }
+
+            public Vector2 At => new Vector2(X / 16f, -Y / 16f);
+            public float Degrees => Mathf.Repeat(Heading * Mathf.Rad2Deg, 360f);
+            public float UnitsASecond => Speed * 60f / 16f;
+            public bool Going => going;
+            // How far it has still to turn to face its goal, in degrees.
+            public float TurnLeft => going ? Mathf.Abs(Wrap(Mathf.Atan2(goal.x - X, -(goal.y - Y)) - Heading)) * Mathf.Rad2Deg : 0f;
+
+            public void Order(Vector2 to)
+            {
+                goal = new Vector2Int(Mathf.RoundToInt(to.x * 16), Mathf.RoundToInt(-to.y * 16));
+                from = new Vector2Int(X, Y);
+                going = true;
+            }
+
+            public void Tick()
+            {
+                Ticks++;
+                if (!going) return;
+                float gx = goal.x - X, gy = goal.y - Y;
+                if (gx * gx + gy * gy < 64) { going = false; Speed = 0; return; }
+                var aim = Aim();
+                float dx = aim.x - X, dy = aim.y - Y;
+                if (dx != 0 || dy != 0) Heading = Wrap(Heading + Mathf.Clamp(Wrap(Mathf.Atan2(dx, -dy) - Heading), -Turn, Turn));
+                float vf = Speed * 2;
+                int he = dx != 0 || dy != 0 ? (int)(Mathf.Abs(Wrap(Mathf.Atan2(dx, -dy) - Heading)) * 65536f / (2 * Mathf.PI)) : 0;
+                float turnDist = vf * he / TurnRate, stopDist = vf * vf / (2 * BrakeFrame);
+                bool speedUp = 2 * turnDist < Mathf.Sqrt(dx * dx + dy * dy) && stopDist < Mathf.Sqrt(gx * gx + gy * gy);
+                Speed = Mathf.Clamp(Speed + (speedUp ? Accel : -Brake), 0f, MaxV);
+                float nx = fx + Mathf.Sin(Heading) * Speed, ny = fy - Mathf.Cos(Heading) * Speed;
+                int mx = Mathf.FloorToInt(nx), my = Mathf.FloorToInt(ny);
+                X += mx;
+                Y += my;
+                fx = nx - mx;
+                fy = ny - my;
+            }
+
+            // The goal pulled back along the way from where the order was
+            // given until it lies 80 px ahead.
+            Vector2 Aim()
+            {
+                float dx = goal.x - X, dy = goal.y - Y, d = Mathf.Sqrt(dx * dx + dy * dy);
+                Vector2 way = goal - from;
+                if (d <= 80 || way.magnitude <= 1) return goal;
+                float back = Mathf.Min(d - 80, way.magnitude);
+                return new Vector2(goal.x - (int)(way.x / way.magnitude * back), goal.y - (int)(way.y / way.magnitude * back));
+            }
+
+            static float Wrap(float a) => Mathf.Repeat(a + Mathf.PI, 2 * Mathf.PI) - Mathf.PI;
+        }
+
+        // A galley on the deep floor of the bay facing south, drawn where an
+        // EngineShip puts it, frame by frame as fast as frames come, with the
+        // ship on the engine's 60 ticks a second.
+        IEnumerator TurningBoat(System.Action<int, EngineShip> ready)
+        {
+            yield return Begin("mock_bay", true, false);
+            FogView.Disabled = true;
+            root.World.Fog.Update(true);
+            var start = new Vector2(68, -50);
+            int boat = mock.SpawnBoat(mock.LocalPlayer, new Vector3(start.x, 0, start.y), galley: true);
+            Assert.GreaterOrEqual(boat, 0);
+            var ship = new EngineShip(start, Mathf.PI);
+            Assert.IsTrue(mock.Place(boat, ship.At, ship.Degrees));
+            yield return Look(new Vector3(start.x, mock.Terrain.SeaLevel, start.y), 24f, 55f);
+            ready(boat, ship);
+        }
+
+        // Runs the ship for a number of frames, or with frames at zero for a
+        // number of ticks, ticking it as the time passed asks, ordering it
+        // where `orders` says on each tick, and calling `seen` once each frame
+        // has been drawn.
+        IEnumerator Sail(int boat, EngineShip ship, int frames, System.Func<int, Vector2?> orders, System.Action<int> seen, int until = 0)
+        {
+            float t0 = Time.unscaledTime;
+            int ticks = 0;
+            for (int f = 0; frames > 0 ? f < frames : ticks < until; f++)
+            {
+                int due = Mathf.FloorToInt((Time.unscaledTime - t0) * 60f + 1e-3f);
+                for (; ticks < due; ticks++)
+                {
+                    var to = orders(ticks);
+                    if (to.HasValue) ship.Order(to.Value);
+                    ship.Tick();
+                }
+                mock.Place(boat, ship.At, ship.Degrees);
+                yield return null;
+                seen(f);
+            }
+        }
+
+        // The most foam the wake's picture holds round a hull and ahead of
+        // its stern, leaving out the line where the hull meets the water.
+        static float FoamAheadOfStern(Texture2D tex, Vector4 rect, (ShipHull hull, Vector2 middle, Vector2 bow) h)
+        {
+            float beam = Mathf.Clamp(h.hull.HalfBeam, 0.25f, 2f), length = Mathf.Clamp(h.hull.HalfLength, 0.5f, 6f);
+            var right = new Vector2(h.bow.y, -h.bow.x);
+            float most = 0;
+            for (float along = -length; along <= length + 2.5f; along += 0.15f)
+                for (float across = -beam - 2.5f; across <= beam + 2.5f; across += 0.15f)
+                {
+                    // Out from the hull's ellipse, as the collar measures it.
+                    var q = new Vector2(across / beam, along / length);
+                    float r = q.magnitude;
+                    var grad = new Vector2(across / (beam * beam), along / (length * length)) / Mathf.Max(r, 1e-3f);
+                    if ((r - 1) / Mathf.Max(grad.magnitude, 1e-3f) < 0.35f) continue;
+                    most = Mathf.Max(most, WakeAt(tex, rect, h.middle + h.bow * along + right * across).r);
+                }
+            return most;
+        }
+
+        // A ship told to go behind itself turns on the spot, crawling round
+        // as the engine moves it. It throws no foam ahead of its stern,
+        // beyond the line where its hull meets the water.
+        [UnityTest]
+        public IEnumerator AShipTurningInPlaceLaysDownAlmostNoFoamAheadOfItsStern()
+        {
+            int boat = -1;
+            EngineShip ship = null;
+            yield return TurningBoat((b, s) => { boat = b; ship = s; });
+            var wakes = root.World.Terrain.Sea.Wakes;
+            var behind = ship.At + new Vector2(0, 18.75f);
+            float worst = 0, fastest = 0, turned = 0;
+            int frames = 0;
+            bool turning = true;
+            yield return Sail(boat, ship, 900, tick => tick == 0 ? behind : (Vector2?)null, f =>
+            {
+                if (!turning || !ship.Going) return;
+                if (ship.TurnLeft < 45f) { turning = false; turned = 180f - ship.TurnLeft; return; }
+                if (!root.World.Entities.Hulls.TryGetValue(boat, out var h)) return;
+                var (tex, rect) = WakePicture(wakes);
+                worst = Mathf.Max(worst, FoamAheadOfStern(tex, rect, h));
+                Object.Destroy(tex);
+                fastest = Mathf.Max(fastest, ship.UnitsASecond);
+                frames++;
+            });
+            Debug.Log($"Wake turn: {frames} frames turning {turned:F0} degrees at up to {fastest:F2} units a second, foam ahead of the stern at most {worst:F3}");
+            Assert.Greater(frames, 200, "the ship turned on the spot for a while");
+            Assert.Less(worst, 0.05f, "a ship turning on the spot throws no foam ahead of its stern");
+        }
+
+        // Clicked at again and again as it comes round, a turning ship's
+        // wake holds still about its hull from one frame to the next: no
+        // foam or churn jumps round it or blinks on and off.
+        [UnityTest]
+        public IEnumerator RepeatedTurnOrdersDontFlickerTheWake()
+        {
+            int boat = -1;
+            EngineShip ship = null;
+            yield return TurningBoat((b, s) => { boat = b; ship = s; });
+            var wakes = root.World.Terrain.Sea.Wakes;
+            var start = ship.At;
+            // Points from the starboard beam round past the stern, 250 px
+            // out, one every fifth of a second, as a player clicks it round.
+            var clicks = new List<Vector2>();
+            for (int i = 0; i < 12; i++)
+            {
+                float a = -Mathf.PI / 2 + i * 0.25f;
+                clicks.Add(start + new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * 15.6f);
+            }
+            // The picture is read on a grid that turns with the hull, out to
+            // three units round it, so foam that turns with the hull holds still.
+            const float step = 0.2f, round = 3f;
+            List<float> last = null, now = new List<float>();
+            var changes = new List<float>();
+            yield return Sail(boat, ship, 720, tick => tick % 12 == 0 && tick / 12 < clicks.Count ? clicks[tick / 12] : (Vector2?)null, f =>
+            {
+                if (!root.World.Entities.Hulls.TryGetValue(boat, out var h)) return;
+                float beam = Mathf.Clamp(h.hull.HalfBeam, 0.25f, 2f), length = Mathf.Clamp(h.hull.HalfLength, 0.5f, 6f);
+                var right = new Vector2(h.bow.y, -h.bow.x);
+                var (tex, rect) = WakePicture(wakes);
+                now.Clear();
+                for (float along = -length - round; along <= length + round; along += step)
+                    for (float across = -beam - round; across <= beam + round; across += step)
+                    {
+                        var c = WakeAt(tex, rect, h.middle + h.bow * along + right * across);
+                        now.Add(c.r + c.g);
+                    }
+                if (last != null && last.Count == now.Count)
+                {
+                    float sum = 0;
+                    for (int k = 0; k < now.Count; k++) sum += Mathf.Abs(now[k] - last[k]);
+                    changes.Add(sum * step * step);
+                }
+                last = new List<float>(now);
+                Object.Destroy(tex);
+            });
+            var sorted = changes.OrderBy(c => c).ToList();
+            float median = sorted[sorted.Count / 2], p99 = sorted[(int)(sorted.Count * 0.99f)], most = sorted[sorted.Count - 1];
+            Debug.Log($"Wake flicker: over {changes.Count} frames the wake about the hull changed by {median:F4} square units of foam and churn a frame at the median, {p99:F4} at the 99th percentile and {most:F4} at most; the ship ended at {ship.Degrees:F0} degrees, {ship.UnitsASecond:F2} units a second");
+            Assert.Greater(changes.Count, 600);
+            Assert.Less(most, 0.25f, "no frame's wake jumps about the hull");
+        }
+
+        // Pictures of a galley clicked round to face behind it, then sailing
+        // off: the sea from close by and the wake's own picture from above,
+        // a frame every half second. Runs only when OKU_WAKE_SHOTS names a
+        // folder, and writes wake-sea-*.png and wake-map-*.png there.
+        [UnityTest]
+        public IEnumerator WakeCaptures()
+        {
+            string dir = System.Environment.GetEnvironmentVariable("OKU_WAKE_SHOTS");
+            if (string.IsNullOrEmpty(dir)) Assert.Ignore("set OKU_WAKE_SHOTS to picture a turning ship's wake");
+            Directory.CreateDirectory(dir);
+            int boat = -1;
+            EngineShip ship = null;
+            yield return TurningBoat((b, s) => { boat = b; ship = s; });
+            var wakes = root.World.Terrain.Sea.Wakes;
+            var gc = root.World.Camera;
+            var start = ship.At;
+            var behind = start + new Vector2(0, 18.75f);
+            // From the side and away from the sun, so its glint on the water
+            // is out of the picture.
+            yield return Look(new Vector3(start.x, mock.Terrain.SeaLevel, start.y), 22f, 55f, 90f);
+            var rt = RenderTexture.GetTemporary(960, 540, 24);
+            // Pictures are kept and written after the run, so taking them
+            // stalls the frames as little as can be.
+            var shots = new List<(Texture2D sea, Texture2D wake, Vector4 rect, Vector2 at, string line)>();
+            int next = 0;
+            // The point behind it clicked every fifth of a second for six
+            // seconds, and ten seconds in all.
+            yield return Sail(boat, ship, 0, tick => tick % 12 == 0 && tick < 360 ? behind : (Vector2?)null, f =>
+            {
+                gc.focus = new Vector3(ship.At.x, mock.Terrain.SeaLevel, ship.At.y);
+                if (ship.Ticks < next) return;
+                next += 30;
+                var (pic, rect) = WakePicture(wakes);
+                shots.Add((Shot(Cam, rt), pic, rect, ship.At, $"{ship.Ticks / 60f:F1} s, heading {ship.Degrees:F0}, {ship.UnitsASecond:F2} units a second, the wake reading {wakes.SpeedOf(boat):F2}"));
+            }, 600);
+            RenderTexture.ReleaseTemporary(rt);
+            var lines = new List<string>();
+            for (int i = 0; i < shots.Count; i++)
+            {
+                var (sea, wake, rect, at, line) = shots[i];
+                File.WriteAllBytes(Path.Combine(dir, $"wake-sea-{i:D2}.png"), sea.EncodeToPNG());
+                var map = WakeMap(wake, rect, at, 9f, 300);
+                File.WriteAllBytes(Path.Combine(dir, $"wake-map-{i:D2}.png"), map.EncodeToPNG());
+                lines.Add($"{i:D2} {line}");
+                Object.Destroy(sea);
+                Object.Destroy(wake);
+                Object.Destroy(map);
+            }
+            File.WriteAllLines(Path.Combine(dir, "wake-frames.txt"), lines);
         }
 
         // Open water has no strong single frequency (stripes) and does not

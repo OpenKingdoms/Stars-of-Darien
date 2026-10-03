@@ -296,6 +296,7 @@ namespace OpenKingdomsUnity.Game
         {
             units.Clear();
             byHandle.Clear();
+            placed.Clear();
             features.Clear();
             arrows.Clear();
             ClearFx();
@@ -451,7 +452,7 @@ namespace OpenKingdomsUnity.Game
                     if (u.DyingFor > 1.5f) { units.RemoveAt(i); byHandle.Remove(u.Handle); }
                     continue;
                 }
-                if (aboard.Contains(u.Handle) || staged.Contains(u.Handle)) continue;
+                if (aboard.Contains(u.Handle) || staged.Contains(u.Handle) || placed.Contains(u.Handle)) continue;
                 if (u.Built < 1f)
                 {
                     if (BuildSeconds > 0) u.Built = Mathf.Min(1f, u.Built + dt / BuildSeconds);

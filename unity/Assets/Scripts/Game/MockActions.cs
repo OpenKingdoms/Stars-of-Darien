@@ -64,8 +64,9 @@ namespace OpenKingdomsUnity.Game
         }
 
         // A boat for a player on the water at a point, for tests, reported
-        // at the sea floor as the engine reports ships.
-        public int SpawnBoat(int player, Vector3 at)
+        // at the sea floor as the engine reports ships. A galley is drawn
+        // the size of the game's War Galley.
+        public int SpawnBoat(int player, Vector3 at, bool galley = false)
         {
             int index = players.FindIndex(p => p.Index == player);
             if (index < 0 || Terrain == null) return -1;
@@ -74,10 +75,26 @@ namespace OpenKingdomsUnity.Game
                 {
                     var u = Spawn(kv.Key, index, new Vector2(at.x, at.z));
                     u.Heading = 0f;
+                    if (galley) u.Model = LoadModel("mockgalley", players[index].Colour);
                     return u.Handle;
                 }
             return -1;
         }
+
+        // Puts a unit where a test says, facing as it says, and keeps the
+        // mock from moving it after that, so the test can move it as the
+        // engine would.
+        public bool Place(int handle, Vector2 at, float heading)
+        {
+            if (Terrain == null || !byHandle.TryGetValue(handle, out var u)) return false;
+            u.Goal = null;
+            u.Pos = new Vector3(at.x, Terrain.Sample(at.x, at.y), at.y);
+            u.Heading = Mathf.Repeat(heading, 360f);
+            placed.Add(handle);
+            return true;
+        }
+
+        readonly HashSet<int> placed = new HashSet<int>();
 
         void SpawnSpecialists(PlayerInfo p, int pos, Vector2 home)
         {
