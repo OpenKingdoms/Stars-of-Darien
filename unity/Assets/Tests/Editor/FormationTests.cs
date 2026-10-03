@@ -626,6 +626,33 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(4, FormationPlanner.Footprint(l.Members[siege.Member]));
         }
 
+        // A ship stands its hull from the next, not its footprint.
+        [Test]
+        public void ShipsStandTheirHullsApart()
+        {
+            var l = Layout((FormationRole.Ranged, 6, 4), (FormationRole.Ranged, 2, 4));
+            for (int i = 0; i < l.Count; i++)
+            {
+                l.Members[i].Kind.Mover = FormationMover.Boat;
+                l.Members[i].Kind.Layer = FormationRoles.LayerOf(FormationMover.Boat);
+                l.Members[i].Kind.Spacing = i < 6 ? 10 : 13;
+            }
+            Planned(l, Drag(new Vector2(10, -40), new Vector2(70, -40)));
+            Assert.AreEqual(10, FormationPlanner.Pitch(l.Members[0]));
+            for (int i = 0; i < l.Count; i++)
+                for (int j = i + 1; j < l.Count; j++)
+                {
+                    var a = l.Slots[i];
+                    var b = l.Slots[j];
+                    // Each needs half its own spacing, its hull's reach.
+                    float need = (FormationPlanner.Pitch(l.Members[a.Member]) + FormationPlanner.Pitch(l.Members[b.Member])) * 0.5f;
+                    Assert.GreaterOrEqual((a.Local - b.Local).magnitude, need - 1e-3f, $"slots {i} and {j}");
+                }
+            Assert.AreEqual(10, FormationRoles.HullCells(75, 75, 25), "a war galley");
+            Assert.AreEqual(13, FormationRoles.HullCells(100, 76, 34), "a man of war");
+            Assert.AreEqual(11, FormationRoles.HullCells(70, 75, 79), "a trebuchet ship, wider than long");
+        }
+
         [Test]
         public void AGodStandsBehindTheSwordsmenAtItsOwnPitch()
         {

@@ -276,6 +276,9 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] static extern int okx_map_name(int index, [Out] byte[] outName, int cap);
         [DllImport(Lib)] public static extern int okx_def_count();
         [DllImport(Lib)] public static extern int okx_def_info(int def, out OkxDefInfo info);
+        // A ship's hull in pixels: bow ahead of its centre, stern behind, half
+        // the beam. 1 for a ship, 0 for anything else.
+        [DllImport(Lib)] public static extern int okx_def_hull(int def, out int fore, out int aft, out int halfBeam);
         [DllImport(Lib)] public static extern int okx_def_buildables(int def, [Out] int[] defs, int cap);
         [DllImport(Lib)] public static extern int okx_unit_picture(int def, [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] static extern int okx_def_scripts(int def, [Out] byte[] names, int cap);

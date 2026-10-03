@@ -735,6 +735,9 @@ namespace OpenKingdomsUnity.Tests
             Assert.GreaterOrEqual(yard, 0);
             Assert.GreaterOrEqual(ship, 0);
             Assert.AreEqual(FloatKind.Ship, backend.UnitDefs[ship].Float);
+            // The skiff's hull reaches 62 px from its centre, the harbour has none.
+            Assert.AreEqual(8, backend.UnitDefs[ship].HullCells);
+            Assert.AreEqual(0, backend.UnitDefs[yard].HullCells);
             var units = new UnitState[1024];
             int n = backend.ReadUnits(units), builder = -1;
             Vector3 from = Vector3.zero;

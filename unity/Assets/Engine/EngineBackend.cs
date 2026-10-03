@@ -272,6 +272,8 @@ namespace OpenKingdomsUnity.Engine
                 def.CanFly = takesOff || Array.Exists(def.Animations, a => string.Equals(a, "FlightControl", StringComparison.OrdinalIgnoreCase));
                 def.Hovers = def.CanFly && !takesOff;
                 if (d.floater != 0) def.Waterline = d.waterline * S;
+                if (OkEngine.okx_def_hull(i, out int fore, out int aft, out int halfBeam) == 1)
+                    def.HullCells = Game.World.FormationRoles.HullCells(fore, aft, halfBeam);
                 unitDefs.Add(def);
             }
             featureDefs.Clear();

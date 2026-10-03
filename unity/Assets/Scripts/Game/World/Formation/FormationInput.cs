@@ -231,6 +231,7 @@ namespace OpenKingdomsUnity.Game.World
             if (kinds.TryGetValue(def, out var k)) return k;
             var d = def >= 0 && def < backend.UnitDefs.Count ? backend.UnitDefs[def] : null;
             k = FormationRoles.Classify(d?.Name, d?.Category, d != null ? d.Footprint.x : 0, canFly: d != null && d.CanFly);
+            if (d != null && d.HullCells > 0) k.Spacing = d.HullCells;
             kinds[def] = k;
             return k;
         }

@@ -397,6 +397,7 @@ namespace OpenKingdomsUnity.Game
         public float CruiseAltitude;    // world units above the ground
         public float MaxSpeed;          // world units per second
         public float Waterline = -1f;   // how far a floater's hull sits under the sea, world units, -1 unknown
+        public int HullCells;           // a ship's hull across its widest turn, in cells, 0 for anything else
 
         // Whether it floats, worked out once from the fields above.
         public FloatKind Float => floatKind ??= Afloat.KindOf(this);

@@ -238,11 +238,15 @@ namespace OpenKingdomsUnity.Game.World
         static int WidestOf(FormationLayout l, FormationRole r)
         {
             int w = 0;
-            for (int i = 0; i < l.Count; i++) if (l.Members[i].Kind.Role == r) w = Mathf.Max(w, Footprint(l.Members[i]));
+            for (int i = 0; i < l.Count; i++) if (l.Members[i].Kind.Role == r) w = Mathf.Max(w, Pitch(l.Members[i]));
             return w;
         }
 
         public static int Footprint(in FormationMember m) => m.Kind.Footprint > 0 ? m.Kind.Footprint : FormationRoles.DefaultFootprint;
+
+        // The room a member takes in a formation: its footprint, or a ship's
+        // hull, which is longer than the cells it sails on.
+        public static int Pitch(in FormationMember m) => Mathf.Max(Footprint(m), m.Kind.Spacing);
 
         static int PerRank(float frontage, float pitch, int n) =>
             Mathf.Clamp(Mathf.FloorToInt(frontage / pitch + 1e-4f), 1, Mathf.Max(1, n));
@@ -290,7 +294,7 @@ namespace OpenKingdomsUnity.Game.World
         {
             Array.Clear(footprints, 0, footprints.Length);
             for (int i = 0; i < l.Count; i++)
-                if (all || l.Members[i].Kind.Role == role) footprints[Mathf.Clamp(Footprint(l.Members[i]), 1, 32)]++;
+                if (all || l.Members[i].Kind.Role == role) footprints[Mathf.Clamp(Pitch(l.Members[i]), 1, 32)]++;
             int common = FormationRoles.DefaultFootprint, most = 0;
             for (int fp = 1; fp < footprints.Length; fp++) if (footprints[fp] > most) { common = fp; most = footprints[fp]; }
             var g = new Group { Pitch = common + FormationTuning.Gap };
@@ -298,7 +302,7 @@ namespace OpenKingdomsUnity.Game.World
             for (int i = 0; i < l.Count; i++)
             {
                 if (!all && l.Members[i].Kind.Role != role) continue;
-                int fp = Footprint(l.Members[i]);
+                int fp = Pitch(l.Members[i]);
                 if (fp > common) { l.Classes[i] = 1; g.Big++; widest = Mathf.Max(widest, fp); }
                 else { l.Classes[i] = 0; g.Count++; }
             }
@@ -315,7 +319,7 @@ namespace OpenKingdomsUnity.Game.World
             l.Slots[0].Local = Vector2.zero;
             l.Slots[0].Role = m.Kind.Role;
             l.Slots[0].Class = 0;
-            l.Frontage = Footprint(m) + FormationTuning.Gap;
+            l.Frontage = Pitch(m) + FormationTuning.Gap;
             return 1;
         }
 
@@ -492,7 +496,7 @@ namespace OpenKingdomsUnity.Game.World
             for (int i = 0; i < n; i++)
             {
                 var m = l.Members[i];
-                int fp = Footprint(m);
+                int fp = Pitch(m);
                 l.Classes[i] = fp;
                 l.Work[i] = i;
                 l.Keys[i] = WedgeRank(m.Kind.Role) * 64 + Mathf.Min(fp, 63);

@@ -21,6 +21,7 @@ namespace OpenKingdomsUnity.Game.World
         public FormationRole Role;
         public FormationMover Mover;
         public int Footprint;       // cells
+        public int Spacing;         // cells a ship's hull needs between slots, 0 for its footprint
         public float Speed;         // FBI maxvelocity, 0 when unknown
     }
 
@@ -74,6 +75,15 @@ namespace OpenKingdomsUnity.Game.World
             m == FormationMover.Flyer ? FormationLayer.Air : m == FormationMover.Boat ? FormationLayer.Water : FormationLayer.Ground;
 
         public static bool IsStock(string name) => name != null && Stock.ContainsKey(name);
+
+        // A ship's hull in pixels as cells across any turn: twice the
+        // farthest it reaches from its centre, as the engine keeps ships
+        // apart (M-012).
+        public static int HullCells(int fore, int aft, int halfBeam)
+        {
+            double reach = Math.Abs(fore - aft) * 0.5 + Math.Max(halfBeam, (fore + aft) * 0.5);
+            return (int)Math.Ceiling(2.0 * reach / 16.0);
+        }
 
         // A unit's kind: the stock table by name, else the rules on its
         // category. Speed and range are FBI units, negative when unknown.
