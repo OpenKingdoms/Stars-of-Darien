@@ -50,5 +50,36 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(b.OrderSelection(CommandKind.Stop));
             Assert.AreEqual(OrderKind.None, b.ReadOrder(u.Handle).Kind);
         }
+
+        // The select keys: every unit of yours of a selected type, those of a
+        // category in place of the selection or added to it, and a group
+        // added to the selection.
+        [Test]
+        public void TheSelectKeysTakeByTypeCategoryAndGroup()
+        {
+            var b = Loaded();
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units);
+            int me = b.LocalPlayer, a = -1;
+            for (int i = 0; i < n && a < 0; i++)
+                if (units[i].Player == me && (b.UnitDefs[units[i].Def].Category ?? "").Contains("MELEE")) a = i;
+            Assert.GreaterOrEqual(a, 0);
+            int same = 0, builders = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (units[i].Player != me) continue;
+                if (units[i].Def == units[a].Def) same++;
+                if ((b.UnitDefs[units[i].Def].Category ?? "").Contains("BUILDER")) builders++;
+            }
+            b.Select(new[] { units[a].Handle }, false);
+            Assert.AreEqual(same, b.SelectBy(SelectKind.SameType));
+            Assert.AreEqual(builders, b.SelectBy(SelectKind.Category, "BUILDER"));
+            Assert.AreEqual(builders + same, b.SelectBy(SelectKind.Category, "melee", true));
+            b.Select(new[] { units[a].Handle }, false);
+            b.AssignGroup(5);
+            b.Cancel();
+            b.SelectBy(SelectKind.Category, "BUILDER");
+            Assert.AreEqual(builders + 1, b.AddGroup(5));
+        }
     }
 }

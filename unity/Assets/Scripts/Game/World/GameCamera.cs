@@ -66,7 +66,7 @@ namespace OpenKingdomsUnity.Game.World
                 if (Input.GetKey(KeyCode.RightArrow) || wasd && Input.GetKey(KeyCode.D)) move.x += 1;
                 if (Input.GetKey(KeyCode.LeftArrow) || wasd && Input.GetKey(KeyCode.A)) move.x -= 1;
                 if (Input.GetKey(KeyCode.Q)) yaw += turnSpeed * dt;
-                if (Input.GetKey(KeyCode.E)) yaw -= turnSpeed * dt;
+                if (Input.GetKey(KeyCode.E) && !ctrl) yaw -= turnSpeed * dt;
                 if (Input.GetKey(KeyCode.PageUp)) pitch += tiltSpeed * dt;
                 if (Input.GetKey(KeyCode.PageDown)) pitch -= tiltSpeed * dt;
                 if (Input.GetKeyDown(KeyCode.Home)) { yaw = 0; pitch = ClassicPitch; }

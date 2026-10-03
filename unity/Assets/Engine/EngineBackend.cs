@@ -1108,6 +1108,9 @@ namespace OpenKingdomsUnity.Engine
 
         public void AssignGroup(int group) => OkEngine.okx_group_assign(group);
         public int RecallGroup(int group) => OkEngine.okx_group_recall(group);
+        public int AddGroup(int group) => OkEngine.okx_group_add(group);
+        public int SelectBy(SelectKind kind, string category = null, bool add = false) =>
+            OkEngine.okx_select_kind((int)kind, category, add ? 1 : 0);
 
         public UnitOrder ReadOrder(int handle)
         {

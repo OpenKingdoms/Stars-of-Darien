@@ -146,6 +146,13 @@ namespace OpenKingdomsUnity.Game
         bool OrderSelection(CommandKind kind, int arg = 0);
         void AssignGroup(int group);
         int RecallGroup(int group);
+        // Ctrl, Shift and a number: the group added to the selection.
+        int AddGroup(int group);
+        // The original's select keys over the player's finished units: every
+        // one of a type the selection holds (Ctrl+Z), every one (Ctrl+A), or
+        // those whose category names the word, in place of the selection or
+        // added to it (Ctrl+B and the rest). Returns the selection count.
+        int SelectBy(SelectKind kind, string category = null, bool add = false);
 
         // Orders, for one unit at a time. False when the engine refuses it.
         bool Command(in GameCommand command);
@@ -268,6 +275,9 @@ namespace OpenKingdomsUnity.Game
     public enum GameStatus { Idle, Loading, Running, Victory, Defeat, Failed }
 
     public enum SeatKind { Closed, Human, Computer }
+
+    // What a select key takes, numbered as the engine numbers it.
+    public enum SelectKind { SameType = 1, All = 2, Category = 3 }
 
     public enum AiDifficulty { Easy, Normal, Hard, Brutal }
 

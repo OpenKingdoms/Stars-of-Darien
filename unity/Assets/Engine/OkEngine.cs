@@ -341,6 +341,8 @@ namespace OpenKingdomsUnity.Engine
 
         public static string NetWhy => Marshal.PtrToStringAnsi(okx_net_why()) ?? "";
         [DllImport(Lib)] public static extern int okx_group_recall(int group);
+        [DllImport(Lib)] public static extern int okx_group_add(int group);
+        [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_select_kind(int kind, string category, int add);
 
         [DllImport(Lib)] public static extern int okx_start_skirmish(ref OkxSkirmish cfg);
         [DllImport(Lib)] public static extern int okx_load_begin(ref OkxSkirmish cfg);

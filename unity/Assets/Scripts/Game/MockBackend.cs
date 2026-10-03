@@ -1181,10 +1181,40 @@ namespace OpenKingdomsUnity.Game
         public int RecallGroup(int group)
         {
             mockSelection.Clear();
+            return AddGroup(group);
+        }
+
+        public int AddGroup(int group)
+        {
             if (mockGroups.TryGetValue(group, out var g))
                 foreach (int h in g)
-                    if (byHandle.TryGetValue(h, out var u) && !u.Dying) mockSelection.Add(h);
+                    if (byHandle.TryGetValue(h, out var u) && !u.Dying && !mockSelection.Contains(h)) mockSelection.Add(h);
             return mockSelection.Count;
+        }
+
+        public int SelectBy(SelectKind kind, string category = null, bool add = false)
+        {
+            var types = new HashSet<int>();
+            foreach (int h in mockSelection)
+                if (byHandle.TryGetValue(h, out var s) && s.Player == 0) types.Add(s.Def);
+            if (kind == SelectKind.Category && !add) mockSelection.Clear();
+            foreach (var u in units)
+            {
+                if (u.Player != 0 || u.Dying || u.Built < 1f || mockSelection.Contains(u.Handle)) continue;
+                bool take = kind == SelectKind.All
+                    || (kind == SelectKind.SameType && types.Contains(u.Def))
+                    || (kind == SelectKind.Category && HasCategory(unitDefs[u.Def].Category, category));
+                if (take) mockSelection.Add(u.Handle);
+            }
+            return mockSelection.Count;
+        }
+
+        static bool HasCategory(string line, string word)
+        {
+            if (string.IsNullOrEmpty(line) || string.IsNullOrEmpty(word)) return false;
+            foreach (var w in line.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                if (string.Equals(w, word, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         // The mock's saves remember the setup and the tick only, and a load

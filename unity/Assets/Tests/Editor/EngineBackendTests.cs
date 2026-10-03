@@ -4,6 +4,7 @@
 // players, economy and orders of a running battle. Needs okengine and the
 // game files, and is ignored without them.
 using System;
+using System.Linq;
 using NUnit.Framework;
 using OpenKingdomsUnity.Engine;
 using OpenKingdomsUnity.Game;
@@ -268,6 +269,43 @@ namespace OpenKingdomsUnity.Tests
                     if (units[i].Def == lode && units[i].Player == me) heading = units[i].Heading;
             }
             Assert.AreEqual(0f, Mathf.DeltaAngle(heading, 180f), 0.5f, "a lodestone faces south");
+        }
+
+        // Ctrl+Z takes every finished unit of the player's of a type the
+        // selection holds, Ctrl+A every one, and Ctrl, Shift and a number add
+        // a group (the original's SelectAllUnitsSelectedType, SelectAllUnits
+        // and RetrieveSquadAdd).
+        // Last, since it adds two soldiers to the battle the others share.
+        [Test, Order(23)]
+        public void TheSelectKeysTakeEveryUnitOfATypeAndAddAGroup()
+        {
+            var units = new UnitState[512];
+            int n = backend.ReadUnits(units);
+            int me = backend.LocalPlayer;
+            var defs = backend.UnitDefs;
+            var monarch = units.Take(n).First(x => x.Player == me && !defs[x.Def].IsBuilding);
+            int def = Enumerable.Range(0, defs.Count).First(d => defs[d].Side == defs[monarch.Def].Side &&
+                !defs[d].IsBuilding && !defs[d].CanFly && (defs[d].Category ?? "").Contains("MELEE"));
+            int a = OkEngine.okx_place_unit(def, me), b = OkEngine.okx_place_unit(def, me);
+            Assert.IsTrue(a >= 0 && b >= 0, "two " + defs[def].Name + " placed");
+            n = backend.ReadUnits(units);
+            var mine = units.Take(n).Where(x => x.Player == me && (x.Flags & UnitFlags.Active) != 0 && x.BuildProgress >= 1f).ToList();
+            int same = mine.Count(x => x.Def == def);
+            Assert.GreaterOrEqual(same, 2);
+            backend.Cancel();
+            backend.Select(new[] { a }, false);
+            Assert.AreEqual(same, backend.SelectBy(SelectKind.SameType));
+            var sel = new int[64];
+            int got = backend.ReadSelection(sel);
+            Assert.IsTrue(sel.Take(got).Contains(b), "the other one");
+            Assert.IsFalse(sel.Take(got).Contains(monarch.Handle), "not the monarch");
+            Assert.AreEqual(1, backend.SelectBy(SelectKind.Category, "monarch"));
+            Assert.AreEqual(mine.Count, backend.SelectBy(SelectKind.All));
+            backend.Select(new[] { a }, false);
+            backend.AssignGroup(6);
+            backend.Select(new[] { b }, false);
+            Assert.AreEqual(2, backend.AddGroup(6));
+            backend.Cancel();
         }
 
         [Test, Order(9)]

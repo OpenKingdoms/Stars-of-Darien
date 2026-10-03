@@ -7,9 +7,11 @@
 // In both, a drag selects the player's units (Shift adds), M, A, P and G
 // arm move, attack, patrol and guard, S stops, a build armed from the
 // menu shows its ghost, green where it can stand, and Ctrl with a digit
-// makes a group that the digit brings back. A drag with the order button
-// lays out a formation (FormationInput). Ctrl on an order click, not a
-// drag, puts the order in place of the one in hand and keeps the queue.
+// makes a group that the digit brings back. Ctrl with a letter selects as
+// the original's keys do, Ctrl+Z every unit of a type already selected. A
+// drag with the order button lays out a formation (FormationInput). Ctrl on
+// an order click, not a drag, puts the order in place of the one in hand
+// and keeps the queue.
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -199,25 +201,64 @@ namespace OpenKingdomsUnity.Game.World
 
             if ((m - dragFrom).magnitude > DragPixels && Armed == null)
             {
-                var box = Rect.MinMaxRect(Mathf.Min(m.x, dragFrom.x), Mathf.Min(m.y, dragFrom.y), Mathf.Max(m.x, dragFrom.x), Mathf.Max(m.y, dragFrom.y));
-                var inBox = new List<int>();
-                for (int i = 0; i < count; i++)
-                {
-                    if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Dying) != 0) continue;
-                    if (!world.Entities.IsDrawn(units[i].Handle)) continue;
-                    var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * (0.6f + world.Entities.VisualLift(units[i].Handle)));
-                    if (s.z > 0 && box.Contains(s)) inBox.Add(units[i].Handle);
-                }
-                if (Classic) { backend.Select(inBox.ToArray(), Shift); PullSelection(); }
-                else
-                {
-                    if (!Shift) Selected.Clear();
-                    Selected.UnionWith(inBox);
-                    PushSelection();
-                }
+                SelectBox(cam, Rect.MinMaxRect(Mathf.Min(m.x, dragFrom.x), Mathf.Min(m.y, dragFrom.y), Mathf.Max(m.x, dragFrom.x), Mathf.Max(m.y, dragFrom.y)), Shift);
                 return;
             }
             LeftClick(cam, m, onGround, at);
+        }
+
+        // The player's units drawn inside a box on the screen, added to the
+        // selection or in place of it.
+        void SelectBox(Camera cam, Rect box, bool add)
+        {
+            var units = world.Entities.Units;
+            int count = world.Entities.UnitCount;
+            var inBox = new List<int>();
+            for (int i = 0; i < count; i++)
+            {
+                if (units[i].Player != backend.LocalPlayer || (units[i].Flags & UnitFlags.Dying) != 0) continue;
+                if (!world.Entities.IsDrawn(units[i].Handle)) continue;
+                var s = cam.WorldToScreenPoint(units[i].Position + Vector3.up * (0.6f + world.Entities.VisualLift(units[i].Handle)));
+                if (s.z > 0 && box.Contains(s)) inBox.Add(units[i].Handle);
+            }
+            if (Classic) { backend.Select(inBox.ToArray(), add); PullSelection(); }
+            else
+            {
+                if (!add) Selected.Clear();
+                Selected.UnionWith(inBox);
+                PushSelection();
+            }
+        }
+
+        // The original's select keys, Ctrl and a letter as Keys.TDF binds
+        // them, Shift adding a category instead. A and W stay this scheme's
+        // attack and camera-key commands, and T and Shift N name categories
+        // no unit carries.
+        static readonly (KeyCode Key, string Category)[] SelectKeys =
+        {
+            (KeyCode.Z, null), (KeyCode.U, null),
+            (KeyCode.B, "BUILDER"), (KeyCode.E, "MELEE"), (KeyCode.F, "FACTORY"),
+            (KeyCode.G, "MAGIC"), (KeyCode.M, "MONARCH"), (KeyCode.N, "BOAT"),
+            (KeyCode.R, "BALLISTIC"), (KeyCode.Y, "FLY"),
+        };
+
+        // Carries out the select key Ctrl and key make. False for no such key.
+        public bool PressSelectKey(KeyCode key, bool shift)
+        {
+            if (key == KeyCode.U)
+            {
+                var cam = world.Camera != null ? world.Camera.GetComponent<Camera>() : null;
+                if (cam == null) return false;
+                SelectBox(cam, new Rect(0, 0, Screen.width, Screen.height), false);
+                return true;
+            }
+            int i = System.Array.FindIndex(SelectKeys, k => k.Key == key);
+            if (i < 0 || (key == KeyCode.N && shift)) return false;
+            if (!Classic) PushSelection();
+            if (key == KeyCode.Z) backend.SelectBy(SelectKind.SameType);
+            else backend.SelectBy(SelectKind.Category, SelectKeys[i].Category, shift);
+            PullSelection();
+            return true;
         }
 
         // A command armed for units no longer selected lets go, so it
@@ -357,18 +398,23 @@ namespace OpenKingdomsUnity.Game.World
 
         void Keys()
         {
-            // Groups: Ctrl and a digit makes one, the digit brings it back.
+            // Groups: Ctrl and a digit makes one, the digit brings it back,
+            // and Ctrl, Shift and the digit add it to the selection.
             for (int g = 0; g <= 9; g++)
             {
                 if (!Input.GetKeyDown(KeyCode.Alpha0 + g)) continue;
-                if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); ctrlChord = true; }
+                if (Ctrl && Shift) { if (!Classic) PushSelection(); backend.AddGroup(g); PullSelection(); ctrlChord = true; }
+                else if (Ctrl) { if (!Classic) PushSelection(); backend.AssignGroup(g); ctrlChord = true; }
                 else if (backend.RecallGroup(g) > 0) PullSelection();
             }
+            if (Ctrl)
+                foreach (var k in SelectKeys)
+                    if (Input.GetKeyDown(k.Key) && PressSelectKey(k.Key, Shift)) ctrlChord = true;
             // R or ] turns a building being placed clockwise, Shift R or [ back.
             if (Armed == CommandKind.Build)
             {
-                if (Input.GetKeyDown(KeyCode.RightBracket) || (Input.GetKeyDown(KeyCode.R) && !Shift)) Rotate(1);
-                if (Input.GetKeyDown(KeyCode.LeftBracket) || (Input.GetKeyDown(KeyCode.R) && Shift)) Rotate(-1);
+                if (Input.GetKeyDown(KeyCode.RightBracket) || (Input.GetKeyDown(KeyCode.R) && !Shift && !Ctrl)) Rotate(1);
+                if (Input.GetKeyDown(KeyCode.LeftBracket) || (Input.GetKeyDown(KeyCode.R) && Shift && !Ctrl)) Rotate(-1);
             }
             if (Selected.Count == 0) return;
             if (Actions.Length > 0)
@@ -389,10 +435,10 @@ namespace OpenKingdomsUnity.Game.World
             }
             // A and S pan the camera, so attack and stop take Ctrl.
             if (Input.GetKeyDown(KeyCode.S) && Ctrl) { Stop(); Disarm(); ctrlChord = true; }
-            if (Input.GetKeyDown(KeyCode.M)) Arm(CommandKind.Move);
+            if (Input.GetKeyDown(KeyCode.M) && !Ctrl) Arm(CommandKind.Move);
             if (Input.GetKeyDown(KeyCode.A) && Ctrl) { Arm(CommandKind.Attack); ctrlChord = true; }
-            if (Input.GetKeyDown(KeyCode.P)) Arm(CommandKind.Patrol);
-            if (Input.GetKeyDown(KeyCode.G)) Arm(CommandKind.Guard);
+            if (Input.GetKeyDown(KeyCode.P) && !Ctrl) Arm(CommandKind.Patrol);
+            if (Input.GetKeyDown(KeyCode.G) && !Ctrl) Arm(CommandKind.Guard);
         }
 
         void UpdateGhost(bool onGround, Vector3 at)
