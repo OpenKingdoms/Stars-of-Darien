@@ -412,7 +412,8 @@ namespace OpenKingdomsUnity.Game.UI
                     continue;
                 }
                 Badge(badges[r], pl);
-                bool fell = k != null && !k.Standing;
+                // The player's own row keeps its ink on its gold wash.
+                bool fell = k != null && !k.Standing && !pl.IsLocal;
                 var ink = fell ? Fallen : LobbyInk.Text;
                 int tps = record.TicksPerSecond;
                 GuiPage.Fit(cells[0], MenuScreens.ResultName(pl));

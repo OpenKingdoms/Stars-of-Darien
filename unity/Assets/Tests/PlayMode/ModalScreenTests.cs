@@ -368,6 +368,8 @@ namespace OpenKingdomsUnity.Tests
             yield return null;
             Assert.AreEqual(ended, root.Backend.Tick, "the battle holds under the plaque");
 
+            var you = Texts("Result", "Player").First(t => t.text == "You");
+            Assert.AreEqual(LobbyInk.Text, you.color, "the player's own row stays legible on its wash");
             Click("Result", "Look at the field");
             Assert.IsTrue(mock.PlaysOn, "the computers fight on");
             yield return Until(() => root.Backend.Tick > ended + 30, 10f);
