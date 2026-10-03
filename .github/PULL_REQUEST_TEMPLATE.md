@@ -11,9 +11,10 @@
 - [ ] I checked it in Studio Mode, pressed Use in game, and saw it in a battle or on the stage
 - [ ] One Blender unit is one map cell, the origin is the middle of the base on the ground, and the front faces south
 - [ ] glTF Binary (`.glb`) with Compression unticked
-- [ ] At most 3,000 triangles for scenery or a unit card, or 6,000 for a unit
-- [ ] Pictures are PNG or JPEG, at most 1024 pixels on a side
-- [ ] Every picture is my own work or properly licensed, and nothing in the model comes from the original game
+- [ ] Under 100,000 triangles, and near Studio Mode's advice of 3,000 for scenery or a unit card and 6,000 for a unit unless it needs more
+- [ ] Pictures are PNG or JPEG, at most 4096 pixels on a side, and 1024 is plenty
+- [ ] Nothing in the model comes from the original game
+- [ ] The model and its textures are my own work, or I have the right to share them, and I give OpenKingdoms the right to use them in Stars of Darien
 
 Where the pictures came from:
 

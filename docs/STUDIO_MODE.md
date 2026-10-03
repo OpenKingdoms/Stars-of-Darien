@@ -100,7 +100,7 @@ The height check says where its number comes from. When the studio has only the 
 
 Below the list, Turn left, Turn right and Half turn turn the model by quarters, Scale sets its size by hand, Centre centres it on the anchor, and Undo fixes goes back to the model as exported. Fixes never change your own file. They are applied to the copy that goes into the game.
 
-The studio also warns when a feature or card model has more than 3,000 triangles or a unit more than 6,000, since a map can show hundreds of them at once. It warns about pictures larger than 1024 pixels on a side, pictures in a format the game can't read (use PNG or JPEG), pictures a model names that are not there, and see-through pictures on a material set to opaque. For leaves, fences and anything else with see-through parts, plug the picture's Alpha into the shader's Alpha in Blender, and the game cuts those parts out.
+The studio also gives advice when a feature or card model has more than 3,000 triangles or a unit more than 6,000, since a map can show hundreds of them at once, and when a picture is larger than 1024 pixels on a side. Advice never stops a model going in. Past 100,000 triangles, or with a picture larger than 4096 pixels on a side, the studio refuses the model, as the pull request check would. It warns about pictures in a format the game can't read (use PNG or JPEG), pictures a model names that are not there, and see-through pictures on a material set to opaque. For leaves, fences and anything else with see-through parts, plug the picture's Alpha into the shader's Alpha in Blender, and the game cuts those parts out.
 
 ## Putting it in the game
 
@@ -172,7 +172,7 @@ Under Tools, both settings are optional. Sprite catalog is a folder that `tools/
 
 ## Sharing your work
 
-Models you put into the game with Use in game land in `unity/Assets/Overrides/Features` and `unity/Assets/Overrides/Units`, and those folders are shared through GitHub. To send them in, open GitHub Desktop, make a new branch named after what you made (Branch, then New branch), tick only your model files and their `.meta` files in the list of changes, write a line about them, press Commit, then Push. Then press Create Pull Request and fill in the form GitHub opens. The maintainers review it, and once they merge it the model is in the game for everyone. `docs/CONTRIBUTING-MODELS.md` walks through it step by step.
+Models you put into the game with Use in game land in `unity/Assets/Overrides/Features` and `unity/Assets/Overrides/Units`, and those folders are shared through GitHub. To send them in, open GitHub Desktop, make a new branch named after what you made (Branch, then New branch), tick only your model files and their `.meta` files in the list of changes, write a line about them, press Commit, then Push. Then press Create Pull Request and fill in the form GitHub opens. Anyone can review it, an art reviewer or the maintainer approves it, and once it is merged the model is in the game for everyone. `docs/CONTRIBUTING-MODELS.md` walks through it step by step.
 
 For a unit card, also tick the `.json` file beside the model and its `.meta` file. Without the `.json`, the game on everyone else's computer takes your card model for a whole unit and the unit loses its other pieces.
 

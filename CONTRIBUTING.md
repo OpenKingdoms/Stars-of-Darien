@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping with Stars of Darien. Changes come in as pull requests from a fork, and a maintainer merges them once they pass review.
+Thanks for helping with Stars of Darien. Changes come in as pull requests from a fork, and are merged once they pass review.
 
 Models for the scenery and units have their own guide, written for artists, in `docs/CONTRIBUTING-MODELS.md`. This page is for code.
 
@@ -25,6 +25,6 @@ On Windows with Unity 6000.3.25f1 installed, `bash scripts/csharp-check.sh` from
 
 ## Licence
 
-Stars of Darien is under the GNU General Public License, version 3 or later, with an additional permission for the Unity engine in `LICENSE.unity-exception`. By opening a pull request you agree that your contribution is shared under those terms, including that permission.
+Stars of Darien is under the GNU General Public License, version 3 or later, with an additional permission for the Unity engine in `LICENSE.unity-exception`. By opening a pull request you agree that your contribution is shared under those terms, including that permission. Sending in a model or a texture also confirms that it is your own work or that you have the right to share it, and gives OpenKingdoms the right to use it in Stars of Darien.
 
 Everyone taking part follows the `CODE_OF_CONDUCT.md`.

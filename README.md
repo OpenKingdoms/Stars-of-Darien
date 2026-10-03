@@ -34,7 +34,7 @@ The engine libraries come with the clone in `engine/`, and the editor puts them 
 
 ## Contributing
 
-Changes come in as pull requests from a fork, and a maintainer reviews each one before merging it. Models are the easiest way in. `docs/CONTRIBUTING-MODELS.md` takes an artist from a fork to a model in the game with no code, and `docs/STUDIO_MODE.md` is the guide to the studio where models are tried out. Code follows `CONTRIBUTING.md`, and everyone follows `CODE_OF_CONDUCT.md`.
+Changes come in as pull requests from a fork, and each one is reviewed before it is merged, by the maintainer or, for models, by an art reviewer from the community. Models are the easiest way in. `docs/CONTRIBUTING-MODELS.md` takes an artist from a fork to a model in the game with no code, and `docs/STUDIO_MODE.md` is the guide to the studio where models are tried out. Code follows `CONTRIBUTING.md`, and everyone follows `CODE_OF_CONDUCT.md`.
 
 ## How it is put together
 

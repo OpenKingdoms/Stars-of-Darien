@@ -1,2 +1,7 @@
 # Every change is reviewed by the maintainer.
 * @zbennett10
+
+# Models and their textures: an approval from the maintainer or from an art
+# reviewer is enough.
+/unity/Assets/Overrides/** @zbennett10 @OpenKingdoms/art-reviewers
+/unity/Assets/Game/Studio/Samples/** @zbennett10 @OpenKingdoms/art-reviewers

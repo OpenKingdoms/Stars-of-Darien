@@ -6,7 +6,7 @@ Stars of Darien draws the trees, stones, ruins, buildings and units of Total Ann
 2. Make the model in Blender or any tool that exports glTF.
 3. Check it in Studio Mode and press Use in game, which puts it in the right folder under the right name.
 4. Commit it, push it and open a pull request.
-5. An automatic check and a maintainer review it. When a maintainer merges the pull request, your model is in the game for everyone.
+5. An automatic check looks at it, and anyone can review it. Once an art reviewer or the maintainer approves it, it can be merged, and merging puts your model in the game for everyone.
 
 ## What you need
 
@@ -57,20 +57,24 @@ A model may reach a little way below the ground as a foundation, so that it neve
 
 The front faces south, toward the game's camera. In Blender that is the side you see in Front view (numpad 1), the -Y side.
 
-### Limits
+### Triangles and picture sizes
 
-A map can show hundreds of models at once, so each one has a budget.
+A map can show hundreds of models at once, and lighter models draw faster. Studio Mode suggests these numbers, and the reviewers see them beside your model's own.
 
 | | Scenery and unit cards | Units |
 | --- | --- | --- |
-| Triangles | 3,000 at most | 6,000 at most |
-| Pictures | PNG or JPEG, at most 1024 pixels on a side | the same |
+| Triangles | about 3,000 | about 6,000 |
+| Pictures | PNG or JPEG, up to 1024 pixels on a side | the same |
+
+Going over is fine when the model needs it. The check fails a model only when it has more than 100,000 triangles or a picture larger than 4096 pixels on a side, since that is nearly always a mistake, such as a Subdivision Surface modifier applied at a high level or a photo straight from a camera.
 
 A few shared pictures draw faster than many. `docs/STUDIO.md`, under Materials, says which materials work best and how to make parts glow.
 
 ### Pictures
 
-Every picture on your model must be your own work, or something you have the right to share under the project's licence, such as a CC0 texture. Say where each one came from in your pull request.
+You can paint your own textures, and they ship inside your model. Every picture on your model must be your own work, or something you have the right to share, such as a CC0 texture. Say where each one came from in your pull request.
+
+By sending in a model or a texture, you confirm that it is your own work or that you have the right to share it, and you give OpenKingdoms the right to use it in Stars of Darien. The pull request form has a box to tick for this.
 
 Nothing may come from the original game. Don't use its pictures, don't paint over them, and don't trace them. Look at the original as much as you like to judge size and shape, and then make your own.
 
@@ -94,7 +98,7 @@ Take a screenshot while you are there, with the Screenshot button or F9. It goes
 4. Fill in the checklist in the form, say where your pictures came from, and drag your screenshot in. Leave Allow edits by maintainers ticked, so a maintainer can fix a small thing for you.
 5. Press Create pull request.
 
-By opening a pull request you agree that your work is shared under the project's licence, the GNU General Public License version 3 or later with the additional permission in `LICENSE.unity-exception`.
+By opening a pull request you agree that your work is shared under the project's licence, the GNU General Public License version 3 or later with the additional permission in `LICENSE.unity-exception`. For a model or a texture, you also confirm that it is your own work or that you have the right to share it, and you give OpenKingdoms the right to use it in Stars of Darien.
 
 To change your model after that, export again, press Use in game again, then commit and push to the same branch. The pull request picks up the new version by itself.
 
@@ -104,14 +108,14 @@ An automatic check called model-check runs on every pull request within a few mi
 
 - isn't a readable glTF binary, or uses compression
 - isn't straight in `Overrides/Features` or `Overrides/Units`, or has no `.meta` file beside it
-- has more triangles than its budget, or a picture that isn't PNG or JPEG or is larger than 1024 pixels
+- has more than 100,000 triangles, or a picture that isn't PNG or JPEG or is larger than 4096 pixels on a side
 - is far too big or small, which usually means it was exported at the wrong scale
 - floats above the ground, or reaches below it by more than a quarter of its height
 - holds anything made from the original game's files by the project's own tools
 
-Its report is on the pull request under Checks, with a table of each model's triangles and size. If it fails, fix what it says, export, Use in game, commit and push again. You can run the same check yourself with `python scripts/check-models.py` and the path of your model.
+Its report is on the pull request under Checks, with a table of each model's triangles, pictures and size beside Studio Mode's advice. Every new or changed picture is drawn in a texture sheet, `new-textures.png`, which the report links to, so reviewers can see your textures without opening Unity. If the check fails, fix what it says, export, Use in game, commit and push again. You can run the same check yourself with `python scripts/check-models.py` and the path of your model.
 
-Then a maintainer looks at the model. They check that:
+Anyone can review a model's pull request and comment on it. The art reviewers, trusted members of the community in the OpenKingdoms art-reviewers team, and the maintainer approve them. They check that:
 
 - it replaces the right thing and is named for it
 - it is the right size against the original and the monarch, and sits on its footprint
@@ -120,7 +124,7 @@ Then a maintainer looks at the model. They check that:
 - a unit's parts follow the original's animation, and a unit card leaves the rest of the unit in place
 - the pull request holds only your model and the files that go with it
 
-They may ask for changes in a comment, and you can answer there. When they are happy, they merge the pull request. Merged means it is in the game. Everyone who updates the project gets your model the next time they open it.
+They may ask for changes in a comment, and you can answer there. An approval from an art reviewer or the maintainer lets the pull request be merged, and merging puts the model and its textures in the game. Everyone who updates the project gets your model the next time they open it.
 
 ## Getting help
 
