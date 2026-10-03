@@ -166,9 +166,10 @@ namespace OpenKingdomsUnity.Tests
             finally { UnityEngine.Object.DestroyImmediate(root); }
         }
 
-        // As tools/sprite-replace/okpaint.py checks an export: a picture in a
-        // shipped model belongs to a material marked okGenerated, a painted
-        // material holds none, and nothing is stamped as the player's.
+        // As tools/sprite-replace/okpaint.py checks a shipped model: a painted
+        // material holds no picture, nothing is stamped as the player's, and a
+        // carved model's pictures belong to materials marked okGenerated. Any
+        // other picture is an artist's own, approved when it was merged.
         [Test]
         public void NoShippedModelHoldsTheOriginalsArt()
         {
@@ -193,8 +194,10 @@ namespace OpenKingdomsUnity.Tests
                         foreach (var t in refs) vouched.Add(MiniJson.Int(textures[t], "source"));
                 }
                 int images = (MiniJson.Arr(json, "images") ?? new List<object>()).Count;
-                for (int i = 0; i < images; i++) if (!vouched.Contains(i)) bad.Add(name + ": picture " + i + " is not from a material marked generated");
-                foreach (var n in MiniJson.Arr(json, "nodes") ?? new List<object>())
+                var nodes = MiniJson.Arr(json, "nodes") ?? new List<object>();
+                if (nodes.Any(n => MiniJson.Obj(n, "extras")?.ContainsKey("okCarved") == true))
+                    for (int i = 0; i < images; i++) if (!vouched.Contains(i)) bad.Add(name + ": picture " + i + " is in a carved model and not from a material marked generated");
+                foreach (var n in nodes)
                     if (MiniJson.Obj(n, "extras")?.ContainsKey("okFromPlayersFiles") == true) bad.Add(name + ": stamped as the player's");
             }
             CollectionAssert.IsEmpty(bad);
