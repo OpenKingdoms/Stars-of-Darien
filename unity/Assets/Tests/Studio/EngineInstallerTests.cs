@@ -154,6 +154,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(api, ReadVersion(File.ReadAllBytes(engine), "okx_api_version"), "the published library reports the binding's API");
             Assert.IsTrue(File.Exists(Path.Combine(ReleaseDir, "SDL2.dll")));
             Assert.IsTrue(File.Exists(Path.Combine(ReleaseDir, "VERSION")));
+            foreach (var mac in Directory.GetFiles(ReleaseDir, "okengine-api*.dylib"))
+                Assert.AreEqual(api, ReadVersion(File.ReadAllBytes(mac), "okx_api_version"), $"{Path.GetFileName(mac)} is the Mac build of the binding's API; run scripts/publish-engine.sh");
         }
 
         [Test]
@@ -202,6 +204,95 @@ namespace OpenKingdomsUnity.Tests
                 Assert.AreEqual(Outcome.Ready, Run(plugins, release, keep, (f, e) => null, 17, Names.Linux).Engine.Outcome, "a local build of the right API stays");
             }
             finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        }
+
+        [Test]
+        public void TheVersionIsReadFromAMacLibraryToo()
+        {
+            var arm = new byte[] { 0x40, 0x05, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6 };   // mov w0, #42; ret
+            Assert.AreEqual(42, ReadVersion(FakeMach("okx_api_version", arm), "okx_api_version"));
+            Assert.IsNull(ReadVersion(FakeMach("okx_api_version", arm), "ok_sim_abi_version"), "no such export");
+            Assert.AreEqual(42, ReadVersion(Universal(FakeMach("okx_api_version", arm)), "okx_api_version"), "a universal library");
+            Assert.AreEqual(17, ReadVersion(FakeMach("okx_api_version", new byte[] { 0xB8, 17, 0, 0, 0, 0xC3 }, intel: true), "okx_api_version"), "an Intel build");
+            var odd = new byte[] { 0x40, 0x05, 0x80, 0x52, 0x1F, 0x20, 0x03, 0xD5 };   // mov w0, #42; nop
+            Assert.IsNull(ReadVersion(FakeMach("okx_api_version", odd), "okx_api_version"), "code that is not mov w0, #N; ret is not guessed at");
+        }
+
+        [Test]
+        public void OnAMacTheEngineIsADylibWithItsOwnImportSettings()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "oku-installer-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            string plugins = Path.Combine(root, "Plugins"), release = Path.Combine(root, "engine"), keep = Path.Combine(root, "keep");
+            string lib = Path.Combine(plugins, "libokengine.dylib"), meta = lib + ".meta";
+            var arm = new byte[] { 0x20, 0x02, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6 };   // mov w0, #17; ret
+            Directory.CreateDirectory(release);
+            try
+            {
+                File.WriteAllBytes(Path.Combine(release, "okengine-api17.dll"), Lib("okx_api_version", 17, 1));
+                File.WriteAllBytes(Path.Combine(release, "SDL2.dll"), new byte[] { 1, 2, 3 });
+                var r = Run(plugins, release, keep, (f, e) => null, 17, Names.Mac);
+                Assert.AreEqual(Outcome.NotPublished, r.Engine.Outcome, "a Windows library is not a Mac one");
+                Assert.IsNull(r.Sdl, "SDL is linked into the Mac library");
+                Assert.IsFalse(Directory.Exists(plugins) && Directory.GetFiles(plugins).Length > 0, "nothing of Windows' is copied");
+
+                File.WriteAllBytes(Path.Combine(release, "okengine-api17.dylib"), FakeMach("okx_api_version", arm));
+                r = Run(plugins, release, keep, (f, e) => null, 17, Names.Mac);
+                Assert.AreEqual(Outcome.Ready, r.Engine.Outcome);
+                Assert.IsTrue(File.Exists(lib), "a published Mac build is installed under the name DllImport finds");
+                StringAssert.Contains("OS: OSX", File.ReadAllText(meta), "the editor on a Mac loads it");
+                Assert.IsTrue(r.Copied);
+
+                File.WriteAllText(meta, "fileFormatVersion: 2\nguid: 0123456789abcdef0123456789abcdef\nPluginImporter:\n");
+                Assert.IsTrue(Run(plugins, release, keep, (f, e) => null, 17, Names.Mac).Copied, "a meta Unity made on its own is replaced");
+                Assert.IsFalse(Run(plugins, release, keep, (f, e) => null, 17, Names.Mac).Copied, "the installer's own meta stays");
+
+                File.WriteAllBytes(lib, FakeMach("okx_api_version", arm.Concat(new byte[] { 9 }).ToArray()));
+                Assert.AreEqual(Outcome.Ready, Run(plugins, release, keep, (f, e) => null, 17, Names.Mac).Engine.Outcome, "a local build of the right API stays");
+            }
+            finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+        }
+
+        // A thin 64-bit Mach-O library: __TEXT at an address other than its
+        // file offset, holding the code, and a symbol table naming it.
+        static byte[] FakeMach(string export, byte[] code, bool intel = false)
+        {
+            var d = new byte[0x400];
+            void U32(int at, int v) { d[at] = (byte)v; d[at + 1] = (byte)(v >> 8); d[at + 2] = (byte)(v >> 16); d[at + 3] = (byte)(v >> 24); }
+            void U64(int at, long v) { U32(at, (int)v); U32(at + 4, (int)(v >> 32)); }
+            const int segment = 32, symtab = segment + 72, symbols = 0x100, strings = 0x180, text = 0x200, va = 0x4000;
+            U32(0, unchecked((int)0xFEEDFACF));
+            U32(4, intel ? 0x01000007 : 0x0100000C);
+            U32(16, 2);
+            U32(segment, 0x19);
+            U32(segment + 4, 72);
+            U64(segment + 24, va);
+            U64(segment + 32, 0x400);
+            U64(segment + 40, 0);
+            U64(segment + 48, 0x400);
+            U32(symtab, 0x2);
+            U32(symtab + 4, 24);
+            U32(symtab + 8, symbols);
+            U32(symtab + 12, 1);
+            U32(symtab + 16, strings);
+            U32(symtab + 20, 0x80);
+            U32(symbols, 1);
+            d[symbols + 4] = 0x0F;   // N_SECT | N_EXT
+            d[symbols + 5] = 1;
+            U64(symbols + 8, va + text);
+            var n = Encoding.ASCII.GetBytes("_" + export);
+            Array.Copy(n, 0, d, strings + 1, n.Length);
+            Array.Copy(code, 0, d, text, code.Length);
+            return d;
+        }
+
+        // A universal file with one slice, at an offset of its own.
+        static byte[] Universal(byte[] slice)
+        {
+            var d = new byte[0x1000 + slice.Length];
+            byte[] header = { 0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 1, 1, 0, 0, 0x0C, 0, 0, 0, 0, 0, 0, 0x10, 0 };
+            Array.Copy(header, d, header.Length);
+            Array.Copy(slice, 0, d, 0x1000, slice.Length);
+            return d;
         }
 
         // A PE32+ image with one section holding an export table with one

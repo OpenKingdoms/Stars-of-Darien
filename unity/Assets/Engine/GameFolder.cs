@@ -145,6 +145,10 @@ namespace OpenKingdomsUnity.Engine
             list.Add("C:/Cavedog/Kingdoms");
             list.Add("C:/Games/Total Annihilation Kingdoms");
             list.Add("C:/Games/Kingdoms");
+            // Where a Mac or Linux player keeps it, as OpenKingdoms does.
+            string home = Environment.GetEnvironmentVariable("HOME");
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !string.IsNullOrEmpty(home))
+                list.Add(home + "/Games/Total Annihilation Kingdoms");
             for (int i = 0; i < list.Count; i++) list[i] = Clean(list[i]);
             return list;
         }

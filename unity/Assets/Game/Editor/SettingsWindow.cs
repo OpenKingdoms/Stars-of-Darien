@@ -55,7 +55,8 @@ namespace OpenKingdomsUnity.Studio
         public static string Source()
         {
             if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OK_GAME_DIR"))) return "Set by the OK_GAME_DIR environment variable, which wins over this setting.";
-            return EditorPrefs.GetString(GameDirPref, "").Length > 0 ? "Set here." : "The default place for the GOG edition.";
+            if (EditorPrefs.GetString(GameDirPref, "").Length > 0) return "Set here.";
+            return Application.platform == RuntimePlatform.OSXEditor ? "The default place on a Mac." : "The default place for the GOG edition.";
         }
 
         // A folder with the game's archives or its program in it.

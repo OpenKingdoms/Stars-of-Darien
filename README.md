@@ -20,7 +20,7 @@ You bring your own game. Stars of Darien contains none of the original's data, a
 
 Stars of Darien plays the game from your own copy of Total Annihilation: Kingdoms. The GOG edition works, and so does the game folder copied off the original CD. Nothing from it is ever copied into this repository, and none of it is shared.
 
-Tell the game where your copy is under OpenKingdoms, then Settings, in the Unity editor. With nothing set it looks in the GOG edition's default folder, `C:/GOG Games/Total Annihilation Kingdoms`. The `OK_GAME_DIR` environment variable overrides both.
+Tell the game where your copy is under OpenKingdoms, then Settings, in the Unity editor. With nothing set it looks in the GOG edition's default folder, `C:/GOG Games/Total Annihilation Kingdoms`, and on a Mac in `~/Games/Total Annihilation Kingdoms`. The `OK_GAME_DIR` environment variable overrides both.
 
 Without a copy, the game runs on a stand-in world with made-up maps and boxy soldiers, which is enough to work on the menus, the world view, the tools and new models.
 
@@ -30,7 +30,7 @@ Without a copy, the game runs on a stand-in world with made-up maps and boxy sol
 2. Clone this repository and add its `unity/` folder in Hub. Hub offers to install the editor version the project needs, 6000.3.25f1.
 3. Open the project and pick OpenKingdoms, then Play Remaster.
 
-The engine libraries come with the clone in `engine/`, and the editor puts them in place when it starts, so there is nothing to build. The engine is a Windows library. If it can't run, the game says why and what to do instead of starting. `docs/ITERATE.md` covers the controls, the tests and the captures.
+The engine libraries come with the clone in `engine/`, and the editor puts them in place when it starts, so there is nothing to build. The engine runs on Windows and on a Mac with Apple silicon. If it can't run, the game says why and what to do instead of starting. `docs/ITERATE.md` covers the controls, the tests and the captures.
 
 ## Contributing
 

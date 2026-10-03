@@ -19,7 +19,7 @@ For anything bigger than a small fix, open an issue first and say what you plan,
 
 ## Testing
 
-On Windows with Unity 6000.3.25f1 installed, `bash scripts/csharp-check.sh` from Git Bash compiles the game's scripts and runs the quick tests without opening Unity. Set `UNITY_DATA` to the editor's `Data` folder when the editor isn't in `D:/Unity/6000.3.25f1`. `powershell -File scripts/unity-test.ps1 -Unity <path to Unity.exe>` runs the EditMode and PlayMode suites with the editor closed. A change that alters behaviour should come with a test that fails without it.
+On Windows with Unity 6000.3.25f1 installed, `bash scripts/csharp-check.sh` from Git Bash compiles the game's scripts and runs the quick tests without opening Unity. Set `UNITY_DATA` to the editor's `Data` folder when the editor isn't in `D:/Unity/6000.3.25f1`. `powershell -File scripts/unity-test.ps1 -Unity <path to Unity.exe>` runs the EditMode and PlayMode suites with the editor closed. On a Mac, `bash scripts/unity-test-mac.sh` does the same, and `bash scripts/build-engine-mac.sh` builds the engine library there. A change that alters behaviour should come with a test that fails without it.
 
 `python3 scripts/check-models.py --changed origin/main` runs the model check that every pull request gets.
 

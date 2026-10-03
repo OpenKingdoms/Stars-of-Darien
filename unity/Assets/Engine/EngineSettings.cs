@@ -11,7 +11,10 @@ namespace OpenKingdomsUnity.Engine
         // The install to read. OK_GAME_DIR and OK_DATA_DIR override these,
         // and the data folder is optional loose files that win over the
         // archives, read only in the editor unless OK_DATA_DIR names one.
-        public const string DefaultGameDir = "C:/GOG Games/Total Annihilation Kingdoms";
+        // A Mac keeps the game where OpenKingdoms' own Mac build looks.
+        public const string WindowsGameDir = "C:/GOG Games/Total Annihilation Kingdoms";
+        public static string MacGameDir => (Environment.GetEnvironmentVariable("HOME") ?? "") + "/Games/Total Annihilation Kingdoms";
+        public static string DefaultGameDir => IsMac ? MacGameDir : WindowsGameDir;
         public const string DefaultDataDir = "C:/Projects/TAK-RE/data/extracted";
 
         // OpenKingdoms > Settings in the editor can name another folder, and
@@ -78,10 +81,14 @@ namespace OpenKingdomsUnity.Engine
             }
         }
 
-        public static string PluginDir => Path.Combine(Application.dataPath, "Plugins", "x86_64");
-        // The engine's file in PluginDir. DllImport("okengine") finds either.
-        public static string LibraryFile => IsLinux ? "libokengine.so" : "okengine.dll";
+        // A Mac player keeps its plugins in Contents/PlugIns.
+        public static string PluginDir => Application.platform == RuntimePlatform.OSXPlayer
+            ? Path.Combine(Application.dataPath, "PlugIns")
+            : Path.Combine(Application.dataPath, "Plugins", IsMac ? "macOS" : "x86_64");
+        // The engine's file in PluginDir. DllImport("okengine") finds each.
+        public static string LibraryFile => IsLinux ? "libokengine.so" : IsMac ? "libokengine.dylib" : "okengine.dll";
         static bool IsLinux => Application.platform == RuntimePlatform.LinuxEditor || Application.platform == RuntimePlatform.LinuxPlayer;
+        static bool IsMac => Application.platform == RuntimePlatform.OSXEditor || Application.platform == RuntimePlatform.OSXPlayer;
         public static string OverrideDir => Path.Combine(Application.streamingAssetsPath, "Overrides");
         // The player's own folder: saved maps (under maps/) and anything
         // else the player adds, mounted over the game's files.

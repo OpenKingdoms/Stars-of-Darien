@@ -1,2 +1,3 @@
 okengine-api23.dll  okengine API 23, unity-embed 4baa5af, main 4b192e6, the cursor over a flyer is the flyer's, published at openkingdoms-unity d1eed93
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
+okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 4baa5af, published at openkingdoms-unity 98083be

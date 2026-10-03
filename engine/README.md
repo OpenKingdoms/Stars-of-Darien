@@ -1,11 +1,12 @@
 # Released engine libraries
 
-This folder holds the engine libraries a fresh clone needs, so nobody has to build the engine to open the project. They live outside `unity/Assets` on purpose. The editor copies the right ones into `unity/Assets/Plugins/x86_64` when it starts, before anything calls them, and that folder stays out of git.
+This folder holds the engine libraries a fresh clone needs, so nobody has to build the engine to open the project. They live outside `unity/Assets` on purpose. The editor copies the right ones into `unity/Assets/Plugins/x86_64` when it starts, before anything calls them, and that folder stays out of git. On a Mac they go into `unity/Assets/Plugins/macOS`, also out of git.
 
 | File | What it is |
 | --- | --- |
 | `okengine-api<N>.dll` | The OpenKingdoms engine as a library, for binding API version N (`OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs`) |
 | `SDL2.dll` | SDL 2, which okengine loads for sound. It is under the zlib license |
+| `okengine-api<N>.dylib` | The same engine for a Mac with Apple silicon, with SDL 2 linked in |
 | `VERSION` | Where each file was built from |
 
 ## What the editor does with them
@@ -18,6 +19,8 @@ This folder holds the engine libraries a fresh clone needs, so nobody has to bui
 - A library built on that machine is left alone when its version matches, or when its version can't be read, as with a Debug build. The binding checks the version itself when the engine starts.
 - A library the project no longer uses, such as the old `okcore.dll`, is removed when the installer put it there.
 
+On a Mac the same rules apply to `libokengine.dylib`, published here as `okengine-api<N>.dylib`. SDL is inside it, so nothing goes beside it. The installer also writes the library's `.meta`, which tells Unity to load it in the editor and in a Mac player, and clears the quarantine flag a downloaded zip leaves on it.
+
 On Linux the same rules apply to `libokengine.so`, published here as `okengine-api<N>.so`, and SDL comes from the system rather than from this folder. No Linux build is published yet, so `scripts/cloud-unity-test.sh` builds one and puts it in the plugin folder, where the installer reads its version from the file and leaves it alone.
 
 Unity cannot unload a native library once it has used it. If a pull brings a new binding while the editor still has the old engine loaded, the installer puts the new file in place for the next start, turns the engine off for this session so nothing calls the old one with the new binding, and asks for a restart. The studio and the game run on the stand-in world until then, and Play in a scene without the game says what is wrong. A new build of the same version is also put in place for the next start, and the loaded one keeps working until then.
@@ -25,8 +28,11 @@ Unity cannot unload a native library once it has used it. If a pull brings a new
 ## Publishing a new engine
 
 1. Build okengine as Release with `scripts/build-engine.sh`, or take a published build such as `D:\OKBuild\okengine-published`. A Debug build's version can't be read, and the script refuses it.
-2. When the API changed, bump `OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs` to the engine's `OKX_API_VERSION`.
-3. Run `bash scripts/publish-engine.sh <folder>`. It needs Python on PATH. It checks the version of the folder's `okengine.dll` against the binding, writes it here as `okengine-api<N>.dll` with the `SDL2.dll` beside it, removes the older ones and rewrites `VERSION`.
-4. Commit this folder in the same commit as the binding change. The EditMode test `EngineInstallerTests` fails if the library here does not match the binding.
+2. Build the Mac library from the same unity-embed commit on a Mac with `scripts/build-engine-mac.sh`. It leaves `libokengine.dylib` and `VERSION-macos.txt` in `~/okbuild/embed-mac/publish`. Copy both beside `okengine.dll`.
+3. When the API changed, bump `OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs` to the engine's `OKX_API_VERSION`.
+4. Run `bash scripts/publish-engine.sh <folder>`. It needs Python on PATH. It checks the version of every library in the folder against the binding, writes them here as `okengine-api<N>.dll` with the `SDL2.dll` beside it and `okengine-api<N>.dylib`, removes the older ones and rewrites `VERSION`. A folder with only one of the two publishes that one and keeps the other.
+5. Commit this folder in the same commit as the binding change. The EditMode test `EngineInstallerTests` fails if a library here does not match the binding.
 
 A new build of the same API version needs no bump. Publish it the same way and every clone picks it up.
+
+When the API changes and no Mac build comes with it, the script removes the old Mac library, since it can't run with the new binding. A Mac then shows the stand-in world and says so in the editor until a Mac build of the new API is published, or until someone on that Mac builds one with `scripts/build-engine-mac.sh`.
