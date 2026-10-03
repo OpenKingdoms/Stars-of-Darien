@@ -1,0 +1,39 @@
+name: Model
+description: Say which model you are making, or ask about one, so no one builds the same thing twice.
+title: "[model] "
+labels: ["model"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        docs/CONTRIBUTING-MODELS.md has the whole guide, from fork to merge.
+
+  - type: input
+    id: replaces
+    attributes:
+      label: What it replaces
+      description: The feature or unit name as the game has it, such as AraTree01 or ARALODE. Studio Mode lists them under Replaces.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options: [Scenery, Unit, Unit card, Not sure]
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Plans or questions
+      description: What you have in mind, how far along it is, or what you'd like to know. Sketches and screenshots are welcome.
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have not attached any of the original game's files or pictures extracted from them (screenshots are fine)
+          required: true

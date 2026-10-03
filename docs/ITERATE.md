@@ -6,7 +6,7 @@ The game's rules live in the OpenKingdoms engine, which Unity loads as `okengine
 
 1. Open Unity Hub from the Start menu and sign in with your Unity account. Under Preferences, then Licenses, add a Unity Personal license.
 2. In Hub, go to Installs, then Locate, and pick `D:\Unity\6000.3.25f1\Editor\Unity.exe`.
-3. In Hub, go to Projects, then Add, then Add project from disk, and pick `C:\Projects\openkingdoms-unity\unity`. The first open imports for a few minutes.
+3. In Hub, go to Projects, then Add, then Add project from disk, and pick `C:\Projects\Stars-of-Darien\unity`. The first open imports for a few minutes.
 
 ## Running the tests
 

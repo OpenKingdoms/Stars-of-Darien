@@ -1,0 +1,7 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Where do I get the game files?
+    url: https://github.com/OpenKingdoms/Stars-of-Darien#getting-the-game-files
+    about: >-
+      Stars of Darien ships none of the original game. You use your own copy,
+      and the README says how. Please don't open an issue asking for files.

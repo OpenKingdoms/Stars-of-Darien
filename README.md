@@ -1,8 +1,8 @@
-# Darien Reforged
+# Stars of Darien
 
 A remaster of Total Annihilation: Kingdoms in Unity, running on the [OpenKingdoms](https://github.com/OpenKingdoms/OpenKingdoms) engine. The engine plays the game by the original's rules, and Unity draws it with modern light, shadows, water and effects, an interface built on the original's own screens, and 3D models in place of the scenery the original only painted. It is free and open, and nothing is sold.
 
-You bring your own game. Darien Reforged contains none of the original's data, and it never will. It reads the maps, units, models, sounds and music from your own installed copy of Total Annihilation: Kingdoms. Without one it runs on a mock engine with made-up maps, which is enough to work on the menus, the world view and the tools.
+You bring your own game. Stars of Darien contains none of the original's data, and it never will. It reads the maps, units, models, sounds and music from your own installed copy of Total Annihilation: Kingdoms. Without one it runs on a mock engine with made-up maps, which is enough to work on the menus, the world view and the tools.
 
 ## What is in it
 
@@ -16,14 +16,25 @@ You bring your own game. Darien Reforged contains none of the original's data, a
 
 `docs/ROADMAP.md` has the plan.
 
-## Getting started
+## Getting the game files
+
+Stars of Darien plays the game from your own copy of Total Annihilation: Kingdoms. The GOG edition works, and so does the game folder copied off the original CD. Nothing from it is ever copied into this repository, and none of it is shared.
+
+Tell the game where your copy is under OpenKingdoms, then Settings, in the Unity editor. With nothing set it looks in the GOG edition's default folder, `C:/GOG Games/Total Annihilation Kingdoms`. The `OK_GAME_DIR` environment variable overrides both.
+
+Without a copy, the game runs on a stand-in world with made-up maps and boxy soldiers, which is enough to work on the menus, the world view, the tools and new models.
+
+## Running it
 
 1. Install Unity Hub and sign in with a Unity account. A free Unity Personal license is enough.
 2. Clone this repository and add its `unity/` folder in Hub. Hub offers to install the editor version the project needs, 6000.3.25f1.
-3. Tell the game where your copy is, under OpenKingdoms, then Settings. With nothing set it looks in the GOG edition's default folder, `C:/GOG Games/Total Annihilation Kingdoms`. The `OK_GAME_DIR` environment variable overrides both.
-4. Pick OpenKingdoms, then Play Remaster.
+3. Open the project and pick OpenKingdoms, then Play Remaster.
 
-The engine libraries come with the clone in `engine/`, and the editor puts them in place when it starts, so there is nothing to build. If the engine can't run, the game says why and what to do instead of starting. `docs/ITERATE.md` covers the controls, the tests and the captures. Artists who only want to try their models in the game can start with `docs/STUDIO_MODE.md`.
+The engine libraries come with the clone in `engine/`, and the editor puts them in place when it starts, so there is nothing to build. The engine is a Windows library. If it can't run, the game says why and what to do instead of starting. `docs/ITERATE.md` covers the controls, the tests and the captures.
+
+## Contributing
+
+Changes come in as pull requests from a fork, and a maintainer reviews each one before merging it. Models are the easiest way in. `docs/CONTRIBUTING-MODELS.md` takes an artist from a fork to a model in the game with no code, and `docs/STUDIO_MODE.md` is the guide to the studio where models are tried out. Code follows `CONTRIBUTING.md`, and everyone follows `CODE_OF_CONDUCT.md`.
 
 ## How it is put together
 
@@ -38,8 +49,10 @@ The engine libraries come with the clone in `engine/`, and the editor puts them 
 - The engine owns all game state and all randomness. Unity draws, takes input, runs the interface and plays sound, and every order goes back through the engine's own command queue. Nothing Unity draws feeds back into the game.
 - `OkEngine.ApiVersion` matches the engine's `OKX_API_VERSION`. A change to the embedding API bumps both, and the new library is published to `engine/` in the same commit.
 - Nothing from the original game is ever committed: no data files, sprites, models, sounds or anything extracted from them. The game reads them from the player's own copy at run time.
-- No code arrives from anyone but Zach until a contributor agreement is in place.
+- Contributions arrive as pull requests, and opening one shares the work under the licence below, including the Unity permission.
 
 ## License
 
-Darien Reforged is free software under the GNU General Public License, version 3 or any later version, in `LICENSE`, with an additional permission to combine it with the Unity engine, in `LICENSE.unity-exception`. The repository is private for now.
+Stars of Darien is free software under the GNU General Public License, version 3 or any later version, in `LICENSE`, with an additional permission to combine it with the Unity engine, in `LICENSE.unity-exception`.
+
+Total Annihilation: Kingdoms and everything in it belong to their owners. This project is not affiliated with them or endorsed by them.

@@ -8,10 +8,10 @@ You don't need to write any code, and you don't need the original game. With the
 
 ## Setting up, once
 
-1. Make a GitHub account if you don't have one, and tell Zach its name. He adds you to the project, and GitHub emails you an invitation. Accept it.
-2. Install GitHub Desktop from desktop.github.com and sign in with that account. Choose File, then Clone repository, pick `zbennett10/openkingdoms-unity`, and clone it into a folder such as `C:\Projects`.
+1. Make a GitHub account if you don't have one. Open github.com/OpenKingdoms/Stars-of-Darien and press Fork. GitHub makes a copy of the project under your account, and that copy is where your work goes.
+2. Install GitHub Desktop from desktop.github.com and sign in with that account. Choose File, then Clone repository, pick your fork (`your-name/Stars-of-Darien`), and clone it into a folder such as `C:\Projects`. When GitHub Desktop asks how you plan to use the fork, pick To contribute to the parent project.
 3. Install Unity Hub from unity.com/download and sign in. Unity asks for a license the first time, and the free Personal license is the one to pick.
-4. In Hub, choose Projects, then Add, then Add project from disk, and pick the `unity` folder inside the clone (for example `C:\Projects\openkingdoms-unity\unity`). The project needs Unity 6000.3.25f1 exactly. Hub notices when it is missing and offers to install it. No extra modules are needed.
+4. In Hub, choose Projects, then Add, then Add project from disk, and pick the `unity` folder inside the clone (for example `C:\Projects\Stars-of-Darien\unity`). The project needs Unity 6000.3.25f1 exactly. Hub notices when it is missing and offers to install it. No extra modules are needed.
 5. Open the project from Hub. The first open imports everything and takes several minutes. Later opens are quick.
 
 Two things are optional. If you own Total Annihilation: Kingdoms (the GOG edition), pick OpenKingdoms, then Settings, and point Game folder at where it is installed. The default is `C:\GOG Games\Total Annihilation Kingdoms`, so a default GOG install needs nothing. For making models, Blender works well, and any tool that exports glTF or FBX will do.
@@ -167,7 +167,7 @@ Under Tools, both settings are optional. Sprite catalog is a folder that `tools/
 
 ## Sharing your work
 
-Models you put into the game with Use in game land in `unity/Assets/Overrides/Features` and `unity/Assets/Overrides/Units`, and those folders are shared through GitHub. To send them to Zach, open GitHub Desktop, make a new branch named after what you made (Branch, then New branch), tick only your model files and their `.meta` files in the list of changes, write a line about them, press Commit, then Push. Tell Zach the branch name.
+Models you put into the game with Use in game land in `unity/Assets/Overrides/Features` and `unity/Assets/Overrides/Units`, and those folders are shared through GitHub. To send them in, open GitHub Desktop, make a new branch named after what you made (Branch, then New branch), tick only your model files and their `.meta` files in the list of changes, write a line about them, press Commit, then Push. Then press Create Pull Request and fill in the form GitHub opens. The maintainers review it, and once they merge it the model is in the game for everyone. `docs/CONTRIBUTING-MODELS.md` walks through it step by step.
 
 For a unit card, also tick the `.json` file beside the model and its `.meta` file. Without the `.json`, the game on everyone else's computer takes your card model for a whole unit and the unit loses its other pieces.
 
@@ -177,7 +177,7 @@ The Drop folder, the Captures folder and `Overrides/Generated` never leave your 
 
 ## Keeping up to date
 
-In GitHub Desktop, press Fetch origin and then Pull when it offers. Unity picks up the changes when you switch back to it. A pull can bring a new build of the game's engine. Unity puts it in place by itself, and if it already has the old one loaded, it shows a message saying the engine was updated and asks you to restart. Save your work and let it restart. Until then the studio uses the stand-in world.
+On your fork's page on GitHub, press Sync fork, then Update branch. Then in GitHub Desktop, switch to the `main` branch, press Fetch origin and then Pull when it offers. Unity picks up the changes when you switch back to it. A pull can bring a new build of the game's engine. Unity puts it in place by itself, and if it already has the old one loaded, it shows a message saying the engine was updated and asks you to restart. Save your work and let it restart. Until then the studio uses the stand-in world.
 
 ## When something looks wrong
 

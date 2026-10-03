@@ -1,0 +1,79 @@
+name: Bug report
+description: Something is broken, such as a crash, a hang, a drawing fault or a stuck unit.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please don't ask for the game's files or where to download the game. The README says how to use your own copy.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or clip
+      description: F9 saves a picture and Shift+F9 a short clip. Drag them into this box.
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Commit or build
+      description: The commit you are on, or the build's version from its main menu.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it happened
+      options: [Unity editor, Studio Mode, A built copy of the game]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data
+    attributes:
+      label: Game files
+      options: [My own copy of Total Annihilation Kingdoms, The stand-in world with no game files]
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: The relevant lines of the Unity console or the player log. Paste the part that matters rather than the whole file.
+      render: shell
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have not attached any of the original game's files or anything extracted from them (screenshots and clips are fine)
+          required: true
