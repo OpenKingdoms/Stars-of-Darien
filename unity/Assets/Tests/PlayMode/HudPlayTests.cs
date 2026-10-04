@@ -325,6 +325,100 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(Sent(0.7f, 0.3f), "modern: a right click sends the selection there");
         }
 
+        // An armed order goes where the minimap is pressed with the button
+        // that sends, and the other button lets it go without looking, in
+        // both schemes, as a click on the field would
+        // (legacy:243645-243647, legacy:243709-243710).
+        [UnityTest]
+        public IEnumerator TheMinimapGivesTheArmedOrderAndItsOtherButtonLetsItGo()
+        {
+            yield return Begin();
+            var input = Hud.Root.GetComponentInChildren<MinimapInput>();
+            Assert.IsNotNull(input, "the minimap takes clicks");
+            var corners = new Vector3[4];
+            ((RectTransform)input.transform).GetWorldCorners(corners);
+            var size = mock.Terrain.Size;
+            var cam = root.World.Camera;
+            int knight = Own(MockBackend.Role.Knight);
+            var legs = new OrderLeg[8];
+
+            Vector3 Ground(float u, float v) => new Vector3(u * size.x, 0, (v - 1f) * size.y);
+            PointerEventData At(PointerEventData.InputButton button, float u, float v) => new PointerEventData(EventSystem.current)
+            {
+                button = button,
+                position = new Vector2(Mathf.Lerp(corners[0].x, corners[2].x, u), Mathf.Lerp(corners[0].y, corners[2].y, v)),
+            };
+            void Press(PointerEventData.InputButton button, float u, float v) => input.OnPointerDown(At(button, u, v));
+            void Drag(PointerEventData.InputButton button, float u, float v) => input.OnDrag(At(button, u, v));
+            bool LooksAt(float u, float v) => new Vector2(cam.focus.x - Ground(u, v).x, cam.focus.z - Ground(u, v).z).magnitude < 0.5f;
+            bool Patrols(float u, float v)
+            {
+                int n = mock.ReadOrderQueue(knight, legs);
+                return n > 0 && legs[0].Kind == OrderKind.Patrol && new Vector2(legs[0].Target.x - Ground(u, v).x, legs[0].Target.z - Ground(u, v).z).magnitude < 2f;
+            }
+            void Still()
+            {
+                mock.Command(GameCommand.To(CommandKind.Stop, knight, Vector3.zero));
+                cam.focus = Ground(0.5f, 0.5f);
+            }
+            var left = PointerEventData.InputButton.Left;
+            var right = PointerEventData.InputButton.Right;
+
+            foreach (bool classic in new[] { true, false })
+            {
+                string scheme = classic ? "classic" : "modern";
+                root.Orders.Classic = classic;
+                root.World.Entities.Selected.Clear();
+                if (classic) mock.Select(new[] { knight }, false);
+                else root.World.Entities.Selected.Add(knight);
+                yield return Settle();
+                Assert.IsTrue(root.World.Entities.Selected.Contains(knight), scheme + ": the knight selected");
+
+                Still();
+                root.Orders.Arm(CommandKind.Patrol);
+                Press(left, 0.2f, 0.8f);
+                Assert.IsTrue(Patrols(0.2f, 0.8f), scheme + ": a left press gives the armed Patrol there");
+                Assert.IsFalse(LooksAt(0.2f, 0.8f), scheme + ": and leaves the view");
+                Assert.IsNull(root.Orders.Armed, scheme + ": and the order is spent");
+
+                Still();
+                root.Orders.Arm(CommandKind.Patrol);
+                Press(right, 0.7f, 0.3f);
+                Assert.IsNull(root.Orders.Armed, scheme + ": a right press lets the armed order go");
+                Assert.IsFalse(LooksAt(0.7f, 0.3f), scheme + ": instead of looking");
+                Drag(right, 0.4f, 0.6f);
+                Assert.IsFalse(LooksAt(0.4f, 0.6f), scheme + ": and a drag after it does not look");
+                Assert.AreEqual(OrderKind.None, mock.ReadOrder(knight).Kind, scheme + ": and sends nobody");
+                Assert.IsTrue(root.World.Entities.Selected.Contains(knight), scheme + ": and the selection stays");
+                yield return Settle();
+                Assert.IsTrue(root.World.Entities.Selected.Contains(knight), scheme + ": still selected after a refresh");
+            }
+        }
+
+        // The help box says what the minimap's buttons do while it is hovered.
+        [UnityTest]
+        public IEnumerator TheHelpBoxSaysWhatTheMinimapsButtonsDo()
+        {
+            yield return Begin();
+            var hint = Hud.Root.GetComponentInChildren<MinimapInput>().GetComponent<HoverHint>();
+            Assert.IsNotNull(hint, "the minimap has a help line");
+            mock.Select(new[] { Own(MockBackend.Role.Knight) }, false);
+            yield return Settle();
+            root.Orders.Classic = true;
+            hint.Show(true);
+            Assert.AreEqual("Minimap", Hud.HelpLine1);
+            Assert.AreEqual("Right looks, left sends units", Hud.HelpLine2);
+            root.Orders.Classic = false;
+            hint.Show(true);
+            Assert.AreEqual("Left looks, right sends units", Hud.HelpLine2);
+            root.Orders.Arm(CommandKind.Patrol);
+            hint.Show(true);
+            Assert.AreEqual("Left orders here, right cancels", Hud.HelpLine2);
+            root.Orders.Disarm();
+            hint.Show(false);
+            Assert.AreNotEqual("Minimap", Hud.HelpLine1);
+        }
+
         [UnityTest]
         public IEnumerator SmallTextReadsAndFitsOnTheSmallestScreen()
         {
