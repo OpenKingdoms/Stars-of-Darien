@@ -58,6 +58,7 @@ namespace OpenKingdomsUnity.Engine
                 OkEngine.okx_set_user_dir(EngineSettings.UserDir.Replace('\\', '/'));
                 if (OkEngine.okx_init(EngineSettings.GameDir, EngineSettings.DataDir) != 0)
                     throw new InvalidOperationException("okx_init: " + OkEngine.LastError);
+                OkEngine.PlayRemasteredRules();
                 OkEngine.okx_set_override_dir(EngineSettings.OverrideDir.Replace('\\', '/'));
                 // Sound is a nicety: a machine without an audio device plays
                 // on, and a batch run (the tests) stays quiet.

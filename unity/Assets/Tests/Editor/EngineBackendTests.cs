@@ -37,6 +37,17 @@ namespace OpenKingdomsUnity.Tests
             return s;
         }
 
+        // Stars of Darien plays the remastered battlefield rules everywhere.
+        [Test, Order(0)]
+        public void TheEnginePlaysTheRemasteredRules()
+        {
+            Assert.IsTrue(OkEngine.RemasteredRules);
+            int on;
+            try { on = OkEngine.okx_remastered(); }
+            catch (EntryPointNotFoundException) { Assert.Ignore("this engine predates the remastered rules"); return; }
+            Assert.AreEqual(1, on);
+        }
+
         [Test, Order(1)]
         public void TheCatalogueAndAPreviewComeBeforeAnyGame()
         {

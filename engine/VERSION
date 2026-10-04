@@ -1,3 +1,3 @@
-okengine-api23.dll  okengine API 23, unity-embed 69c8267, main a7e0502, blasts and weapon info for the look, engine build 22, published at openkingdoms-unity 2f87712
+okengine-api23.dll  okengine API 23, unity-embed 407b6e9, main 63b135e, the remastered battlefield rules, engine build 25, published at openkingdoms-unity eecb3ac
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
 okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 20f7aa6, published at openkingdoms-unity f8680ed

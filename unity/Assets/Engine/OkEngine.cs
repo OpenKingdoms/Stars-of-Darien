@@ -421,6 +421,19 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_net_rooms([Out] OkxNetRoom[] rooms, int cap);
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_create_room(string name, string map, int options);
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_join_room(uint id, string code);
+        // The remastered battlefield rules: every skirmish this host starts
+        // and every room it hosts play them, and it joins only rooms that do.
+        // Stars of Darien always plays them, so there is no setting for it.
+        // An engine built before them lacks both calls, and plays without.
+        public static readonly bool RemasteredRules = true;
+        [DllImport(Lib)] public static extern void okx_set_remastered(int on);
+        [DllImport(Lib)] public static extern int okx_remastered();
+
+        public static void PlayRemasteredRules()
+        {
+            try { okx_set_remastered(RemasteredRules ? 1 : 0); }
+            catch (EntryPointNotFoundException) { }
+        }
         [DllImport(Lib)] public static extern int okx_net_leave_room();
         [DllImport(Lib)] public static extern int okx_net_room(out OkxNetRoomInfo info);
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_net_edit(int field, int seat, int value, string text);
