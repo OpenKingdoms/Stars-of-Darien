@@ -11,8 +11,8 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/catch-up-test.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 # The log, the launchd agent and git's settings stay in the sandbox.
-export HOME="$work/home" SOD_GH="$work/no-gh" GIT_CONFIG_NOSYSTEM=1
-mkdir -p "$HOME"
+export HOME="$work/home" TMPDIR="$work/tmp" SOD_GH="$work/no-gh" GIT_CONFIG_NOSYSTEM=1
+mkdir -p "$HOME" "$TMPDIR"
 git config --global user.name test
 git config --global user.email test@example.invalid
 git config --global init.defaultBranch main
@@ -63,6 +63,7 @@ check "it writes the editor's import settings" 'grep -q "guid: 8d2b6f0e4c1a4e7b9
 check "it says what it did" 'grep -q "unity-embed bbbbbbb" "$work/out.txt"'
 check "it logs to a file" 'grep -q "unity-embed bbbbbbb" "$HOME/Library/Logs/stars-of-darien-catch-up.log"'
 check "the checkout stays clean" '[ -z "$(git -C "$mac" status --porcelain)" ]'
+check "it cleans up after itself" '[ -z "$(ls -A "$TMPDIR")" ] && ! grep -q "unbound variable" "$work/out.txt"'
 
 echo "== A checkout with changes"
 publish "$seed" ccccccc ccccccc "build C" "Build C"

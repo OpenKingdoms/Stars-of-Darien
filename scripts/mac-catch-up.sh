@@ -24,6 +24,8 @@ launchctl="${SOD_LAUNCHCTL:-launchctl}"
 label=net.openkingdoms.stars-of-darien.catch-up
 log="$HOME/Library/Logs/stars-of-darien-catch-up.log"
 agent="$HOME/Library/LaunchAgents/$label.plist"
+lock="${TMPDIR:-/tmp}/stars-of-darien-catch-up.lock"
+tmp=""
 
 # The whole script is parsed before it runs, so a pull that changes this
 # file can't change what runs.
@@ -40,7 +42,6 @@ main() {
     if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 1000000 ]; then
         tail -n 3000 "$log" > "$log.tmp" && mv "$log.tmp" "$log"
     fi
-    local lock="${TMPDIR:-/tmp}/stars-of-darien-catch-up.lock"
     if ! mkdir "$lock" 2> /dev/null; then
         if kill -0 "$(cat "$lock/pid" 2> /dev/null)" 2> /dev/null; then
             echo "$(stamp) another catch-up is running" >> "$log"
@@ -137,7 +138,6 @@ same() { [ -n "$1" ] && [ -n "$2" ] && { [ "${2#"$1"}" != "$2" ] || [ "${1#"$2"}
 
 installed=""
 want=""
-tmp=""
 install_engine() {
     local remote="$1" api have committed lib="" from="" ours=0
     api=$(grep -o 'ApiVersion = [0-9]*' unity/Assets/Engine/OkEngine.cs 2> /dev/null | grep -o '[0-9]*$')
