@@ -157,6 +157,8 @@ namespace OpenKingdomsUnity.Tests
             tex.Apply();
             RenderTexture.active = null;
             cam.targetTexture = old;
+            // Back to the screen's own shape, so later tests see the view they expect.
+            cam.ResetAspect();
             RenderTexture.ReleaseTemporary(rt);
             File.WriteAllBytes(path, tex.EncodeToPNG());
             Object.Destroy(tex);

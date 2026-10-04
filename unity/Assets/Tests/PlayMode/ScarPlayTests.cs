@@ -89,21 +89,23 @@ namespace OpenKingdomsUnity.Tests
             // The region's finer mesh is built on a worker.
             for (int f = 0; f < 300 && root.World.Terrain.RefinedRegions == 0; f++) yield return null;
             var at = cannon[0].Position;
-            var stamp = ScarStamps.Make(ScarKind.Gunpowder, at, cannon[0].Radius, Vector3.zero);
+            ScarStamps.Make(cannon[0], mock.Terrain.Sample(at.x, at.z), out var stamp);
             float centre = ScarMap.GroundOffset(at.x, at.z) * Px;
             float rim = float.MinValue;
             for (int a = 0; a < 32; a++)
-            {
-                float ang = a * Mathf.PI / 16f, r = stamp.Dent * 1.05f;
-                rim = Mathf.Max(rim, ScarMap.GroundOffset(at.x + Mathf.Cos(ang) * r, at.z + Mathf.Sin(ang) * r) * Px);
-            }
+                for (float k = 0.8f; k <= 1.8f; k += 0.1f)
+                {
+                    float ang = a * Mathf.PI / 16f, r = stamp.Dent * k;
+                    rim = Mathf.Max(rim, ScarMap.GroundOffset(at.x + Mathf.Cos(ang) * r, at.z + Mathf.Sin(ang) * r) * Px);
+                }
             var shape = ScarMap.Read(scars.Shape);
             var texel = scars.TexelAt(shape, at.x, at.z);
             Debug.Log($"Cannon on the mock: {centre:0.00} px at the centre, rim {rim:0.00} px, shape texel {texel.r}/{texel.g}, " +
                       $"{root.World.Terrain.RefinedRegions} regions dented, {scars.TexW}x{scars.TexH} texels");
-            Assert.AreEqual(-6f, centre, 0.75f, "about 6 pixels deep at its centre");
+            Assert.AreEqual(-stamp.Depth, centre, 0.75f, "its depth at its centre");
+            Assert.LessOrEqual(stamp.Depth, 6f + 0.01f, "no deeper than the owner's 6 pixels");
             Assert.Greater(rim, 1f, "a rim of thrown earth");
-            Assert.AreEqual(6f / ScarStamps.MaxDepthPx * 255f, texel.r, 6f, "the texture the ground dips by holds the same dip");
+            Assert.AreEqual(stamp.Depth / ScarStamps.MaxDepthPx * 255f, texel.r, 6f, "the texture the ground dips by holds the same dip");
             Assert.Greater(root.World.Terrain.RefinedRegions, 0, "the crater's region is rebuilt to dip");
             var marks = scars.TexelAt(ScarMap.Read(scars.Marks), at.x, at.z);
             Assert.Greater(marks.r, 100, "scorched");

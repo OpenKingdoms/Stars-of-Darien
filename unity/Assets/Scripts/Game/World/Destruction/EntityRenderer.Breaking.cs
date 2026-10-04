@@ -31,6 +31,9 @@ namespace OpenKingdomsUnity.Game.World
         const int ChipsPerFrame = 6;
         readonly List<string> nameScratch = new List<string>(3);
 
+        // Draw calls the chunks took last frame, for tests.
+        public int ChunkDrawCalls => debrisDraws.DrawCalls + smallDebrisDraws.DrawCalls;
+
         // How many features are breaking now, for tests.
         public int Breaking
         {
@@ -101,9 +104,14 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
+        // Events looked up and those whose feature was not found, for tests.
+        public int EntryLookups { get; private set; }
+        public int EntryMisses { get; private set; }
+
         // The entry drawn for a feature: near the index it had, of its kind, where it stands.
         FeatureEntry EntryFor(int index, int def, Vector3 at)
         {
+            EntryLookups++;
             int n = featureEntries.Count;
             for (int r = 0; r < 64; r++)
             {
@@ -113,7 +121,24 @@ namespace OpenKingdomsUnity.Game.World
                 if (r > 0 && k >= 0 && k < n && Is(featureEntries[k], def, at)) return featureEntries[k];
             }
             foreach (var e in featureEntries) if (Is(e, def, at)) return e;
+            EntryMisses++;
             return null;
+        }
+
+        // The def of the feature drawn standing at p, to within in x and z,
+        // whether it is drawn from an earlier stage, and whether it is breaking. -1 for none.
+        public int DrawnDefAt(Vector3 p, float within, out bool fallback, out bool breaking)
+        {
+            fallback = breaking = false;
+            foreach (var e in featureEntries)
+            {
+                if (Mathf.Abs(e.Position.x - p.x) > within || Mathf.Abs(e.Position.z - p.z) > within) continue;
+                if (e.Draws.Count == 0 && !e.Card) continue;
+                fallback = e.Fallback >= 0;
+                breaking = e.Hold != 0;
+                return e.Def;
+            }
+            return -1;
         }
 
         static bool Is(FeatureEntry e, int def, Vector3 at) => e.Def == def && e.Position.x == at.x && e.Position.z == at.z;
@@ -199,7 +224,9 @@ namespace OpenKingdomsUnity.Game.World
             Dust.Step(simDt);
             debrisDraws.Clear();
             smallDebrisDraws.Clear();
-            if (!HideModels) Debris.Draw(debrisDraws, smallDebrisDraws, haveFrustum ? frustum : null);
+            // How many pixels a unit spans a unit in front of the camera, for the chunks' size on screen.
+            float pixels = cam != null ? cam.pixelHeight * 0.5f / Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad) : 0f;
+            if (!HideModels) Debris.Draw(debrisDraws, smallDebrisDraws, haveFrustum ? frustum : null, eye, pixels);
         }
 
         // ---- What each kind is made of ----

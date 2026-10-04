@@ -135,7 +135,13 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     half3 soil = lerp(_OkuScarSoil.rgb, c * 0.55, 0.25);
     soil = lerp(soil, _OkuScarSnow.rgb, snowy * 0.7);
     half dug = s.shape.r;
-    c = lerp(c, soil * (0.7 + 0.6 * fine), OkuScarCrisp(s.marks.g, grain) * 0.92);
+    // Broad patches of darker and lighter earth, seen from any distance, so
+    // a field of craters is never one even colour, and dry thrown earth
+    // lighter on the rims than the dug floors.
+    half patch = OkuScarNoise(p.xz * 0.45) * 0.6 + OkuScarNoise(p.xz * 1.3 + 7.7) * 0.4;
+    soil *= lerp(0.78, 1.18, patch);
+    soil = lerp(soil, soil * 1.3 + 0.008, saturate(s.shape.g * 2.5) * (1 - saturate(dug * 3)));
+    c = lerp(c, soil * (0.7 + 0.6 * fine), OkuScarCrisp(s.marks.g, grain) * lerp(0.74, 0.94, OkuScarNoise(p.xz * 0.8 + 3.3)));
     c *= 1 - saturate(dug * 1.5) * 0.3;
     // Dug earth is rough, its clods catching the light up close.
     half rough = OkuScarCrisp(s.marks.g, grain) * near;

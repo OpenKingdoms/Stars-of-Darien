@@ -1,6 +1,7 @@
 // ScarTests.cs - what each kind of blast leaves on the ground: a cannon's
 // crater about 6 pixels deep with a rim, frost with no crater, the deepest
 // dips for the largest spells and overlapping craters keeping the deeper.
+using System.Collections.Generic;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
 using OpenKingdomsUnity.Game.World;
@@ -86,30 +87,70 @@ namespace OpenKingdomsUnity.Tests
             var at = new Vector3(32f, 0f, -32f);
             var s = StampOf(Cannon, at);
             Assert.AreEqual(ScarKind.Gunpowder, s.Kind);
-            Assert.AreEqual(6f, s.Depth, 0.01f, "a cannon digs the owner's 6 pixels");
+            Assert.LessOrEqual(s.Depth, 6f + 0.01f, "a cannon digs no deeper than the owner's 6 pixels");
+            Assert.GreaterOrEqual(s.Depth, 6f * 0.6f - 0.01f, "and at least 0.6 of them");
             var field = Field();
             Assert.Greater(field.Stamp(s), 0);
-            Assert.AreEqual(-6f, field.Height(at.x, at.z) * Px, 0.5f, "about 6 pixels down at its centre");
-            // The thrown rim stands round the dip, highest just past its edge.
+            Assert.AreEqual(-s.Depth, field.Height(at.x, at.z) * Px, 0.5f, "its depth at its centre");
+            // The thrown rim stands round the dip, highest just past its edge
+            // wherever that edge runs.
             float rim = float.MinValue;
             for (int a = 0; a < 32; a++)
-            {
-                float ang = a * Mathf.PI / 16f, r = s.Dent * 1.05f;
-                rim = Mathf.Max(rim, field.Height(at.x + Mathf.Cos(ang) * r, at.z + Mathf.Sin(ang) * r) * Px);
-            }
+                for (float k = 0.8f; k <= 1.8f; k += 0.05f)
+                {
+                    float ang = a * Mathf.PI / 16f, r = s.Dent * k;
+                    rim = Mathf.Max(rim, field.Height(at.x + Mathf.Cos(ang) * r, at.z + Mathf.Sin(ang) * r) * Px);
+                }
             Debug.Log($"Cannon crater: radius {s.Dent:0.00} units, {field.Height(at.x, at.z) * Px:0.0} px at the centre, rim {rim:0.0} px");
             Assert.Greater(rim, 1f, "a rim of thrown earth at least a pixel high");
             Assert.LessOrEqual(rim, s.Rim + 0.1f);
-            Assert.AreEqual(0f, field.Height(at.x + s.Dent * 2f, at.z), 1e-4f, "flat ground past the rim");
+            Assert.AreEqual(0f, field.Height(at.x + s.DentReach + 0.3f, at.z), 1e-4f, "flat ground past the rim");
+        }
+
+        [Test]
+        public void NoTwoCannonCratersAreAlike()
+        {
+            var depths = new HashSet<float>();
+            var outlines = new HashSet<float>();
+            for (int id = 1; id <= 12; id++)
+            {
+                var b = Blast(Cannon, new Vector3(32f, 0f, -32f), BlastFlags.None, new Vector3(1f, 0f, 0f));
+                b.Id = id;
+                Assert.IsTrue(ScarStamps.Make(b, 0f, out var s));
+                depths.Add(Mathf.Round(s.Depth * 10f));
+                outlines.Add(s.Outline);
+                Assert.GreaterOrEqual(s.Stretch, 0.12f, "a shot that flew in draws its crater out along its flight");
+            }
+            Assert.GreaterOrEqual(depths.Count, 6, "depths vary");
+            Assert.GreaterOrEqual(outlines.Count, 10, "outlines vary");
+            // Drawn out along the shot: the dip reaches farther along it than across it.
+            var field = Field();
+            var at = new Vector3(32f, 0f, -32f);
+            var one = Blast(Cannon, at, BlastFlags.None, new Vector3(1f, 0f, 0f));
+            one.Id = 3;
+            ScarStamps.Make(one, 0f, out var st);
+            // Without its lobes, which push the edge in and out round its length.
+            st.Lobes = 0f;
+            field.Stamp(st);
+            float Reach(Vector3 way)
+            {
+                float r = 0f;
+                for (float d = 0f; d < st.DentReach; d += 0.05f)
+                    if (field.Height(at.x + way.x * d, at.z + way.z * d) < -0.05f) r = d;
+                return r;
+            }
+            float along = Mathf.Max(Reach(Vector3.right), Reach(Vector3.left)), across = Mathf.Max(Reach(Vector3.forward), Reach(Vector3.back));
+            Assert.Greater(along, across, $"along {along:0.00}, across {across:0.00}");
         }
 
         [Test]
         public void TheLargestSpellsDigTenPixelsAndCannonsNoMoreThanSix()
         {
             var meteor = Gun("TARMAGE 3", "remote effect", "hailstorm", "", "fireball explosion", 600, WeaponFlags.FireStarter | WeaponFlags.Spell);
-            Assert.AreEqual(ScarStamps.SpellDepthPx, StampOf(meteor, Vector3.zero).Depth, 0.01f);
+            Assert.LessOrEqual(StampOf(meteor, Vector3.zero).Depth, ScarStamps.SpellDepthPx + 0.01f);
+            Assert.GreaterOrEqual(StampOf(meteor, Vector3.zero).Depth, ScarStamps.SpellDepthPx * 0.75f - 0.01f);
             var bigGun = Gun("Bombard", "ballistic", "", "explosion", "large explosion", 300);
-            Assert.AreEqual(ScarStamps.CannonDepthPx, StampOf(bigGun, Vector3.zero).Depth, 0.01f);
+            Assert.LessOrEqual(StampOf(bigGun, Vector3.zero).Depth, ScarStamps.CannonDepthPx + 0.01f);
             Assert.Less(StampOf(Catapult, Vector3.zero).Depth, ScarStamps.CannonDepthPx);
         }
 

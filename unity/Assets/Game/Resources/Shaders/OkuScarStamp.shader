@@ -17,7 +17,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
 
         // local: the stamp's frame in world units (y along it), seed and kind.
         // a: reach, swath length, dent radius, floor. b: dip, rim, cracks, stone.
-        // c: char, soil, blight. d: frost, wet, holy and heat left.
+        // c: char, soil, blight and the outline. d: frost, wet, holy and heat left.
         struct appdata { float4 vertex : POSITION; float4 local : TEXCOORD0; float4 a : TEXCOORD1; float4 b : TEXCOORD2; float4 c : TEXCOORD3; float4 d : TEXCOORD4; };
         struct v2f { float4 pos : SV_POSITION; float4 local : TEXCOORD0; nointerpolation float4 a : TEXCOORD1; nointerpolation float4 b : TEXCOORD2; nointerpolation float4 c : TEXCOORD3; nointerpolation float4 d : TEXCOORD4; };
 
@@ -61,6 +61,24 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             if (abs(t) >= 1) return 0;
             float b = 1 - t * t;
             return b * b * Lumps(ang, seed);
+        }
+
+        // ScarStamps.Outline: the dent's radius toward angle ang as a share of
+        // its own, from the stretch and lobes packed in c.w.
+        float Outline(float ang, float seed, float packed)
+        {
+            float lobes = floor(packed) / 100, stretch = packed - floor(packed);
+            float c = cos(ang), s = sin(ang);
+            float ax = c / (1 - 0.4 * stretch), ay = s / (1 + stretch);
+            float p = frac(seed * 0.1234) * 6.2831853, q = frac(seed * 0.5678) * 6.2831853;
+            float lobe = 0.55 * cos(2 * ang + p) + 0.45 * sin(5 * ang + q);
+            return rsqrt(ax * ax + ay * ay) * (1 + lobes * lobe);
+        }
+
+        // How far out p lies in the dent, 1 at its edge.
+        float CraterX(float4 a, float4 c, float2 p, float r, float seed)
+        {
+            return r / (max(a.z, 1e-3) * Outline(atan2(p.y, p.x), seed, c.w));
         }
 
         // Noise round a circle, so rays meet themselves where the angle wraps.
@@ -138,7 +156,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             if (kind == K_GUNPOWDER || kind == K_IMPACT)
             {
                 if (i.a.z <= 0) return 1 - smoothstep(0.4, 1.0, r / reach + ragged * 0.6);
-                float x = r / dent;
+                float x = CraterX(i.a, i.c, p, r, seed);
                 float spread = kind == K_IMPACT ? 1.45 : 1.2;
                 float core = 1 - smoothstep(0.45, spread - 0.15, x + ragged * 0.6);
                 float streaks = smoothstep(0.5, 0.8, Rays(atan2(p.y, p.x), seed, 1.6)) * (1 - smoothstep(1.0, 2.0, x + ragged));
@@ -170,7 +188,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             if (kind == K_GUNPOWDER || kind == K_IMPACT || kind == K_SIEGE)
             {
                 float dent = max(i.a.z, 1e-3);
-                float x = r / dent, outer = reach / dent;
+                float x = CraterX(i.a, i.c, p, r, seed), outer = reach / dent;
                 float inner = i.a.z > 0 ? 1 - smoothstep(1.1, 1.55, x + ragged * 0.5) : 1 - smoothstep(0.4, 1.0, r / reach + ragged * 0.5);
                 // Earth flung out in rays past the rim, in clods.
                 float rays = smoothstep(0.38, 0.72, Rays(atan2(p.y, p.x), seed + 4.1, kind == K_SIEGE ? 1.1 : 1.8));
@@ -204,7 +222,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             float depth = 0, rim = 0, crack = 0;
             if (i.a.z > 0)
             {
-                float x = r / i.a.z;
+                float x = CraterX(i.a, i.c, p, r, seed);
                 depth = i.b.x * DepthAt(x, i.a.w);
                 rim = i.b.y * RimAt(x, atan2(p.y, p.x), seed);
             }
@@ -228,7 +246,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             float ring = 1 - smoothstep(0.0, 0.22, abs(r / reach - 0.8));
             float holy = i.d.z * max(ring, 0.45 * (1 - smoothstep(0.5, 0.85, r / reach)));
             float heat = i.d.w * CharShape(i, p, r, seed, kind);
-            if (kind == K_GUNPOWDER && i.a.z > 0) heat *= 1 - smoothstep(0.2, 0.8, r / i.a.z);
+            if (kind == K_GUNPOWDER && i.a.z > 0) heat *= 1 - smoothstep(0.2, 0.8, CraterX(i.a, i.c, p, r, seed));
             return saturate(float4(frost, wet, holy, heat) * Outer(i, p));
         }
         ENDHLSL

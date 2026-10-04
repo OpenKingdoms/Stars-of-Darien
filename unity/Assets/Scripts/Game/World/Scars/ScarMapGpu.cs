@@ -103,7 +103,7 @@ namespace OpenKingdomsUnity.Game.World
                 float ext = s.Reach * 1.4f + margin;
                 var a = new Vector4(s.Reach, s.Length, s.Dent, s.Floor);
                 var b = new Vector4(s.Depth / ScarStamps.MaxDepthPx, s.Rim / ScarStamps.MaxRimPx, s.Crack, s.Stone);
-                var c = new Vector4(s.Char, s.Soil, s.Blight, 0f);
+                var c = new Vector4(s.Char, s.Soil, s.Blight, s.Outline);
                 var d = new Vector4(Left(s.Frost, since), Left(s.Wet, since), Left(s.Holy, since), Left(s.Heat, since));
                 int first = sv.Count;
                 Corner(s, -ext, -(s.Length + ext), a, b, c, d);

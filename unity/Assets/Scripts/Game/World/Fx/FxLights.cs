@@ -61,6 +61,9 @@ namespace OpenKingdomsUnity.Game.World
         public int Asked => asks.Count;
         // The strongest and widest light on now, and the least saturated.
         public float Brightest { get; private set; }
+        // The share of each light's strength the scene's own light allows, last frame.
+        public float Calm { get; private set; } = 1f;
+        public static float CalmFor(float sceneLight) => Mathf.Lerp(0.4f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.15f, 0.8f, sceneLight)));
         public float Widest { get; private set; }
         public float Palest { get; private set; }
 
@@ -136,6 +139,9 @@ namespace OpenKingdomsUnity.Game.World
             Lit = 0;
             Brightest = Widest = 0f;
             Palest = 1f;
+            // On a dim or night map the same flash would blow out the dark
+            // ground round it, so lights scale with how the scene is lit.
+            Calm = CalmFor(LodestonePulse.SceneLight());
             foreach (var s in slots)
             {
                 s.Level = s.Snap && s.Target > s.Level ? s.Target : Mathf.MoveTowards(s.Level, s.Target, step);
@@ -147,8 +153,9 @@ namespace OpenKingdomsUnity.Game.World
                 s.Light.transform.position = s.At;
                 s.Light.color = s.Colour;
                 s.Light.range = s.Range;
-                s.Light.intensity = s.Intensity * s.Level;
-                Brightest = Mathf.Max(Brightest, s.Light.intensity);
+                s.Light.intensity = s.Intensity * s.Level * Calm;
+                // As asked for, before the scene's calm.
+                Brightest = Mathf.Max(Brightest, s.Intensity * s.Level);
                 Widest = Mathf.Max(Widest, s.Range);
                 Color.RGBToHSV(s.Colour, out _, out float sat, out _);
                 Palest = Mathf.Min(Palest, sat);
