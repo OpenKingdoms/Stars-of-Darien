@@ -1,7 +1,9 @@
 // Models, features and sprites: texture times vertex colour times an
 // instanced tint, alpha tested, lit, casting and taking shadows, with a
 // faint rim of sky light and an optional self light (_Emission), which an
-// instance may raise or lower (_PulseLift, a lodestone's breath).
+// instance may raise or lower (_PulseLift, a lodestone's breath). An
+// instance may dither away or in (_OkuFade), and a broken chunk's material
+// shades the faces seen from inside as its interior (_Interior).
 Shader "OpenKingdoms/Presentation/Model"
 {
     Properties
@@ -26,6 +28,8 @@ Shader "OpenKingdoms/Presentation/Model"
         _MetalRoughMap ("Metal (b) and roughness (g)", 2D) = "white" {}
         _ClearCoat ("Clear coat", Range(0, 1)) = 0
         _ClearCoatSmoothness ("Clear coat smoothness", Range(0, 1)) = 1
+        _Interior ("Back faces show the interior", Float) = 0
+        _InteriorColor ("Interior", Color) = (0.56, 0.53, 0.48, 1)
     }
     // URP: the same look, lit by OkuLit.hlsl.
     SubShader
@@ -45,6 +49,8 @@ Shader "OpenKingdoms/Presentation/Model"
             half4 _EmissionColor;
             half _Surface, _SrcBlend, _DstBlend, _ZWrite;
             half _Metallic, _Smoothness, _ClearCoat, _ClearCoatSmoothness;
+            half _Interior;
+            half4 _InteriorColor;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
         // Something being built: solid up to the cut, a glowing edge just
@@ -57,6 +63,7 @@ Shader "OpenKingdoms/Presentation/Model"
         // The self light is 1 + _PulseLift times its rest, per instance.
         UNITY_INSTANCING_BUFFER_START(OkuPulse)
             UNITY_DEFINE_INSTANCED_PROP(float, _PulseLift)
+            UNITY_DEFINE_INSTANCED_PROP(float, _OkuFade)
         UNITY_INSTANCING_BUFFER_END(OkuPulse)
         // A 4 by 4 ordered pattern, 0 to 1, by screen pixel.
         float OkuBayer(float2 px)
@@ -65,6 +72,20 @@ Shader "OpenKingdoms/Presentation/Model"
             uint i = p.y * 4 + p.x;
             const float m[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
             return (m[i] + 0.5) / 16;
+        }
+        // An instance fading: above 0 it dithers away, gone at 1, and below
+        // 0 it dithers in, whole at -1. The two cover each other's holes.
+        void OkuFadeClip(float fade, float2 px)
+        {
+            if (fade > 0) clip(OkuBayer(px) - fade);
+            else if (fade < 0) clip(-fade - OkuBayer(px));
+        }
+        // The inside of a broken chunk: its interior with some of the face's
+        // own colour, grained so it reads as wood or stone.
+        half3 OkuInterior(half3 face, float3 positionWS)
+        {
+            float g = frac(sin(dot(floor(positionWS * 7), float3(12.9898, 78.233, 37.719))) * 43758.5453);
+            return lerp(face * 0.6, _InteriorColor.rgb, 0.6) * (0.8 + 0.4 * g);
         }
         ENDHLSL
         Pass
@@ -91,7 +112,7 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile_local _ _CLEARCOAT
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
-            struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; nointerpolation float fade : TEXCOORD4; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
                 Varyings o;
@@ -103,6 +124,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.color = v.color;
                 o.fog = ComputeFogFactor(o.positionCS.z);
+                o.fade = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuFade);
                 return o;
             }
             half4 frag(Varyings i, bool front : SV_IsFrontFace) : SV_Target
@@ -110,9 +132,17 @@ Shader "OpenKingdoms/Presentation/Model"
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * i.color * _Color;
                 clip(c.a - _Cutoff);
+                OkuFadeClip(i.fade, i.positionCS.xy);
                 // A face seen from behind, where culling is off, is lit as
                 // its other side.
                 half3 n = normalize(i.normalWS) * (front ? 1 : -1);
+                bool inside = _Interior > 0.5 && !front;
+                if (inside)
+                {
+                    // Lit as one flat face turned to the eye, it reads as the cut rather than a hollow.
+                    c.rgb = OkuInterior(c.rgb, i.positionWS);
+                    n = normalize(GetWorldSpaceViewDir(i.positionWS) + half3(0, 0.6, 0));
+                }
             #if defined(_OKU_BUILD)
                 float above = i.positionWS.y - _BuildCut;
                 if (above > 0)
@@ -138,7 +168,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 input.shadowMask = 1;
                 SurfaceData surf = (SurfaceData)0;
                 surf.albedo = c.rgb;
-                surf.metallic = _Metallic * mr.b;
+                surf.metallic = inside ? 0 : _Metallic * mr.b;
                 surf.smoothness = saturate(1 - (1 - _Smoothness) * mr.g);
                 surf.occlusion = 1;
                 surf.alpha = c.a;
@@ -180,11 +210,12 @@ Shader "OpenKingdoms/Presentation/Model"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
             float3 _LightDirection;
             float3 _LightPosition;
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; nointerpolation float fade : TEXCOORD2; };
             Varyings vert(Attributes v)
             {
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
+                o.fade = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuFade);
                 float3 p = TransformObjectToWorld(v.positionOS.xyz);
                 float3 n = TransformObjectToWorldNormal(v.normalOS);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
@@ -206,6 +237,7 @@ Shader "OpenKingdoms/Presentation/Model"
             half4 frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a * i.color.a * _Color.a - _Cutoff);
+                OkuFadeClip(i.fade, i.positionCS.xy);
             #if defined(_OKU_BUILD)
                 clip(_BuildCut - i.height);
             #endif
@@ -225,11 +257,12 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma multi_compile_local _ _OKU_BUILD
-            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; };
+            struct Varyings { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; half4 color : COLOR; float height : TEXCOORD1; nointerpolation float fade : TEXCOORD2; };
             Varyings vert(Attributes v)
             {
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
+                o.fade = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuFade);
                 float3 p = TransformObjectToWorld(v.positionOS.xyz);
                 o.positionCS = TransformWorldToHClip(p);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
@@ -240,6 +273,7 @@ Shader "OpenKingdoms/Presentation/Model"
             half frag(Varyings i) : SV_Target
             {
                 clip(SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv).a * i.color.a * _Color.a - _Cutoff);
+                OkuFadeClip(i.fade, i.positionCS.xy);
             #if defined(_OKU_BUILD)
                 if (i.height > _BuildCut) clip(_OkuBuildGhost * 0.3 - OkuBayer(i.positionCS.xy));
             #endif

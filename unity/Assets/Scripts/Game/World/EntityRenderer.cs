@@ -1,14 +1,15 @@
 // EntityRenderer.cs - draws units and features each frame from the
 // backend's snapshots, all through GPU instancing: every model piece at
 // the pose the backend computed, sprite features as upright quads turned
-// to the camera, and selection rings and health bars on top. Shots in
-// flight are the EffectRenderer's.
+// to the camera, and selection rings and health bars on top. Scenery that
+// breaks and pieces thrown by the dying go to the debris (Destruction/).
+// Shots in flight are the EffectRenderer's.
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
 {
-    public sealed class EntityRenderer
+    public sealed partial class EntityRenderer
     {
         public const int MaxUnits = 4096, MaxFeatures = 8192, MaxProjectiles = 2048, MaxPieces = 128;
 
@@ -29,6 +30,27 @@ namespace OpenKingdomsUnity.Game.World
         readonly Matrix4x4[] posed = new Matrix4x4[MaxPieces];
         public readonly HashSet<int> Selected = new HashSet<int>();
         public int Drawn => solid.Count + billboards.Count;
+
+        // Breaking (docs/DESTRUCTION.md): each kind split into chunks, the
+        // chunks in flight and lying, dust, and how scenery and pieces fall.
+        public readonly FractureCache Fractures;
+        public readonly Debris Debris;
+        public readonly DustPuffs Dust = new DustPuffs();
+        readonly FeatureFalls falls;
+        readonly PieceFalls pieceFalls;
+        readonly InstancedDraws debrisDraws = new InstancedDraws();
+        readonly InstancedDraws smallDebrisDraws = new InstancedDraws { CastShadows = false };
+        // In battle a kind first needed splits for at most this long a frame.
+        public const double SplitSliceMs = 2.0;
+        // Every feature event after the look has taken it, for burning and the rest.
+        public System.Action<FeatureEvent> FeatureNews;
+        // Milliseconds spent on breaking in the last frame, for the budget.
+        public double BreakMs { get; private set; }
+        // Whether chunks and dust are drawn, to measure what drawing them costs.
+        public bool DrawBreaking = true;
+        public int PiecesThrown => pieceFalls.Thrown;
+        public bool PieceThrown(int unit, int piece) => pieceFalls.IsThrown(unit, piece);
+        public FeatureFalls Falls => falls;
 
         // Winged flyers' animators by StableId, and how far each flyer is
         // drawn above its engine position this frame, by handle.
@@ -76,8 +98,10 @@ namespace OpenKingdomsUnity.Game.World
 
         readonly Mesh quad, ring, barQuad;
         readonly Material ringMat, barBack, barGood, barMid, barLow;
-        // Each feature as drawn, rebuilt only when what it is changes.
-        readonly List<FeatureEntry> featureEntries = new List<FeatureEntry>();
+        // Each feature as drawn, matched to the list by what it is and where
+        // it stands, and rebuilt only when what it is changes.
+        List<FeatureEntry> featureEntries = new List<FeatureEntry>(), nextEntries = new List<FeatureEntry>();
+        readonly Stack<FeatureEntry> spareEntries = new Stack<FeatureEntry>();
 
         // A building being placed: its model at rest and its footprint,
         // green where it can stand and red where it cannot.
@@ -318,7 +342,13 @@ namespace OpenKingdomsUnity.Game.World
         {
             this.backend = backend;
             this.models = models;
-            groundAt = (x, z) => backend.Terrain != null ? backend.Terrain.Sample(x, z) : backend.GroundHeight(x, z);
+            // The drawn ground, dented where a crater is, for rings, debris and rubble.
+            groundAt = (x, z) => (backend.Terrain != null ? backend.Terrain.Sample(x, z) : backend.GroundHeight(x, z)) + ScarMap.GroundOffset(x, z);
+            var budget = BreakBudget.From(FxQuality.Current);
+            Fractures = new FractureCache(KindParts) { CountScale = budget.Chunks };
+            Debris = new Debris(budget) { Ground = groundAt, Dust = Dust };
+            falls = new FeatureFalls(backend, Fractures, Debris, Dust);
+            pieceFalls = new PieceFalls(Fractures, Debris);
             quad = Keep(Quad(0.5f));
             // Cards light like the ground under them, not like a wall facing the camera.
             quad.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
@@ -380,10 +410,15 @@ namespace OpenKingdomsUnity.Game.World
             FlyersPosed = 0;
             haveFrustum = cam != null;
             if (haveFrustum) GeometryUtility.CalculateFrustumPlanes(cam, frustum);
+            if (cam != null) eye = cam.transform.position;
             pulseNow = float.IsNaN(PulseSeconds) ? Time.unscaledTime : PulseSeconds;
             viewCalm = cam != null ? LodestonePulse.ViewCalm(Mathf.DeltaAngle(0f, cam.transform.eulerAngles.x)) : 1f;
             lightCalm = LodestonePulse.LightCalm(LodestonePulse.SceneLight());
             halos.Clear(cam);
+
+            long breakFrom = System.Diagnostics.Stopwatch.GetTimestamp();
+            ReadDestruction();
+            double breakMs = Ms(breakFrom);
 
             UnitCount = backend.ReadUnits(Units);
             UnitsWithoutModel = 0;
@@ -410,6 +445,10 @@ namespace OpenKingdomsUnity.Game.World
 
             AddFeatures(cam);
 
+            breakFrom = System.Diagnostics.Stopwatch.GetTimestamp();
+            StepDebris(cam);
+            BreakMs = breakMs + Ms(breakFrom);
+
             AddRings();
             AddGhost();
             AddOrderLines();
@@ -417,12 +456,22 @@ namespace OpenKingdomsUnity.Game.World
             if (!HideModels)
             {
                 solid.Draw();
+                breakFrom = System.Diagnostics.Stopwatch.GetTimestamp();
+                if (DrawBreaking)
+                {
+                    debrisDraws.Draw();
+                    smallDebrisDraws.Draw();
+                    Dust.Draw(cam);
+                }
+                BreakMs += Ms(breakFrom);
                 DrawRising();
                 billboards.Draw();
             }
             overlay.Draw();
             halos.Draw();
         }
+
+        static double Ms(long from) => (System.Diagnostics.Stopwatch.GetTimestamp() - from) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
 
         // Leaves out the units' and features' models, rings and overlays
         // still drawn: the smoke test's picture without them.
@@ -632,7 +681,7 @@ namespace OpenKingdomsUnity.Game.World
             if (model != null && model.Override != null)
             {
                 int n = posedCount = Pose(u, def, model, sway, out air);
-                AddOverride(model, n);
+                AddOverride(model, n, u.Handle);
             }
             else if (model != null)
             {
@@ -651,7 +700,7 @@ namespace OpenKingdomsUnity.Game.World
                 for (int p = 0; p < n; p++)
                 {
                     var mesh = model.Pieces[p];
-                    if (mesh == null || poses[p].Hidden) continue;
+                    if (mesh == null || poses[p].Hidden || pieceFalls.IsThrown(u.Handle, p)) continue;
                     if (card != null && card.Hides(model.Data.Pieces[p].Name)) continue;
                     var mats = model.Materials[p];
                     for (int s = 0; s < mats.Length; s++) Put(mesh, s, mats[s], posed[p]);
@@ -734,7 +783,7 @@ namespace OpenKingdomsUnity.Game.World
         // A drop-in model: parts named like a piece follow that piece, the
         // rest ride the root. Overrides are in cells, so the model's own
         // unit scale comes off first.
-        void AddOverride(PresentedModel model, int n)
+        void AddOverride(PresentedModel model, int n, int handle)
         {
             var d = model.Data;
             int root = 0;
@@ -746,7 +795,7 @@ namespace OpenKingdomsUnity.Game.World
                 Matrix4x4 m;
                 if (part.Piece >= 0 && part.Piece < n)
                 {
-                    if (poses[part.Piece].Hidden) continue;
+                    if (poses[part.Piece].Hidden || pieceFalls.IsThrown(handle, part.Piece)) continue;
                     m = posed[part.Piece] * model.RestInverse[part.Piece] * part.NodeToRoot;
                 }
                 else m = basis * part.NodeToRoot;
@@ -866,13 +915,30 @@ namespace OpenKingdomsUnity.Game.World
             public float SiteTop;
             public bool DropIn;
             public Quaternion Turn;
+            // Its kind's space to the world, to break it by.
+            public Matrix4x4 Basis = Matrix4x4.identity;
+            // While it breaks, the hold its standing chunks wait on, and its own draws stop.
+            public int Hold;
+            // When its look began to dither in after a swap, NaN when whole.
+            public float FadeFrom = float.NaN;
+            public bool FadeNext;
+            // Drawn from an earlier stage's chunks: the version it was built at, -1 when not.
+            public int Fallback = -1;
 
             public bool Same(in FeatureState f) =>
                 f.Def == Def && f.Model == Model && f.Sprite == Sprite && f.Position == Position && f.Heading == Heading;
+
+            public bool SamePlace(in FeatureState f) => f.Position.x == Position.x && f.Position.z == Position.z;
         }
 
         // Features rebuilt in the last frame.
         public int FeaturesRebuilt { get; private set; }
+
+        // Builds every feature again next frame, to measure what that costs.
+        public void RebuildFeatures()
+        {
+            foreach (var e in featureEntries) e.Def = int.MinValue;
+        }
 
         // Whether a feature is drawn standing at p, to within in x and z.
         public bool FeatureDrawnAt(Vector3 p, float within) => !float.IsNaN(FeatureDrawnHeight(p, within));
@@ -927,24 +993,9 @@ namespace OpenKingdomsUnity.Game.World
 
         void AddFeatures(Camera cam)
         {
-            FeaturesRebuilt = 0;
             int n = backend.ReadFeatures(features);
             bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
-            while (featureEntries.Count > n)
-            {
-                Forget(featureEntries[featureEntries.Count - 1]);
-                featureEntries.RemoveAt(featureEntries.Count - 1);
-                sitesStale = true;
-            }
-            while (featureEntries.Count < n) featureEntries.Add(new FeatureEntry());
-            for (int i = 0; i < n; i++)
-            {
-                var e = featureEntries[i];
-                if (e.Same(features[i])) continue;
-                Build(e, features[i], seaOn);
-                FeaturesRebuilt++;
-                sitesStale = true;
-            }
+            FeaturesRebuilt = SyncFeatures(n, seaOn);
             if (sitesStale)
             {
                 sites.Clear();
@@ -956,11 +1007,81 @@ namespace OpenKingdomsUnity.Game.World
                 featureHidden[i] = Unseen != null && Unseen(features[i].Position);
                 if (featureHidden[i]) continue;
                 var e = featureEntries[i];
-                foreach (var d in e.Draws) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, ScarMap.Sink(e.Position) * d.m);
+                float fade = 0f;
+                if (!float.IsNaN(e.FadeFrom))
+                {
+                    float t = (simNow - e.FadeFrom) / Debris.FadeSeconds;
+                    if (t >= 1f || t < 0f) e.FadeFrom = float.NaN;
+                    else fade = -Mathf.Max(0.001f, t);
+                }
+                var sink = ScarMap.Sink(e.Position);
+                foreach (var d in e.Draws)
+                {
+                    // A breaking feature's chunks draw it, but for what lies flat.
+                    if (e.Hold != 0 && !d.flat) continue;
+                    (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, sink * d.m, 0f, fade);
+                }
                 if (!e.Card) continue;
                 var mat = SpriteMaterial(e.Sprite);
                 if (mat != null) billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform));
             }
+        }
+
+        // Matches the features read this frame to last frame's entries by
+        // what they are and where they stand, so one taken away or put down
+        // leaves the rest as they were. Returns how many it rebuilt.
+        int SyncFeatures(int n, bool seaOn)
+        {
+            int rebuilt = 0, j = 0, old = featureEntries.Count;
+            int reach = Mathf.Max(64, old - n + 8);
+            nextEntries.Clear();
+            for (int i = 0; i < n; i++)
+            {
+                FeatureEntry e = null;
+                if (j < old && (featureEntries[j].Same(features[i]) || featureEntries[j].SamePlace(features[i]))) e = featureEntries[j++];
+                else
+                {
+                    int k = Ahead(j, reach, i);
+                    if (k >= 0)
+                    {
+                        while (j < k) Drop(featureEntries[j++]);
+                        e = featureEntries[j++];
+                    }
+                }
+                if (e == null) e = spareEntries.Count > 0 ? spareEntries.Pop() : new FeatureEntry();
+                if (!e.Same(features[i]) || e.Fallback >= 0 && e.Fallback != fallbackVersion)
+                {
+                    Build(e, features[i], seaOn);
+                    rebuilt++;
+                    sitesStale = true;
+                }
+                nextEntries.Add(e);
+            }
+            while (j < old) Drop(featureEntries[j++]);
+            (featureEntries, nextEntries) = (nextEntries, featureEntries);
+            return rebuilt;
+        }
+
+        // The first entry after j, within reach, that is this feature or stands in its place.
+        int Ahead(int j, int reach, int i)
+        {
+            int end = Mathf.Min(featureEntries.Count, j + reach);
+            for (int k = j + 1; k < end; k++) if (featureEntries[k].Same(features[i])) return k;
+            for (int k = j + 1; k < end; k++) if (featureEntries[k].SamePlace(features[i])) return k;
+            return -1;
+        }
+
+        // A feature gone from the list: its entry is kept for the next one.
+        void Drop(FeatureEntry e)
+        {
+            if (e.Hold != 0) { Debris.Release(e.Hold, false); e.Hold = 0; }
+            Forget(e);
+            e.Def = int.MinValue;
+            e.FadeFrom = float.NaN;
+            e.FadeNext = false;
+            e.Fallback = -1;
+            spareEntries.Push(e);
+            sitesStale = true;
         }
 
         // Lets go of what a feature's entry holds.
@@ -975,8 +1096,13 @@ namespace OpenKingdomsUnity.Game.World
 
         void Build(FeatureEntry e, in FeatureState f, bool seaOn)
         {
+            // A stage that takes its feature's place keeps the way it faced.
+            var before = e.Def != int.MinValue && e.SamePlace(f) ? e.Basis : Matrix4x4.TRS(f.Position, ModelTurn(f.Heading), Vector3.one);
             Forget(e);
+            if (e.FadeNext) { e.FadeFrom = simNow; e.FadeNext = false; }
+            e.Fallback = -1;
             e.Def = f.Def; e.Model = f.Model; e.Sprite = f.Sprite; e.Position = f.Position; e.Heading = f.Heading;
+            e.Basis = Matrix4x4.TRS(f.Position, ModelTurn(f.Heading), Vector3.one);
             var fdef = f.Def >= 0 && f.Def < backend.FeatureDefs.Count ? backend.FeatureDefs[f.Def] : null;
             var fnames = fdef != null ? new[] { fdef.Name, fdef.SequenceName, fdef.ObjectName } : new string[0];
             // Shoreline wave sprites give way to the sea's own foam.
@@ -991,6 +1117,7 @@ namespace OpenKingdomsUnity.Game.World
                     e.DropIn = true;
                     e.Turn = ModelTurn(f.Heading);
                     var at = Matrix4x4.TRS(f.Position, e.Turn, Vector3.one);
+                    e.Basis = at;
                     foreach (var part in over.Parts) e.Draws.Add((part.Mesh, part.Submesh, part.Material, at * part.NodeToRoot, part.Flat));
                     return;
                 }
@@ -1003,9 +1130,12 @@ namespace OpenKingdomsUnity.Game.World
                 if (model.Override != null)
                 {
                     var basis = pn > 0 ? poses[0].Matrix * model.Unscale * model.RestInverse[0] : Matrix4x4.identity;
+                    e.Basis = basis;
                     foreach (var part in model.Override.Parts) e.Draws.Add((part.Mesh, part.Submesh, part.Material, basis * part.NodeToRoot, part.Flat));
                     return;
                 }
+                int root = RootOf(model.Data);
+                if (root < pn) e.Basis = poses[root].Matrix * model.Unscale * RestOf(model.Data, root).inverse;
                 for (int p = 0; p < pn && p < model.Pieces.Length; p++)
                 {
                     if (model.Pieces[p] == null || poses[p].Hidden) continue;
@@ -1024,9 +1154,24 @@ namespace OpenKingdomsUnity.Game.World
             }
             else if (f.Sprite >= 0)
             {
+                if (DrawFallback(e, f, before)) return;
                 e.Card = true;
                 e.W = f.SpriteWidth; e.Bottom = f.SpriteBottom; e.Top = f.SpriteTop; e.OffX = f.SpriteOffsetX;
             }
+        }
+
+        static int RootOf(ModelData d)
+        {
+            for (int i = 0; i < d.Pieces.Length; i++) if (d.Pieces[i].Parent < 0) return i;
+            return 0;
+        }
+
+        // A piece at rest in the model's space, offsets at world scale.
+        static Matrix4x4 RestOf(ModelData d, int p)
+        {
+            var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
+            for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
+            return r;
         }
 
         // How far a feature card is drawn toward the camera, shrunk to look
@@ -1148,6 +1293,11 @@ namespace OpenKingdomsUnity.Game.World
         public void Dispose()
         {
             halos.Dispose();
+            Debris.Clear();
+            Dust.Dispose();
+            falls.Dispose();
+            pieceFalls.Clear();
+            Fractures.Dispose();
             foreach (var o in owned) Looks.Release(o);
             owned.Clear();
             spriteMats.Clear();

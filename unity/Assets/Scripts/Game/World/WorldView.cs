@@ -48,7 +48,7 @@ namespace OpenKingdomsUnity.Game.World
         double slowestMs;
         string slowestPart;
 
-        public const string ModelsPart = "unit models", SceneryPart = "scenery";
+        public const string ModelsPart = "unit models", SceneryPart = "scenery", BreakingPart = "scenery breaking";
         // About how long a call of the scenery's step builds features.
         public const double ScenerySliceMs = 20;
         public int StepsLeft => building.Count;
@@ -75,6 +75,8 @@ namespace OpenKingdomsUnity.Game.World
             QueueWarm();
             // The battle's first frame would build every feature at once.
             building.Enqueue((SceneryPart, () => Entities.WarmFeatures(ScenerySliceMs)));
+            // Each kind of scenery that can break is split into its chunks.
+            building.Enqueue((BreakingPart, () => Entities.WarmBreaking(ScenerySliceMs)));
             if (now) while (!BuildSome(double.MaxValue)) System.Threading.Thread.Yield();
         }
 

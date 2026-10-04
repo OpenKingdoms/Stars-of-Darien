@@ -80,11 +80,36 @@ Gunpowder gives a white flash that lights the ground to twice the radius, a fast
 
 ### Scenery that breaks
 
-Each model kind on the map, and the kinds its chain leads to, is split once into chunks by plane cuts seeded from the kind's name, so it splits the same way every time. Chunks are not capped. They draw both faces, with the inside shaded as the material's interior, charred wood or raw stone, which reads well while they fly and hides under dust once they land. A tree gets 6 to 10 chunks, a wall or hut 12 to 24 and a building 16 to 40. Splitting runs while the battle loads, inside the scenery's slice of about 25 ms a frame, and the result is kept per kind. A kind first needed mid-battle splits at most 2 ms a frame and falls whole until it is ready.
+Each model kind on the map, and the kinds its chain leads to, is split once into chunks by plane cuts seeded from the kind's name, so it splits the same way every time. A model built of many small parts, such as a palisade of logs, breaks along its parts into groups instead. Chunks are not capped. They draw both faces, with the inside shaded as the material's interior, charred wood or raw stone, which reads well while they fly and hides under dust once they land. A tree gets 6 to 10 chunks, a wall or hut 12 to 24 and a building 16 to 40. Splitting runs while the battle loads, inside the scenery's slice of about 25 ms a frame, and the result is kept per kind. A kind first needed mid-battle splits at most 2 ms a frame and falls whole until it is ready.
 
 The simulation's swap is the clock. The look starts when the feature is dying and the dead stage fades in under the dust at the tick the engine swaps it. A tree hit by a blast loses its crown, which bursts into leaves and a few branches thrown away from the blow, and its trunk stands as the dead tree. When the dead tree dies it snaps at the base, topples away from the blow in about a second, breaks on landing and leaves its stump. A wall crumbles from the top, chunks falling mostly down with dust at its foot, then collapses to rubble. A building's roof caves in, its walls fall outward and a dust cloud rolls out, with a smoke column if it burned. Fences, crops and huts break apart and scatter. Stone bodies shatter into stone, frozen ones into ice and wrecks into scrap. Rocks stay whole in the original, so a blast only chips them.
 
 Chunks are a pool, simulated with gravity, spin, bounce and friction against the drawn ground and drawn instanced. No Unity rigid bodies, and a Burst job once there are more than a few hundred. Settled chunks stay as rubble up to a cap, and the oldest sink into the ground.
+
+#### As built
+
+`Destruction/FractureCache.cs` splits each breakable kind on the field, and every stage it can become, while the battle loads in the scenery's slices, and a kind first seen in battle for at most 2 ms a frame. Every step of a split is bounded, at most a batch of 6,000 triangles, and a kind's chunks share a mesh for each 40,000 vertices. A model built of many small parts breaks along them, grouped by where they lie. A face seen from inside a chunk is lit as one flat face turned to the eye, in the interior's colour mixed with the face's own, so the cut reads as solid.
+
+`Destruction/FeatureFalls.cs` starts each break from the feature's dying event. The blow comes from the blast toward the feature, or along the shot when it burst on the feature. A tree whose dead stage still stands loses its crown and keeps its trunk, and a dead tree snaps at its foot and swings down as a rod, breaking into its chunks where it meets the ground. A wall's chunks above its next stage fall from the top down through the first half of its death, and into rubble it all comes down. A hut or building drops its roof in and tips its walls out over what stands of its wreck. A body shatters, other kinds scatter, a hit that kills nothing chips, and every break throws grit. A wall, hut or building that comes down leaves a scuff of churned soil on the scar map. Chunks the next stage keeps wait in place, and at the swap they dither away as the stage dithers in, each filling the other's holes. A break off screen shows nothing, and one more than 140 units from the camera breaks into its parts whole.
+
+`Destruction/Debris.cs` keeps the chunks in a pool sized by the Battle effects setting. They fly with gravity, spin and drag, bounce and slide on the dented ground `ScarMap` draws, tip onto a side and settle, lie for 3, 6, 12 or 24 seconds by the setting, grit for a third of that, and sink. A dying unit's EXPLODE pieces use the same pool through `Destruction/PieceFalls.cs`, and the unit stops drawing them. `Destruction/DustPuffs.cs` draws the dust until the explosions' own particles take it over.
+
+Measured in the editor, splitting all 611 breakable shapes among the 793 feature models, 5.1 million triangles as drawn, took 13.4 s, about 22 ms a kind, in 20 ms slices with no step over 16 ms. A thousand chunks step and draw in 0.63 ms a frame with nothing allocated. In a stress battle on the mock at High, 170 pieces of scenery under cannon fire all the while and two armies routed, breaking took 1.65 ms of main thread a frame on average and 2.6 ms at the 95th percentile, with up to 1,481 chunks flying and 3,982 in play, and drawing them added 3.6 ms to a frame at 2560 by 1440. Taking a feature away no longer rebuilds the ones after it. On Ulasem Arena's 1,452 features in the engine that frame costs what a still one does, where building them all again took 5.6 ms against 3.5.
+
+### Stages with no model yet
+
+51 of the stages scenery breaks into have no 3D model in Stars of Darien yet, all of them Creon. Until each is made, the game draws a standing one from the nearest earlier stage that has a model: what stands of it below the stage's height, a tree's trunk for a dead tree, charred when fire made it. A stage under a third of its earlier stage's height lies on the ground as that stage's chunks. These are the models still to make.
+
+| Stages | What breaks into them |
+|---|---|
+| CreBuild01a to CreBuild09a, CreBuild01b to CreBuild09b | the nine Creon buildings, as a ruin and then a shell |
+| CreHouse01a to CreHouse07a | the seven houses |
+| CreTree01a, CreTree03a, CreTree04a, CreTree05a, CreTree06a | five trees, when they die or burn |
+| CreTreesmudge01 to CreTreesmudge07 | the dead trees |
+| CreInvent01a to CreInvent04a | the four inventions |
+| CreFence01a to CreFence04a | the fences |
+| CrePlant01a to CrePlant03a | the plants |
+| CreCart01a, CreShed01a, CreWell01a | the cart, the shed and the well |
 
 ### Deaths
 
