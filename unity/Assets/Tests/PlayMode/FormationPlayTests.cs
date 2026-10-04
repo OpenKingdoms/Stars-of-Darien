@@ -316,6 +316,28 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [UnityTest]
+        public IEnumerator AShortPressSpacesTheBlockByFootprint()
+        {
+            // Modern: units wider than a block slot are sent a footprint apart,
+            // so a flock of flyers is not sent onto one another.
+            yield return Begin(false);
+            var knights = Own(MockBackend.Role.Knight, 4);
+            mock.UnitDefs[UnitOf(knights[0]).Def].Footprint = new Vector2Int(3, 3);
+            Select(knights);
+            var c = UnitOf(knights[0]).Position;
+            var at = new Vector2(c.x + 3, c.z + 11);
+            Look(new Vector2(c.x, c.z + 7));
+            for (int i = 0; i < 5; i++) yield return null;
+            yield return Press(1, at);
+            yield return null;
+            yield return Release(1);
+            var to = knights.Select(h => mock.ReadOrder(h).Target).ToArray();
+            for (int i = 0; i < to.Length; i++)
+                for (int j = i + 1; j < to.Length; j++)
+                    Assert.GreaterOrEqual(new Vector2(to[i].x - to[j].x, to[i].z - to[j].z).magnitude, 2.99f, "slots a footprint apart");
+        }
+
+        [UnityTest]
         public IEnumerator TheClassicShortRightClickDisarmsThenDeselects()
         {
             yield return Begin(true);
