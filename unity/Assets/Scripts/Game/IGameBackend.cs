@@ -713,7 +713,7 @@ namespace OpenKingdomsUnity.Game
         public int Damage;          // what each feature in reach takes
         public BlastFlags Flags;
         public int Unit;            // the unit it struck, else -1
-        public int Feature;         // the feature it struck, its index in ReadFeatures, else -1
+        public int Feature;         // the feature in its cell when no unit was struck, its FeatureState.Index, else -1
     }
 
     [Flags]
@@ -751,12 +751,13 @@ namespace OpenKingdomsUnity.Game
 
     // What happened to one feature. A feature that goes leaves a gap that
     // ReadFeatures closes, so later indices move down by one.
+    // Feature is the FeatureState.Index it had then.
     public struct FeatureEvent
     {
         public int Id;
         public uint Tick;
         public FeatureEventKind Kind;
-        public int Feature;         // its index in ReadFeatures when it happened
+        public int Feature;
         public int Def;             // what it was
         public int NewDef;          // what it became, for Dead and Burnt, else -1
         public Vector3 Position;    // world, where it stands

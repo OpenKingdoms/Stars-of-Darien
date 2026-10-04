@@ -780,6 +780,58 @@ namespace OpenKingdomsUnity.Tests
             backend.Cancel();
         }
 
+        // A catapult's rock thrown at the ground comes back from the engine as
+        // a blast with its weapon, where it fell and coming down.
+        [Test, Order(10)]
+        public void ACatapultsRockComesBackAsABlastWithItsWeapon()
+        {
+            Assert.AreEqual(GameStatus.Running, backend.Status);
+            int def = backend.UnitDefs.First(d => string.Equals(d.Name, "ARAPULT", StringComparison.OrdinalIgnoreCase)).Id;
+            var w = backend.Weapon(def, 0);
+            Assert.IsNotNull(w, "the engine describes the weapon");
+            Assert.AreEqual("ballistic", w.Type);
+            Assert.Greater(w.AreaOfEffect, 0f);
+            Assert.IsNotEmpty(w.ExplosionClass);
+            int h = OkEngine.okx_place_unit(def, backend.LocalPlayer);
+            Assert.GreaterOrEqual(h, 0);
+            var us = new UnitState[1024];
+            var u = us.Take(backend.ReadUnits(us)).First(x => x.Handle == h);
+            var buf = new BlastEvent[256];
+            int since = 0;
+            for (int k; (k = backend.ReadBlasts(since, buf)) > 0;) since = buf[k - 1].Id;
+            // Ten cells toward the middle of the map.
+            var centre = new Vector3(backend.Terrain.Size.x * 0.5f, 0f, -backend.Terrain.Size.y * 0.5f);
+            var way = centre - u.Position;
+            way.y = 0f;
+            var aim = u.Position + way.normalized * 10f;
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.AttackGround, Unit = h, Target = aim, TargetUnit = -1, BuildDef = -1 }));
+            BlastEvent? rock = null;
+            for (int t = 0; t < 900 && rock == null; t += 2)
+            {
+                backend.Advance(2);
+                int k = backend.ReadBlasts(since, buf);
+                for (int i = 0; i < k; i++)
+                {
+                    if (buf[i].Def == def && buf[i].Shooter == h) rock = buf[i];
+                    since = buf[i].Id;
+                }
+            }
+            Assert.IsNotNull(rock, "the rock burst");
+            var b = rock.Value;
+            Debug.Log($"rock: {b.Weapon?.Name} at {b.Position}, way {b.Direction}, radius {b.Radius}, flags {b.Flags}");
+            Assert.AreEqual(BlastCause.Weapon, b.Cause);
+            Assert.AreEqual(0, b.Slot);
+            Assert.AreSame(w, b.Weapon);
+            Assert.AreEqual(w.AreaOfEffect * 0.5f, b.Radius, 1e-3f);
+            Assert.AreEqual(w.Damage, b.Damage);
+            Assert.AreEqual(backend.LocalPlayer, b.Player);
+            Assert.Less(Vector2.Distance(new Vector2(b.Position.x, b.Position.z), new Vector2(aim.x, aim.z)), 3f);
+            Assert.AreEqual(b.Position.y, backend.GroundHeight(b.Position.x, b.Position.z), 1.5f);
+            Assert.Greater(Vector3.Dot(b.Direction, way.normalized), 0.05f, "thrown toward the aim");
+            Assert.Less(b.Direction.y, 0f, "coming down");
+            Assert.AreEqual(-1, b.Unit);
+        }
+
         // A ship the engine builds is drawn with its origin just under the
         // surface, and posed there too: the engine reports a floater at the
         // sea but poses it on the floor.

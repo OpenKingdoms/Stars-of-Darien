@@ -108,9 +108,11 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(b.LocalPlayer, cannon.Player);
             Assert.GreaterOrEqual(cannon.Shooter, 0, "the staged gunner");
 
+            // A shower is one hidden shot to the engine, so one blast where it lands.
             var hail = all.Where(e => e.Weapon?.Name == "ARAPRIES 2").ToList();
-            Assert.Greater(hail.Count, 3, "a drop of hail at a time");
-            Assert.IsTrue(hail.All(e => e.Direction == Vector3.down));
+            Assert.That(hail.Count, Is.InRange(1, 2), "one a cast");
+            Assert.AreEqual(1, hail.Select(e => new Vector2(e.Position.x, e.Position.z)).Distinct().Count(), "where the spell lands");
+            Assert.AreEqual("hailstorm", hail[0].Weapon.Subtype);
             Assert.IsTrue(all.Any(e => e.Weapon?.Name == "TARMAGE 3" && (e.Flags & BlastFlags.FireStarter) != 0), "the fire storm's meteors start fires");
         }
 

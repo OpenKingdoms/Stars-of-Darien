@@ -132,7 +132,8 @@ namespace OpenKingdomsUnity.Game
             public float StopY = float.NegativeInfinity;
             public string OnLand;
             public Vector3 Circle;      // a wanderer's centre, and its radius in y
-            public FxShot Owner;        // whose rain drop or wanderer it is, for the blasts it makes
+            public FxShot Owner;        // whose rain drop it is, for the blast it makes
+            public Vector3 BurstAt, BurstWay;   // where the spell's hidden shot lands, and its way
         }
 
         sealed class FxStrip
@@ -225,7 +226,8 @@ namespace OpenKingdomsUnity.Game
                         b.StopY = g;
                         b.OnLand = w.Impact;
                         b.Delay = 6 + Mathf.RoundToInt(j * w.RainSeconds * Tps / n);
-                        b.Owner = owner;
+                        // The engine's spell is one hidden shot, so it bursts once, as the first drop lands.
+                        if (j == 0) { b.Owner = owner; b.BurstAt = GroundAt(to); b.BurstWay = to - from; }
                     }
                     return;
                 }
@@ -234,7 +236,7 @@ namespace OpenKingdomsUnity.Game
                     var b = SpawnBlast(FxStripId(w.Art), GroundAt(to), loops: true);
                     b.Life = w.Emit;
                     b.Circle = new Vector3(to.x, 2.5f, to.z);
-                    b.Owner = owner;
+                    Burst(owner, GroundAt(to), to - from, -1);
                     return;
                 }
             }
@@ -378,15 +380,13 @@ namespace OpenKingdomsUnity.Game
                     float a = b.Age * 0.035f;
                     b.Pos = new Vector3(b.Circle.x + Mathf.Cos(a) * b.Circle.y, 0f, b.Circle.z + Mathf.Sin(a * 1.3f) * b.Circle.y);
                     b.Pos.y = GroundHeight(b.Pos.x, b.Pos.z);
-                    // A wanderer bursts where it is once a second.
-                    if (b.Owner != null && b.Age % Tps == 0) Burst(b.Owner, b.Pos, Vector3.zero, -1);
                 }
                 else b.Pos += b.Vel;
                 if (b.Hug) b.Pos.y = GroundHeight(b.Pos.x, b.Pos.z);
                 if (b.Pos.y <= b.StopY)
                 {
                     if (b.OnLand != null) SpawnBlast(FxStripId(b.OnLand), new Vector3(b.Pos.x, b.StopY, b.Pos.z));
-                    if (b.Owner != null) Burst(b.Owner, new Vector3(b.Pos.x, b.StopY, b.Pos.z), Vector3.down, -1);
+                    if (b.Owner != null) Burst(b.Owner, b.BurstAt, b.BurstWay, -1);
                     fxBlasts.RemoveAt(i);
                     continue;
                 }
