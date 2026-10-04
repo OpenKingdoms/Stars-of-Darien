@@ -108,6 +108,16 @@ namespace OpenKingdomsUnity.Game.World
         // Plays a kind of blast at a point, as if the backend had reported it.
         public void Play(BlastKind kind, Vector3 at, float radius, Vector3 direction) => blasts.Play(kind, at, radius, direction);
 
+        // Burning scenery and the marks magic leaves on it, stepped with the
+        // blasts and lit from the same pool, and whether they show.
+        public FxFire Fire;
+        public FxMagic Magic;
+        public bool SceneryLooks = true;
+        // The battle's clock the parts run on, in seconds.
+        public float Clock => clock;
+        // The wind the smoke drifts on, world units a second along the ground.
+        public Vector3 Wind => particles.Wind;
+
         // Lets every part go at once.
         public void Clear()
         {
@@ -115,6 +125,8 @@ namespace OpenKingdomsUnity.Game.World
             shock.Clear();
             blasts.Clear();
             stuckShots.Clear();
+            Fire?.Clear();
+            Magic?.Clear();
         }
 
         sealed class Strip
@@ -263,11 +275,16 @@ namespace OpenKingdomsUnity.Game.World
             blastWatch.Restart();
             float dt = Step();
             var focus = Focus(cam);
+            particles.Wind = WindNow();
             if (Blasts)
             {
                 blasts.Hidden = Hidden;
-                particles.Wind = WindNow();
                 blasts.Update(dt, focus, lights);
+            }
+            if (SceneryLooks)
+            {
+                if (Fire != null) { Fire.Hidden = Hidden; Fire.Update(clock, dt, lights); }
+                if (Magic != null) { Magic.Hidden = Hidden; Magic.Update(clock, dt); }
             }
             stuckShots.Settle(frameNo, blasts.ArrowLandings, Blasts ? FxQuality.Current.Debris / 8 : 0);
             stuckShots.Draw(dt, models, shotModels, Hidden);

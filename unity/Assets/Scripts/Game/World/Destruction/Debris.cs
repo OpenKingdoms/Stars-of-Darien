@@ -169,6 +169,32 @@ namespace OpenKingdomsUnity.Game.World
             pieces[i].Radius = Mathf.Max(pieces[i].Radius, depth);
         }
 
+        // Throws the chunks lying within reach of a point up again, as an
+        // earthquake shakes rubble loose. Returns how many it threw.
+        public int Kick(Vector3 at, float radius, float speed, int seed)
+        {
+            uint s = (uint)seed * 2654435761u | 1u;
+            int room = Mathf.Max(0, Budget.Flying - Moving), n = 0;
+            for (int i = 0; i < high && n < room; i++)
+            {
+                ref var p = ref pieces[i];
+                if (p.State != State.Resting || p.Fine) continue;
+                float dx = p.P.x - at.x, dz = p.P.z - at.z;
+                if (dx * dx + dz * dz > radius * radius) continue;
+                float a = Fracture.Rand01(ref s) * Mathf.PI * 2f, k = 0.4f + 0.6f * Fracture.Rand01(ref s);
+                p.State = State.Flying;
+                p.V = new Vector3(Mathf.Cos(a) * speed * 0.35f, speed * k, Mathf.Sin(a) * speed * 0.35f);
+                p.W = new Vector3(Fracture.Rand01(ref s) - 0.5f, Fracture.Rand01(ref s) - 0.5f, Fracture.Rand01(ref s) - 0.5f) * 14f;
+                p.Age = 0f;
+                p.Calm = 0f;
+                p.Landed = false;
+                p.Still = false;
+                n++;
+            }
+            Moving += n;
+            return n;
+        }
+
         public State StateOf(int i) => i >= 0 && i < high ? pieces[i].State : State.Free;
         public Vector3 PositionOf(int i) => pieces[i].P;
         // Grit and chips, rather than a chunk of a model.

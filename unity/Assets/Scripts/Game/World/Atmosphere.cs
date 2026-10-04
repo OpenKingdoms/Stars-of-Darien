@@ -12,6 +12,7 @@ namespace OpenKingdomsUnity.Game.World
         public Light Sun { get; private set; }
         public WeatherChoice Weather { get; private set; }
         public Vector3 Wind = new Vector3(1.5f, 0, 0.6f);
+        Vector3 blown = new Vector3(float.NaN, 0f, 0f);
         GameObject root;
         ParticleSystem particles;
         Material skybox, particleMat;
@@ -132,6 +133,7 @@ namespace OpenKingdomsUnity.Game.World
         public void SetWeather(WeatherChoice w)
         {
             Weather = w;
+            blown = new Vector3(float.NaN, 0f, 0f);
             if (particles != null) { Looks.Release(particles.gameObject); particles = null; }
             RenderSettings.fog = w == WeatherChoice.Fog || w == WeatherChoice.Snow || w == WeatherChoice.Rain;
             RenderSettings.fogMode = FogMode.Linear;
@@ -205,6 +207,23 @@ namespace OpenKingdomsUnity.Game.World
                     break;
             }
             particles.Play();
+        }
+
+        // The battle's wind, world units a second along the ground: the rain,
+        // snow and drifting fog follow it as the smoke does, turning with it
+        // over a second or two. The sea keeps its own.
+        public void Blow(Vector3 wind)
+        {
+            wind.y = 0f;
+            if (particles == null) return;
+            var to = float.IsNaN(blown.x) ? wind : Vector3.MoveTowards(blown, wind, 1.5f * Mathf.Max(0.001f, Time.unscaledDeltaTime));
+            if (!float.IsNaN(blown.x) && (to - blown).sqrMagnitude < 1e-6f) return;
+            blown = to;
+            wind = to;
+            var vel = particles.velocityOverLifetime;
+            float share = Weather == WeatherChoice.Rain ? 1f : Weather == WeatherChoice.Snow ? 0.6f : 0.3f;
+            vel.x = wind.x * share;
+            vel.z = wind.z * share;
         }
 
         // Keeps the weather box over what the camera looks at.

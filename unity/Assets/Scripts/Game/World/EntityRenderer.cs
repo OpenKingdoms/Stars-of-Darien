@@ -919,9 +919,12 @@ namespace OpenKingdomsUnity.Game.World
             public Matrix4x4 Basis = Matrix4x4.identity;
             // While it breaks, the hold its standing chunks wait on, and its own draws stop.
             public int Hold;
-            // When its look began to dither in after a swap, NaN when whole.
-            public float FadeFrom = float.NaN;
+            // When its look began to dither in after a swap, NaN when whole,
+            // and over how long, 0 for the breaking's own.
+            public float FadeFrom = float.NaN, FadeLength;
             public bool FadeNext;
+            // What fire and magic left on it, kept through its stages.
+            public SceneryLook Look;
             // Drawn from an earlier stage's chunks: the version it was built at, -1 when not.
             public int Fallback = -1;
 
@@ -996,6 +999,8 @@ namespace OpenKingdomsUnity.Game.World
             int n = backend.ReadFeatures(features);
             bool seaOn = backend.Terrain != null && backend.Terrain.SeaLevel > 0;
             FeaturesRebuilt = SyncFeatures(n, seaOn);
+            if (FeaturesRebuilt > 0) gridStale = true;
+            int marked = 0;
             if (sitesStale)
             {
                 sites.Clear();
@@ -1010,21 +1015,35 @@ namespace OpenKingdomsUnity.Game.World
                 float fade = 0f;
                 if (!float.IsNaN(e.FadeFrom))
                 {
-                    float t = (simNow - e.FadeFrom) / Debris.FadeSeconds;
-                    if (t >= 1f || t < 0f) e.FadeFrom = float.NaN;
+                    float t = (simNow - e.FadeFrom) / (e.FadeLength > 0f ? e.FadeLength : Debris.FadeSeconds);
+                    if (t >= 1f || t < 0f) { e.FadeFrom = float.NaN; e.FadeLength = 0f; }
                     else fade = -Mathf.Max(0.001f, t);
                 }
                 var sink = ScarMap.Sink(e.Position);
+                // Marked scenery draws its marks, its foot in any crater it stands in.
+                bool shows = e.Look != null && e.Look.Shows;
+                SceneryInstance look = default;
+                if (shows)
+                {
+                    e.Look.Pack(out look);
+                    look.Foot.y += sink.m13;
+                    marked++;
+                }
                 foreach (var d in e.Draws)
                 {
                     // A breaking feature's chunks draw it, but for what lies flat.
                     if (e.Hold != 0 && !d.flat) continue;
-                    (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, sink * d.m, 0f, fade);
+                    if (shows && !d.flat) solid.Add(d.mesh, d.sub, d.mat, sink * d.m, 0f, fade, look);
+                    else (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, sink * d.m, 0f, fade);
                 }
                 if (!e.Card) continue;
                 var mat = SpriteMaterial(e.Sprite);
-                if (mat != null) billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform));
+                if (mat == null) continue;
+                if (shows) billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform), 0f, 0f, look);
+                else billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform));
             }
+            MarkedDrawn = marked;
+            DrawLeaving();
         }
 
         // Matches the features read this frame to last frame's entries by
@@ -1076,8 +1095,10 @@ namespace OpenKingdomsUnity.Game.World
         {
             if (e.Hold != 0) { Debris.Release(e.Hold, false); e.Hold = 0; }
             Forget(e);
+            DropLook(e);
             e.Def = int.MinValue;
             e.FadeFrom = float.NaN;
+            e.FadeLength = 0f;
             e.FadeNext = false;
             e.Fallback = -1;
             spareEntries.Push(e);
@@ -1096,9 +1117,16 @@ namespace OpenKingdomsUnity.Game.World
 
         void Build(FeatureEntry e, in FeatureState f, bool seaOn)
         {
-            // A stage that takes its feature's place keeps the way it faced.
+            // A stage that takes its feature's place keeps the way it faced, and its marks.
             var before = e.Def != int.MinValue && e.SamePlace(f) ? e.Basis : Matrix4x4.TRS(f.Position, ModelTurn(f.Heading), Vector3.one);
+            if (!e.SamePlace(f)) DropLook(e);
             Forget(e);
+            BuildDraws(e, f, seaOn, before);
+            PlaceLook(e);
+        }
+
+        void BuildDraws(FeatureEntry e, in FeatureState f, bool seaOn, Matrix4x4 before)
+        {
             if (e.FadeNext) { e.FadeFrom = simNow; e.FadeNext = false; }
             e.Fallback = -1;
             e.Def = f.Def; e.Model = f.Model; e.Sprite = f.Sprite; e.Position = f.Position; e.Heading = f.Heading;
@@ -1292,6 +1320,7 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Dispose()
         {
+            ForgetLooks();
             halos.Dispose();
             Debris.Clear();
             Dust.Dispose();

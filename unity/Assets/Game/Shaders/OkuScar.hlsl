@@ -12,6 +12,8 @@ float4 _OkuScarTexel;   // 1 / texels across, 1 / texels down, world units a tex
 float4 _OkuScarOn;      // on, lit through normals, dips, seconds since the fade texture last stepped
 float4 _OkuScarSoil;    // the climate's soil, linear, and how wet a crater's floor lies
 float4 _OkuScarSnow;    // what dug snow shows, and 1 on a snow map
+sampler2D _OkuScarSnowed;   // the battle second each patch was last scarred (ScarSnow.cs)
+float4 _OkuScarSnowing;     // now, when the snow began, seconds to cover a scar, and 1 while it snows
 
 float2 OkuScarUv(float3 p)
 {
@@ -196,6 +198,18 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     half holy = saturate(s.left.z / 25);
     c = lerp(c, c * 1.15 + 0.03, holy);
     emit += half3(1.0, 0.87, 0.58) * holy * holy * 1.5;
+
+    // Snow settling over old scars while it snows, a fresh one dark through it.
+    if (_OkuScarSnowing.w > 0.5)
+    {
+        float since = tex2Dlod(_OkuScarSnowed, float4(OkuScarUv(p), 0, 0)).r;
+        half cover = saturate((_OkuScarSnowing.x - max(since, _OkuScarSnowing.y)) / _OkuScarSnowing.z);
+        half scarred = saturate(dot(s.marks, 1) * 2 + s.shape.r * 4 + s.shape.b + s.left.w * 0.1);
+        half lay = cover * scarred * (0.7 + 0.3 * grain);
+        c = lerp(c, half3(0.84, 0.87, 0.92) * (0.9 + 0.2 * fine), lay);
+        gloss = lerp(gloss, 0.3, lay);
+        emit *= 1 - lay;
+    }
     return c;
 }
 

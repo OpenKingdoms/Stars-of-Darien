@@ -309,6 +309,20 @@ namespace OpenKingdomsUnity.Game
             FeatureKind("mock_stone_body", "mockstonebody", "", "corpses", new Vector2Int(1, 2), 0.4f, 300, die: 15);
         }
 
+        // A kind of scenery for tests and staged scenes, drawn by the drop-in
+        // model its name finds, such as AraTree01. dead and burnt name the
+        // kinds it becomes, added first. Returns its def, or the one that has the name.
+        public int AddSceneryKind(string name, string category, float height, int hitPoints, bool flammable = false,
+            string dead = null, string burnt = null, float dieSeconds = 1.5f, float burnSeconds = 8f, int size = 1)
+        {
+            int known = featureDefs.FindIndex(d => d.Name == name);
+            if (known >= 0) return known;
+            int Find(string n) => string.IsNullOrEmpty(n) ? -1 : featureDefs.FindIndex(d => d.Name == n);
+            FeatureKind(name, "", name, category, new Vector2Int(size, size), height, hitPoints, flammable, Find(dead), Find(burnt),
+                Mathf.RoundToInt(dieSeconds * Tps), Mathf.RoundToInt(burnSeconds * Tps));
+            return featureDefs.Count - 1;
+        }
+
         void LookOf(int def, out int model, out int sprite)
         {
             var d = featureDefs[def];

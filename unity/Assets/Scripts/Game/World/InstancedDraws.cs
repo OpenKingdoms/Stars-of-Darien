@@ -1,7 +1,8 @@
 // InstancedDraws.cs - collects matrices per mesh, submesh and material
 // over a frame, then draws each group with GPU instancing, 1023 at a time.
-// An instance may carry a lift to its self light, a lodestone's breath, and
-// a dithered fade, for scenery handing over to its next stage.
+// An instance may carry a lift to its self light, a lodestone's breath, a
+// dithered fade, for scenery handing over to its next stage, and the marks
+// fire and magic left on it (SceneryLook).
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -27,31 +28,42 @@ namespace OpenKingdomsUnity.Game.World
             public readonly List<Matrix4x4> Matrices = new List<Matrix4x4>();
             public readonly List<float> Lifts = new List<float>();
             public readonly List<float> Fades = new List<float>();
-            public bool Lifted, Faded;
+            public readonly List<SceneryInstance> Looks = new List<SceneryInstance>();
+            public bool Lifted, Faded, Marked;
         }
 
         readonly Dictionary<Key, Group> groups = new Dictionary<Key, Group>();
         readonly Matrix4x4[] chunk = new Matrix4x4[1023];
         readonly float[] liftChunk = new float[1023];
         readonly float[] fadeChunk = new float[1023];
+        readonly Vector4[] markChunk = new Vector4[1023], heatChunk = new Vector4[1023], bendChunk = new Vector4[1023], footChunk = new Vector4[1023];
         // One block per lifted draw in a frame, since a draw keeps the block it was given.
         readonly List<MaterialPropertyBlock> blocks = new List<MaterialPropertyBlock>();
         int blocksUsed;
         static readonly int LiftId = Shader.PropertyToID("_PulseLift");
         static readonly int FadeId = Shader.PropertyToID("_OkuFade");
+        static readonly int MarkId = Shader.PropertyToID("_OkuMark"), HeatId = Shader.PropertyToID("_OkuHeat");
+        static readonly int BendId = Shader.PropertyToID("_OkuBend"), FootId = Shader.PropertyToID("_OkuFoot");
         public bool CastShadows = true;
         public int Count { get; private set; }
         public int DrawCalls { get; private set; }
 
         public void Clear()
         {
-            foreach (var g in groups.Values) { g.Matrices.Clear(); g.Lifts.Clear(); g.Fades.Clear(); g.Lifted = g.Faded = false; }
+            foreach (var g in groups.Values) { g.Matrices.Clear(); g.Lifts.Clear(); g.Fades.Clear(); g.Looks.Clear(); g.Lifted = g.Faded = g.Marked = false; }
             Count = 0;
         }
 
         // lift: the instance's self light is 1 + lift times its rest. fade:
         // 0 drawn whole, from 0 to 1 dithering away, from 0 to -1 dithering in.
-        public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m, float lift = 0f, float fade = 0f)
+        public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m, float lift = 0f, float fade = 0f) =>
+            Add(mesh, submesh, material, m, lift, fade, default, false);
+
+        // look: the marks fire and magic left on it.
+        public void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m, float lift, float fade, in SceneryInstance look) =>
+            Add(mesh, submesh, material, m, lift, fade, look, true);
+
+        void Add(Mesh mesh, int submesh, Material material, in Matrix4x4 m, float lift, float fade, in SceneryInstance look, bool marked)
         {
             var matrix = m;
             // Instancing cannot flip culling per instance, so a mirrored
@@ -67,6 +79,14 @@ namespace OpenKingdomsUnity.Game.World
             g.Matrices.Add(matrix);
             g.Lifts.Add(lift);
             g.Fades.Add(fade);
+            // Looks are kept only once a group has a marked instance.
+            if (marked)
+            {
+                while (g.Looks.Count < g.Matrices.Count - 1) g.Looks.Add(default);
+                g.Looks.Add(look);
+                g.Marked = true;
+            }
+            else if (g.Marked) g.Looks.Add(default);
             if (lift != 0f) g.Lifted = true;
             if (fade != 0f) g.Faded = true;
             Count++;
@@ -113,6 +133,22 @@ namespace OpenKingdomsUnity.Game.World
             return b;
         }
 
+        void SetLooks(MaterialPropertyBlock block, List<SceneryInstance> looks, int start, int n)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                var l = looks[start + i];
+                markChunk[i] = l.Mark;
+                heatChunk[i] = l.Heat;
+                bendChunk[i] = l.Bend;
+                footChunk[i] = l.Foot;
+            }
+            block.SetVectorArray(MarkId, markChunk);
+            block.SetVectorArray(HeatId, heatChunk);
+            block.SetVectorArray(BendId, bendChunk);
+            block.SetVectorArray(FootId, footChunk);
+        }
+
         public void Draw(int layer = 0)
         {
             DrawCalls = 0;
@@ -134,11 +170,19 @@ namespace OpenKingdomsUnity.Game.World
                     // A drop-in model's own material may not instance.
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (g.Lifted || g.Faded)
+                        if (g.Lifted || g.Faded || g.Marked)
                         {
                             rp.matProps = Block();
                             rp.matProps.SetFloat(LiftId, g.Lifts[i]);
                             rp.matProps.SetFloat(FadeId, g.Fades[i]);
+                            if (g.Marked)
+                            {
+                                var look = g.Looks[i];
+                                rp.matProps.SetVector(MarkId, look.Mark);
+                                rp.matProps.SetVector(HeatId, look.Heat);
+                                rp.matProps.SetVector(BendId, look.Bend);
+                                rp.matProps.SetVector(FootId, look.Foot);
+                            }
                         }
                         Graphics.RenderMesh(rp, kv.Key.Mesh, kv.Key.Submesh, list[i]);
                     }
@@ -149,11 +193,12 @@ namespace OpenKingdomsUnity.Game.World
                 {
                     int n = Mathf.Min(chunk.Length, list.Count - start);
                     list.CopyTo(start, chunk, 0, n);
-                    if (g.Lifted || g.Faded)
+                    if (g.Lifted || g.Faded || g.Marked)
                     {
                         rp.matProps = Block();
                         if (g.Lifted) { g.Lifts.CopyTo(start, liftChunk, 0, n); rp.matProps.SetFloatArray(LiftId, liftChunk); }
                         if (g.Faded) { g.Fades.CopyTo(start, fadeChunk, 0, n); rp.matProps.SetFloatArray(FadeId, fadeChunk); }
+                        if (g.Marked) SetLooks(rp.matProps, g.Looks, start, n);
                     }
                     Graphics.RenderMeshInstanced(rp, kv.Key.Mesh, kv.Key.Submesh, chunk, n);
                     DrawCalls++;

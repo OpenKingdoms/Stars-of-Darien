@@ -14,6 +14,9 @@ namespace OpenKingdomsUnity.Game.World
         public EntityRenderer Entities { get; private set; }
         public EffectRenderer Effects { get; private set; }
         public FogView Fog { get; private set; }
+        public FxFire Fire { get; private set; }
+        public FxMagic Magic { get; private set; }
+        public ScarSnow Snow { get; private set; }
         // The battle's craters and marks on the ground.
         public ScarMap Scars { get; private set; }
         string climate = "";
@@ -121,6 +124,12 @@ namespace OpenKingdomsUnity.Game.World
             Effects.Warm(backend.WarmEffectStrips());
             Scars = ScarMap.Begin(backend, Terrain, climate, FxQuality.Current.Level);
             Entities.Unseen = p => Fog.State(p) == 0;
+            Fire = new FxFire(backend, Entities);
+            Magic = new FxMagic(backend, Entities, Fire);
+            Entities.FeatureNews += Fire.Note;
+            Effects.Fire = Fire;
+            Effects.Magic = Magic;
+            Snow = new ScarSnow(backend, Scars);
         }
 
         void Frame(GameOptions options)
@@ -215,8 +224,12 @@ namespace OpenKingdomsUnity.Game.World
             // An edit in the map editor can make a sea where there was none.
             WaterView.Prepare(cam, Terrain.Sea != null);
             // After the sea's camera needs, since soft effects add their own.
+            if (Fire != null) Fire.Weather = Atmosphere.Weather;
             using (new Unity.Profiling.ProfilerMarker("Oku.Effects").Auto()) Effects.Render(cam);
             using (new Unity.Profiling.ProfilerMarker("Oku.Water").Auto()) Terrain.Sea?.Update(Atmosphere, Entities, backend, cam);
+            // Rain, snow and smoke all go the way the battle's wind blows.
+            Atmosphere.Blow(Effects.Wind);
+            Snow?.Update(Atmosphere.Weather == WeatherChoice.Snow, Scars != null ? Scars.Now : 0f);
             Atmosphere.Follow(Camera.focus, Camera.transform.position.y - Camera.focus.y, Camera.distance);
         }
 
@@ -225,6 +238,10 @@ namespace OpenKingdomsUnity.Game.World
             building.Clear();
             Entities?.Dispose();
             Effects?.Dispose();
+            Snow?.Dispose();
+            Snow = null;
+            Fire = null;
+            Magic = null;
             Scars?.Dispose();
             Scars = null;
             Fog?.Dispose();

@@ -86,6 +86,8 @@ namespace OpenKingdomsUnity.Game.World
         public int BlastsSeen { get; private set; }
         public double LastMs { get; private set; }
         public float Now => now;
+        // Each stamp as it is drawn, for looks that follow the scars.
+        public event System.Action<ScarStamp> Stamping;
 
         ScarMap(IGameBackend backend, TerrainView ground, string climate, EffectsQuality level)
         {
@@ -211,6 +213,7 @@ namespace OpenKingdomsUnity.Game.World
             {
                 var s = pending[k++];
                 batch.Add(s);
+                Stamping?.Invoke(s);
                 texels += Dents.Stamp(s);
                 AskDips(s);
             }

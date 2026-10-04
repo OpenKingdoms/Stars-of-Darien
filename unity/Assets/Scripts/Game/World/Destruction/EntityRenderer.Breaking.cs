@@ -94,8 +94,8 @@ namespace OpenKingdomsUnity.Game.World
             {
                 case FeatureEventKind.Hit: ChipAt(e); break;
                 case FeatureEventKind.Dying: StartBreak(e); break;
-                case FeatureEventKind.Dead:
-                case FeatureEventKind.Burnt: EndBreak(e); break;
+                case FeatureEventKind.Dead: EndBreak(e); break;
+                case FeatureEventKind.Burnt: LeaveBurning(e); EndBreak(e); break;
                 case FeatureEventKind.Swept: SinkAway(e); break;
                 case FeatureEventKind.Placed: AskChain(e.Def, null); break;
             }
