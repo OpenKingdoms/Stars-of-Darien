@@ -153,7 +153,8 @@ namespace OpenKingdomsUnity.Game
             public bool Ordered;
             public OrderKind OrderKind = OrderKind.Move;
             // A factory's units still to make after BuildDef, the def it
-            // repeats (-1 for none) and where its units go.
+            // repeats or a walking builder summons (-1 for none) and where
+            // its units go.
             public readonly List<int> Line = new List<int>();
             public int Repeat = -1;
             public Vector2? Rally;
@@ -611,6 +612,16 @@ namespace OpenKingdomsUnity.Game
             made.Home = u.Home;
             NoteFinished(made);
             if (u.Rally is Vector2 rally) { made.Goal = rally; made.Home = rally; made.Ordered = true; }
+            if (u.Repeat >= 0 && !unitDefs[u.Def].IsBuilding && u.BuildAt is Vector3 spot)
+            {
+                // Each one steps off the spot and the next starts there.
+                var off = Quaternion.Euler(0, (float)rng.NextDouble() * 360f, 0) * Vector3.forward * (2f + (float)rng.NextDouble() * 4f);
+                made.Goal = new Vector2(spot.x + off.x, spot.z + off.z);
+                made.Home = made.Goal.Value;
+                made.Ordered = true;
+                u.BuildLeft = 5f;
+                return;
+            }
             u.BuildDef = -1;
             u.BuildAt = null;
             if (unitDefs[u.Def].IsBuilding) StartNext(u);
@@ -1004,6 +1015,8 @@ namespace OpenKingdomsUnity.Game
             if (c.Queue && c.Kind != CommandKind.Stop && Busy(u))
             {
                 if (!CanTake(u, c)) return false;
+                // Nothing Shift places goes behind a summons without end.
+                if (c.Kind == CommandKind.Build && SummonsOf(u) >= 0) return false;
                 Enqueue(u.Handle, new Pending { Command = c });
                 return true;
             }
@@ -1037,6 +1050,7 @@ namespace OpenKingdomsUnity.Game
         bool Apply(Unit u, in GameCommand c)
         {
             var def = unitDefs[u.Def];
+            if (c.Kind != CommandKind.Build) u.Repeat = -1;
             switch (c.Kind)
             {
                 case CommandKind.Move:
@@ -1064,11 +1078,19 @@ namespace OpenKingdomsUnity.Game
                 case CommandKind.FactoryEnqueue:
                     // One thing at a time: a new order replaces the last.
                     if (Array.IndexOf(def.BuildOptions, c.BuildDef) < 0) return false;
+                    u.Repeat = -1;
                     if (c.Kind == CommandKind.Build && unitDefs[c.BuildDef].IsBuilding)
                     {
                         if (!CanBuildAt(c.BuildDef, c.Target, c.Facing, out var site)) return false;
                         u.BuildAt = site;
                         u.BuildFacing = c.Facing;
+                    }
+                    else if (c.Kind == CommandKind.Build && c.Endless)
+                    {
+                        // Summoned on the spot without end, as the engine does.
+                        u.BuildAt = new Vector3(c.Target.x, GroundHeight(c.Target.x, c.Target.z), c.Target.z);
+                        u.BuildFacing = 0;
+                        u.Repeat = c.BuildDef;
                     }
                     else u.BuildAt = null;
                     u.BuildDef = c.BuildDef;
@@ -1138,8 +1160,11 @@ namespace OpenKingdomsUnity.Game
             if (mockIsArmed)
             {
                 mockIsArmed = false;
+                // Ctrl on a summons drops Shift with it, as the engine's click does.
+                bool summon = mockArmed == CommandKind.Build && mockArmedRepeat;
                 foreach (int h in mockSelection.ToArray())
-                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef, Facing = mockArmedFacing, Queue = shift, Keep = keep });
+                    Command(new GameCommand { Kind = mockArmed, Unit = h, Target = at, TargetUnit = unit, BuildDef = mockArmedDef, Facing = mockArmedFacing,
+                        Queue = summon ? shift && !keep : shift, Keep = !summon && keep, Endless = summon });
                 return;
             }
             if (friend)
@@ -1185,11 +1210,14 @@ namespace OpenKingdomsUnity.Game
 
         int mockArmedFacing;
 
-        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0)
+        bool mockArmedRepeat;
+
+        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0, bool repeat = false)
         {
             mockArmed = kind;
             mockArmedDef = buildDef;
             mockArmedFacing = facing;
+            mockArmedRepeat = kind == CommandKind.Build && repeat;
             mockIsArmed = true;
         }
 

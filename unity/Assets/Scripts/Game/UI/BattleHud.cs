@@ -30,7 +30,7 @@ namespace OpenKingdomsUnity.Game.UI
         readonly Dictionary<int, Texture2D> rawBuild = new Dictionary<int, Texture2D>(), sharpBuild = new Dictionary<int, Texture2D>();
         readonly Dictionary<string, Texture2D> rawAction = new Dictionary<string, Texture2D>(), sharpAction = new Dictionary<string, Texture2D>();
         readonly UnitState[] units = new UnitState[EntityRenderer.MaxUnits];
-        readonly List<(Text badge, int def, List<int> factories)> queueBadges = new List<(Text, int, List<int>)>();
+        readonly List<(Text badge, int def, List<int> factories, List<int> builders)> queueBadges = new List<(Text, int, List<int>, List<int>)>();
         readonly Dictionary<string, ActionParts> parts = new Dictionary<string, ActionParts>();
         readonly List<CardParts> cards = new List<CardParts>();
         readonly List<int> idle = new List<int>();
@@ -1200,10 +1200,13 @@ namespace OpenKingdomsUnity.Game.UI
                 if (parts.TryGetValue(a.Id, out var p)) Refresh(p, a);
             foreach (var qb in queueBadges)
             {
-                if (qb.factories == null || qb.badge == null) continue;
+                if (qb.badge == null) continue;
                 int q = 0;
                 bool repeats = false;
-                foreach (int f in qb.factories) { q += b.QueuedCount(f, qb.def); repeats |= b.RepeatOf(f) == qb.def; }
+                if (qb.factories != null)
+                    foreach (int f in qb.factories) { q += b.QueuedCount(f, qb.def); repeats |= b.RepeatOf(f) == qb.def; }
+                else if (qb.builders != null)
+                    foreach (int h in qb.builders) repeats |= b.RepeatOf(h) == qb.def;
                 string t = BadgeText(q, repeats);
                 if (qb.badge.text != t) qb.badge.text = t;
             }
@@ -1386,10 +1389,13 @@ namespace OpenKingdomsUnity.Game.UI
             var g = layout.Builds(options.Count);
             int pages = g.Paged ? (options.Count + g.PerPage - 1) / g.PerPage : 1;
             buildPage = Mathf.Clamp(buildPage, 0, pages - 1);
-            // Every selected factory of the lead's kind takes the queue.
-            var factories = def.IsBuilding ? chosen.Where(u => u.Def == leadUnit.Def).Select(u => u.Handle).ToList() : null;
+            // Every selected factory of the lead's kind takes the queue, and
+            // every builder of its kind shows a summons on the card.
+            var ofKind = chosen.Where(u => u.Def == leadUnit.Def).Select(u => u.Handle).ToList();
+            var factories = def.IsBuilding ? ofKind : null;
+            var builders = def.IsBuilding ? null : ofKind;
             var shown = options.Skip(buildPage * g.PerPage).Take(g.PerPage).ToList();
-            for (int i = 0; i < shown.Count; i++) BuildCard(layout.BuildCell(g, i), b.UnitDefs[shown[i]], factories);
+            for (int i = 0; i < shown.Count; i++) BuildCard(layout.BuildCell(g, i), b.UnitDefs[shown[i]], factories, builders);
             if (g.Paged) PageTurner(layout.BuildCell(g, shown.Count), pages);
         }
 
@@ -1409,12 +1415,20 @@ namespace OpenKingdomsUnity.Game.UI
 
         // A build card's lines in the help box: its name and cost, then what
         // the clicks do, or that the pool cannot pay for it.
-        public static (string, string) CardLines(string name, int cost, bool factory, bool canRotate, bool afford) =>
+        public static (string, string) CardLines(string name, int cost, bool factory, bool canRotate, bool afford, bool summons = false) =>
             ($"{name}, {cost} mana", !afford ? NotEnoughMana
                 : factory ? "Shift 5, Ctrl repeat, right click removes"
+                : summons ? "Click to place, Ctrl repeats it"
                 : canRotate ? "Click to place, R turns it" : "Click to place");
 
-        void BuildCard(Rect cell, UnitDef od, List<int> factories)
+        // A unit a walking builder can summon without end with Ctrl. The
+        // engine has the last word, by the unit file's bmcode.
+        public static bool Summons(UnitDef d) => d != null && !d.IsBuilding;
+
+        // Most of a builder's orders of one kind a right click takes off.
+        const int AllOfThem = 9999;
+
+        void BuildCard(Rect cell, UnitDef od, List<int> factories, List<int> builders)
         {
             int id = od.Id;
             var rt = Put(builds, "Build " + od.Name, cell);
@@ -1447,7 +1461,7 @@ namespace OpenKingdomsUnity.Game.UI
             var o = root.Orders;
             if (o != null && o.Armed == CommandKind.Build && o.ArmedDef == id) Ring(rt, "Armed", local, 2f, HudArt.Minium);
             Text badge = null;
-            if (factories != null)
+            if (factories != null || builders != null)
             {
                 badge = Words(rt, "Queued", new Rect(3f + 1.5f, 2f + 1.5f, cell.width - 8f, 16f), UiKit.TitleFont, 13, HudLayout.NumberFloor, HudArt.GoldHi, TextAnchor.UpperLeft);
                 var outline = badge.gameObject.AddComponent<Outline>();
@@ -1457,7 +1471,8 @@ namespace OpenKingdomsUnity.Game.UI
             c.CostText = Tab(rt, "Cost", od.ManaCost.ToString(), 9, HudLayout.NumberFloor, HudArt.AzuriteDeep, size => new Rect(cell.width - size.x - 2.5f, cell.height - size.y - 2.5f, size.x, size.y), UiKit.TitleFont);
             Afford(c, od.ManaCost <= pool.Mana);
             bool rotates = factories == null && root.Backend.CanRotate(id);
-            Hover(rt.gameObject, () => CardLines(Nice(od), od.ManaCost, factories != null, rotates, c.Afford), on => { c.Hovered = on; if (c.Plate) Look(c, false); });
+            bool summons = factories == null && Summons(od);
+            Hover(rt.gameObject, () => CardLines(Nice(od), od.ManaCost, factories != null, rotates, c.Afford, summons), on => { c.Hovered = on; if (c.Plate) Look(c, false); });
             var press = rt.gameObject.AddComponent<PressHint>();
             press.AnyButton = true;
             press.Pressed = down => { c.Pressed = down; if (c.Plate) Look(c, true); };
@@ -1467,8 +1482,23 @@ namespace OpenKingdomsUnity.Game.UI
                 btn.onClick.AddListener(() => BuildClicked(factories, id, false));
                 rt.gameObject.AddComponent<RightClick>().Clicked = () => BuildClicked(factories, id, true);
             }
-            else btn.onClick.AddListener(() => { UiKit.Play("menubutton.wav"); root.Orders?.Arm(CommandKind.Build, id); nextPanel = 0f; });
-            queueBadges.Add((badge, id, factories));
+            else
+            {
+                // Ctrl on a unit summons it without end (legacy:150077-150084),
+                // and a right click takes every build order of it off.
+                btn.onClick.AddListener(() => { UiKit.Play("menubutton.wav"); root.Orders?.Arm(CommandKind.Build, id, summons && CtrlKey()); nextPanel = 0f; });
+                rt.gameObject.AddComponent<RightClick>().Clicked = () => BuilderRightClicked(builders, id);
+            }
+            queueBadges.Add((badge, id, factories, builders));
+        }
+
+        void BuilderRightClicked(List<int> builders, int def)
+        {
+            if (builders == null) return;
+            bool any = false;
+            foreach (int h in builders) any |= root.Backend.AddToQueue(h, def, -AllOfThem);
+            if (any && !UiKit.Play("subbuild")) UiKit.Play("menubutton.wav");
+            nextPanel = 0f;
         }
 
         // In by 1 cp at the top left with the bezel in shadow while pressed,

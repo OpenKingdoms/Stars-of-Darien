@@ -246,6 +246,81 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(0, mock.QueuedCount(lodge.Handle, def));
         }
 
+        int OwnOf(int def) => Units().Count(u => u.Player == mock.LocalPlayer && u.Def == def && u.BuildProgress >= 1f);
+
+        // Ctrl on a walking builder's card for a unit arms a summons. The
+        // click places it once, Shift or not, and the unit comes on that
+        // spot over and over, each one stepping off. The card reads +++ and
+        // a right click on it ends the summons.
+        [UnityTest]
+        public IEnumerator ABuildersCardWithCtrlSummonsWithoutEnd()
+        {
+            yield return Begin();
+            var monarch = Own(MockBackend.Role.Monarch);
+            int def = mock.UnitDefs[monarch.Def].BuildOptions[0];
+            Assert.IsFalse(mock.UnitDefs[def].IsBuilding, "the monarch's first card is a unit");
+            mock.Select(new[] { monarch.Handle }, false);
+            string name = mock.UnitDefs[def].Name;
+            Button card = null;
+            yield return Card(name, b => card = b);
+            bool ctrl = true;
+            BattleHud.CtrlKey = () => ctrl;
+            card.onClick.Invoke();
+            ctrl = false;
+            Assert.AreEqual(CommandKind.Build, root.Orders.Armed);
+            Assert.IsTrue(root.Orders.ArmedRepeat, "Ctrl arms a summons");
+
+            var site = OpenGround(monarch.Position, 8f);
+            yield return Look(site);
+            int before = OwnOf(def);
+            yield return Click(site, shift: true);
+            Assert.IsNull(root.Orders.Armed, "placed once, Shift or not");
+            Assert.AreEqual(def, mock.RepeatOf(monarch.Handle), "the monarch summons it without end");
+            mock.Advance(MockBackend.Tps * 21);
+            Assert.GreaterOrEqual(OwnOf(def) - before, 4, "one after another");
+            var spot = new Vector2(site.x, site.z);
+            Assert.LessOrEqual(Units().Count(u => u.Def == def && (new Vector2(u.Position.x, u.Position.z) - spot).magnitude < 1f), 1, "each steps off the spot");
+
+            // The panel is rebuilt as the monarch's orders change, so the
+            // card is looked up after the wait.
+            yield return new WaitForSecondsRealtime(0.3f);
+            yield return Card(name, b => card = b);
+            Assert.AreEqual("+++", card.transform.Find("Queued").GetComponent<Text>().text);
+            card.GetComponent<RightClick>().Clicked();
+            Assert.AreEqual(-1, mock.RepeatOf(monarch.Handle), "a right click ends it");
+            int made = OwnOf(def);
+            mock.Advance(MockBackend.Tps * 12);
+            Assert.AreEqual(made, OwnOf(def), "and no more come");
+        }
+
+        // The modern scheme sends the summons as a build without end, and
+        // Ctrl held at the click replaces the queue rather than keeping it.
+        [UnityTest]
+        public IEnumerator AModernSummonsReplacesTheQueueEvenWithCtrl()
+        {
+            yield return Begin();
+            root.Orders.Classic = false;
+            var monarch = Own(MockBackend.Role.Monarch);
+            int def = mock.UnitDefs[monarch.Def].BuildOptions[0];
+            Assert.IsTrue(mock.Command(GameCommand.To(CommandKind.Move, monarch.Handle, OpenGround(monarch.Position, 10f))));
+            var queued = GameCommand.To(CommandKind.Move, monarch.Handle, OpenGround(monarch.Position, 14f));
+            queued.Queue = true;
+            Assert.IsTrue(mock.Command(queued));
+            Assert.AreEqual(2, Legs(monarch.Handle, out _));
+            root.Orders.Selected.Clear();
+            root.Orders.Selected.Add(monarch.Handle);
+            root.Orders.Arm(CommandKind.Build, def, repeat: true);
+            var site = OpenGround(monarch.Position, 6f);
+            yield return Look(site);
+            frame.Ctrl = true;
+            yield return Click(site, shift: true);
+            frame.Ctrl = false;
+            Assert.IsNull(root.Orders.Armed, "placed once");
+            Assert.AreEqual(def, mock.RepeatOf(monarch.Handle));
+            Assert.AreEqual(1, Legs(monarch.Handle, out var legs), "the moves are gone");
+            Assert.AreEqual(OrderKind.Build, legs[0].Kind);
+        }
+
         // A frame can be chosen only to queue units in it: no orders, no
         // rally, nothing on the panel but its build, and its queue waits.
         [UnityTest]

@@ -353,6 +353,7 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(("Knight, 120 mana", "Shift 5, Ctrl repeat, right click removes"), BattleHud.CardLines("Knight", 120, true, false, true));
             Assert.AreEqual("Click to place, R turns it", BattleHud.CardLines("Lodge", 400, false, true, true).Item2);
             Assert.AreEqual("Click to place", BattleHud.CardLines("Lodestone", 400, false, false, true).Item2);
+            Assert.AreEqual("Click to place, Ctrl repeats it", BattleHud.CardLines("Goblin", 173, false, false, true, true).Item2);
             Assert.AreEqual("Not enough mana", BattleHud.CardLines("Lodge", 400, false, true, false).Item2);
             Assert.AreEqual("Not enough mana", BattleHud.CardLines("Knight", 120, true, false, false).Item2);
             Assert.AreEqual("–", BattleHud.SpellCost(0), "a dash under a spell that costs nothing");

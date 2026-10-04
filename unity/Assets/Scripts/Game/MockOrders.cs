@@ -87,8 +87,50 @@ namespace OpenKingdomsUnity.Game
             return Makes(d) && System.Array.IndexOf(d.BuildOptions, def) >= 0 ? f : null;
         }
 
+        // A builder of yours that walks and can make def.
+        Unit OwnBuilder(int handle, int def)
+        {
+            if (Status != GameStatus.Running || !byHandle.TryGetValue(handle, out var u) || u.Dying || u.Player != 0) return null;
+            var d = unitDefs[u.Def];
+            return !d.IsBuilding && System.Array.IndexOf(d.BuildOptions, def) >= 0 ? u : null;
+        }
+
+        // The def a walking builder summons without end, in hand or queued, or -1.
+        int SummonsOf(Unit u)
+        {
+            if (unitDefs[u.Def].IsBuilding) return -1;
+            if (u.Repeat >= 0) return u.Repeat;
+            if (pending.TryGetValue(u.Handle, out var q))
+                foreach (var p in q)
+                    if (!p.IsLeg && p.Command.Kind == CommandKind.Build && p.Command.Endless) return p.Command.BuildDef;
+            return -1;
+        }
+
+        // A walking builder's build orders of def come off, the one in hand
+        // first, as the original's right click on its card takes them.
+        bool DropBuilds(Unit u, int def, int count)
+        {
+            int was = count;
+            if (u.BuildDef == def && count > 0)
+            {
+                u.BuildDef = -1;
+                u.BuildAt = null;
+                u.Repeat = -1;
+                count--;
+            }
+            if (pending.TryGetValue(u.Handle, out var q))
+                for (int i = 0; i < q.Count && count > 0;)
+                {
+                    if (!q[i].IsLeg && q[i].Command.Kind == CommandKind.Build && q[i].Command.BuildDef == def) { q.RemoveAt(i); count--; }
+                    else i++;
+                }
+            if (count < was) Next(u);
+            return count < was;
+        }
+
         public bool AddToQueue(int factory, int def, int count)
         {
+            if (count < 0 && OwnBuilder(factory, def) is Unit b) return DropBuilds(b, def, -count);
             var f = OwnFactory(factory, def);
             if (f == null || count == 0) return false;
             if (count > 0)
@@ -106,6 +148,8 @@ namespace OpenKingdomsUnity.Game
 
         public bool SetRepeat(int factory, int def, bool on)
         {
+            if (!on && OwnBuilder(factory, def) is Unit b)
+                return SummonsOf(b) == def && DropBuilds(b, def, int.MaxValue);
             var f = OwnFactory(factory, def);
             if (f == null) return false;
             if (on)
@@ -122,7 +166,11 @@ namespace OpenKingdomsUnity.Game
             return true;
         }
 
-        public int RepeatOf(int factory) => byHandle.TryGetValue(factory, out var f) && !f.Dying ? f.Repeat : -1;
+        public int RepeatOf(int factory)
+        {
+            if (!byHandle.TryGetValue(factory, out var f) || f.Dying) return -1;
+            return unitDefs[f.Def].IsBuilding ? f.Repeat : SummonsOf(f);
+        }
 
         // The next unit off the line, or the repeated one when the line is dry.
         void StartNext(Unit f)

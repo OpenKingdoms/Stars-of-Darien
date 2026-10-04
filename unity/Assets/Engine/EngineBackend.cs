@@ -904,9 +904,9 @@ namespace OpenKingdomsUnity.Engine
 
         // ── Orders ─────────────────────────────────────────────────────
 
-        // A build order's arg is its facing, Queue puts the order behind
-        // the ones the unit holds, as Shift does, and Keep puts it in place
-        // of the one in hand and keeps the rest, as Ctrl does.
+        // A build order's arg is its facing and Endless, Queue puts the order
+        // behind the ones the unit holds, as Shift does, and Keep puts it in
+        // place of the one in hand and keeps the rest, as Ctrl does.
         public bool Command(in GameCommand c)
         {
             float x = c.Target.x / S, z = -c.Target.z / S;
@@ -916,6 +916,7 @@ namespace OpenKingdomsUnity.Engine
         public static int CommandArg(in GameCommand c)
         {
             int arg = c.Kind == CommandKind.Build ? (c.Facing & 3) : c.Arg;
+            if (c.Kind == CommandKind.Build && c.Endless) arg |= OkEngine.Endless;
             if (c.Queue) arg |= OkEngine.Queue;
             if (c.Keep) arg |= OkEngine.Keep;
             return arg;
@@ -1269,8 +1270,20 @@ namespace OpenKingdomsUnity.Engine
             return best;
         }
 
-        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0)
+        bool noArmBuild;
+
+        public void Arm(CommandKind kind, int buildDef = -1, int facing = 0, bool repeat = false)
         {
+            if (kind == CommandKind.Build && repeat && !noArmBuild)
+            {
+                try
+                {
+                    OkEngine.okx_arm_build(buildDef, 1);
+                    OkEngine.okx_set_build_facing(facing & 3);
+                    return;
+                }
+                catch (EntryPointNotFoundException) { noArmBuild = true; }
+            }
             int mode;
             switch (kind)
             {

@@ -325,6 +325,8 @@ namespace OpenKingdomsUnity.Engine
         public const int Queue = 0x8000;
         // In okx_command's arg: in place of the order in hand, keeping the queue, as Ctrl.
         public const int Keep = 0x4000;
+        // In a build's arg: a walking builder summons the unit there without end.
+        public const int Endless = 0x2000;
         // okx_click's shift: bit 0 Shift, bit 1 Ctrl.
         public const int ClickShift = 1, ClickCtrl = 2;
         public const int LegQueued = 1, LegFormation = 2, LegFace = 4, LegReturn = 8;
@@ -410,6 +412,9 @@ namespace OpenKingdomsUnity.Engine
             out int w, out int h, out int hotX, out int hotY, out int ms);
         [DllImport(Lib)] public static extern void okx_cancel();
         [DllImport(Lib)] public static extern void okx_arm(int mode, int def);
+        // Arms a build as Ctrl on a walking builder's card does with repeat 1.
+        // Added after API 23 without a bump.
+        [DllImport(Lib)] public static extern void okx_arm_build(int def, int repeat);
         [DllImport(Lib)] public static extern int okx_armed(out int def);
         [DllImport(Lib)] public static extern int okx_order_selection(int type, int arg);
         [DllImport(Lib)] public static extern void okx_group_assign(int group);

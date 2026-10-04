@@ -1053,5 +1053,18 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(2, EngineBackend.ClickFlags(false, true));
             Assert.AreEqual(3, EngineBackend.ClickFlags(true, true));
         }
+
+        // A summons without end is the 0x2000 bit, on a build only.
+        [Test]
+        public void ASummonsIsTheEndlessBitOnABuild()
+        {
+            var build = new GameCommand { Kind = CommandKind.Build, Facing = 1, Endless = true };
+            Assert.AreEqual(0x2001, EngineBackend.CommandArg(build));
+            build.Queue = true;
+            Assert.AreEqual(0xA001, EngineBackend.CommandArg(build));
+            var move = GameCommand.To(CommandKind.Move, 1, Vector3.zero);
+            move.Endless = true;
+            Assert.AreEqual(0, EngineBackend.CommandArg(move), "nothing but a build carries it");
+        }
     }
 }

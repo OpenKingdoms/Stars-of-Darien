@@ -35,6 +35,9 @@ namespace OpenKingdomsUnity.Game.World
         // The command waiting for a click, if any, mirrored here for the ghost.
         public CommandKind? Armed { get; private set; }
         public int ArmedDef { get; private set; } = -1;
+        // A unit armed with Ctrl on a walking builder's card: the one click
+        // summons it there without end and ends the placement, Shift or not.
+        public bool ArmedRepeat { get; private set; }
         public Vector3 GhostAt { get; private set; }
         public bool GhostOk { get; private set; }
         // What the pointer was over at the last Update.
@@ -82,13 +85,14 @@ namespace OpenKingdomsUnity.Game.World
             ArmedAction = a;
         }
 
-        public void Arm(CommandKind kind, int def = -1)
+        public void Arm(CommandKind kind, int def = -1, bool repeat = false)
         {
             ArmedAction = null;
             Armed = kind;
             ArmedDef = def;
+            ArmedRepeat = kind == CommandKind.Build && repeat;
             Facing = kind == CommandKind.Build && facings.TryGetValue(def, out var f) ? f : 0;
-            if (Classic) backend.Arm(kind, def, Facing);
+            if (Classic) backend.Arm(kind, def, Facing, ArmedRepeat);
         }
 
         // Turns the armed building a quarter clockwise (+1) or back (-1).
@@ -99,7 +103,7 @@ namespace OpenKingdomsUnity.Game.World
             Facing = ((Facing + by) % 4 + 4) % 4;
             facings[ArmedDef] = Facing;
             // The engine keeps the armed facing for the placing click.
-            if (Classic) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+            if (Classic) backend.Arm(CommandKind.Build, ArmedDef, Facing, ArmedRepeat);
             return true;
         }
 
@@ -109,6 +113,7 @@ namespace OpenKingdomsUnity.Game.World
             ArmedAction = null;
             Armed = null;
             ArmedDef = -1;
+            ArmedRepeat = false;
             world.Entities.Ghost = null;
             Queued.Clear();
         }
@@ -118,6 +123,7 @@ namespace OpenKingdomsUnity.Game.World
             ArmedAction = null;
             Armed = null;
             ArmedDef = -1;
+            ArmedRepeat = false;
             world.Entities.Ghost = null;
         }
 
@@ -370,12 +376,14 @@ namespace OpenKingdomsUnity.Game.World
                 if (unit >= 0 || onGround)
                 {
                     if (Armed == CommandKind.Build && !GhostOk) return;
-                    if (Armed == CommandKind.Build && Shift)
+                    // A summons is placed once, and the engine reads Ctrl on it.
+                    bool once = !Shift || ArmedRepeat;
+                    if (Armed == CommandKind.Build && !once)
                         Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
                     backend.Click(Armed == CommandKind.Build ? GhostAt : at, Armed == CommandKind.Build ? -1 : unit, Shift, Keep);
                     // The engine disarms after a click, so a Shift placement arms again.
-                    if (Armed == CommandKind.Build && Shift) backend.Arm(CommandKind.Build, ArmedDef, Facing);
-                    if (Armed != null && !Shift) { DisarmHere(); Queued.Clear(); }
+                    if (Armed == CommandKind.Build && !once) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+                    if (Armed != null && once) { DisarmHere(); Queued.Clear(); }
                     PullSelection();
                 }
                 return;
@@ -504,12 +512,16 @@ namespace OpenKingdomsUnity.Game.World
         void CarryOut(Camera cam, Vector3 m, UnitState[] units, int count, bool onGround, Vector3 at)
         {
             var kind = Armed.Value;
+            bool repeat = kind == CommandKind.Build && ArmedRepeat;
             if (kind == CommandKind.Build)
             {
                 if (!GhostOk) return;
+                // A summons replaces what the builder holds when Ctrl is down
+                // at the click too, and Shift alone queues it (legacy:39177-39180).
+                bool queue = repeat ? Shift && !Ctrl : Shift;
                 foreach (var h in Selected)
-                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Keep = Keep, Facing = Facing });
-                if (Shift) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
+                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = queue, Keep = !repeat && Keep, Facing = Facing, Endless = repeat });
+                if (Shift && !repeat) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
             }
             else
             {
@@ -521,7 +533,7 @@ namespace OpenKingdomsUnity.Game.World
                     else MoveBlock(kind, at);
                 }
             }
-            if (!Shift) { DisarmHere(); Queued.Clear(); }
+            if (!Shift || repeat) { DisarmHere(); Queued.Clear(); }
         }
 
         void OrderAll(CommandKind kind, Vector3 at, int target)

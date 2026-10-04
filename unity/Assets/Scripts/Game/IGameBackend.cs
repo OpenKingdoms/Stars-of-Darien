@@ -155,8 +155,9 @@ namespace OpenKingdomsUnity.Game
         CursorFrame[] CursorArt(GameCursor cursor);
         // Arm a command button so the next Click carries it out: Move,
         // Attack, Guard, Patrol, Load, Unload, Repair, Reclaim, or Build with
-        // the building's def.
-        void Arm(CommandKind kind, int buildDef = -1, int facing = 0);
+        // the building's def. With repeat a walking builder summons the unit
+        // there without end, as Ctrl on its card does in the original.
+        void Arm(CommandKind kind, int buildDef = -1, int facing = 0, bool repeat = false);
         // An order for everything selected that needs no point: Stop,
         // SetAggro and SetWeapon with arg, Gate.
         bool OrderSelection(CommandKind kind, int arg = 0);
@@ -205,12 +206,15 @@ namespace OpenKingdomsUnity.Game
         int QueuedCount(int factory, int def);
         // A factory's queue as the original's build buttons work it: count
         // more of def, or fewer for a negative count. A building still
-        // being built takes a queue and starts on it when finished.
+        // being built takes a queue and starts on it when finished. A
+        // builder that walks takes fewer only, its build orders of def from
+        // the one in hand on.
         bool AddToQueue(int factory, int def, int count);
         // The original's Ctrl-click: the factory makes def over and over
         // ("+++") until it is turned off. One def repeats at a time.
         bool SetRepeat(int factory, int def, bool on);
-        // The def a factory repeats, or -1.
+        // The def a factory repeats or a walking builder summons without
+        // end, or -1.
         int RepeatOf(int factory);
         // What a unit is doing now.
         UnitOrder ReadOrder(int handle);
@@ -851,6 +855,7 @@ namespace OpenKingdomsUnity.Game
         public bool Queue;          // add after current orders
         public bool Keep;           // replace the order in hand, keep the queue (Ctrl)
         public int Facing;          // for Build, 0 to 3
+        public bool Endless;        // for Build: summon the unit there without end
 
         public static GameCommand To(CommandKind kind, int unit, Vector3 at) =>
             new GameCommand { Kind = kind, Unit = unit, Target = at, TargetUnit = -1, BuildDef = -1 };
