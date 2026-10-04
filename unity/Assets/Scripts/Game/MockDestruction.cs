@@ -76,64 +76,66 @@ namespace OpenKingdomsUnity.Game
         const WeaponFlags Fire = WeaponFlags.FireStarter, Spell = WeaponFlags.Spell, Only = WeaponFlags.UnitsOnly;
 
         // Each mock weapon as the engine's data would describe its kind, in
-        // the data's own words, with round numbers of the mock's.
+        // the data's own words, with round numbers of the mock's. A staged
+        // weapon is named by its unit, then its own name in the data, so
+        // the kinds read both the words and the caster.
         static readonly Dictionary<string, WeaponInfo> WeaponData = Weapons(
-            ("ARAKING 1", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 900)),
-            ("ARAKING 2", Gun("line of sight", "", "", "fireball explosion", MediumWater, 100, 2000, Spell)),
-            ("ARAKING 3", Gun("remote effect", "", "", "", "", 500, 5000, Only | Spell)),
-            ("TARNECRO 1", Gun("line of sight", "", "", "flamestrike", "", 100, 800, Fire)),
-            ("TARNECRO 2", Gun("guided", "", "", "volcblast", "", 150, 1000, Fire | Spell)),
-            ("TARNECRO 3", Gun("remote effect", "", "", "", "", 500, 5000, Only | Spell)),
-            ("VERMAGE 1", Gun("line of sight", "", "", "water splash", "", 100, 1500)),
-            ("VERMAGE 2", Gun("guided", "", "", "waterballexp", "", 50, 2000, Spell)),
-            ("ZONHUNT 1", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 1000)),
-            ("ZONHUNT 2", Gun("guided", "", "", "blue_shockring", "", 60, 1400, Spell)),
-            ("TARPRIES 1", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 750)),
-            ("TARPRIES 2", Gun("guided", "", "", "blue_shockring", "", 50, 900, Fire | Spell)),
-            ("TARPRIES 3", Gun("guided", "", "", "fireball explosion", "", 80, 800, Fire | Spell)),
-            ("VERDRAG 2", Gun("guided", "", "", "tsunamiexp", "", 50, 800, Spell)),
-            ("CRECHIE 1", Gun("line of sight", "lightning", "", "", "", 40, 1000, Spell)),
-            ("CRECHIE 2", Gun("line of sight", "turntofrozen", "", "lightning explosion", "", 0, 1, Spell)),
-            ("CRECHIE 3", Gun("line of sight", "lightning", "paralyzer", "", "", 0, 1000, Spell)),
-            ("CREPRIS 1", Gun("line of sight", "lightning", "", "", "", 0, 1000)),
-            ("ZONSHAM 1", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 600)),
-            ("ARABOW 1", Gun("ballistic", "", "", "", SmallWater, 0, 450)),
-            ("ARABOW 2", Gun("guided", "", "", "teeny explosion", SmallWater, 0, 550, Spell)),
-            ("TARARCH 1", Gun("ballistic", "", "", "teeny explosion", SmallWater, 0, 350, Fire)),
-            ("VERARCH 1", Gun("line of sight", "", "", "", SmallWater, 0, 300)),
-            ("CREGATL 1", Gun("ballistic", "", "", "medium dust puff", SmallWater, 24, 300)),
-            ("VERKNIGH 1", Gun("ballistic", "", "", "small dust puff", SmallWater, 20, 300)),
-            ("ZONTER 1", Gun("ballistic", "", "", "", SmallWater, 0, 270)),
-            ("ZONGIANT 1", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 32, 1250)),
-            ("ARACAN 1", Gun("ballistic", "", "explosion", "large explosion", MediumWater, 90, 2000)),
-            ("VERMUSK 1", Gun("ballistic", "", "", "teeny explosion", SmallWater, 0, 700)),
-            ("ARAPULT 1", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 100, 1250)),
-            ("VERPULT 1", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 50, 1500)),
-            ("TARMAGE 3", Gun("remote effect", "hailstorm", "", "fireball explosion", "", 200, 300, Fire | Spell)),
-            ("ARAPRIES 2", Gun("remote effect", "hailstorm", "", "iceballexp", MediumWater, 200, 70, Spell)),
-            ("ARAPRIES 3", Gun("line of sight", "turntostone", "", "blue_shockring", "", 0, 1, Spell)),
-            ("ARADRAG 1", Gun("line of sight", "fire", "fire", "", "", 50, 850, Fire)),
-            ("ARADRAG 2", Gun("guided", "", "", "fireball explosion", "", 45, 850, Fire | Spell)),
-            ("TARKNIGH 1", Gun("line of sight", "fire", "fire", "", "", 0, 800, Fire)),
-            ("TARHEL 1", Gun("line of sight", "", "", "flamestrike", "", 100, 400, Fire)),
-            ("TARDRAG 2", Gun("guided", "", "", "fireball explosion", "", 60, 800, Fire | Spell)),
-            ("TARMIND 1", Gun("line of sight", "mindcontrol", "", "mind control", "", 0, 1, Only | Spell)),
-            ("TARWITCH 1", Gun("wandering", "", "", "", "", 30, 50, Spell)),
-            ("ZONSPIDE 1", Gun("line of sight", "", "paralyzer", "green_shockring", "", 0, 200)),
-            ("MOCK ARROW", Gun("ballistic", "", "", "", SmallWater, 0, 200)),
-            ("MOCK FIREBALL", Gun("ballistic", "", "", "teeny explosion", "", 24, 300, Fire)),
-            ("MOCK FIREBALL SPELL", Gun("guided", "", "", "fireball explosion", "", 64, 600, Fire | Spell)),
-            ("MOCK FROST SPELL", Gun("line of sight", "", "", "iceballexp", "", 24, 400, Spell)),
-            ("MOCK SWORD", Gun("melee", "", "", "", "", 0, 180)),
-            ("MOCK DEATH BLAST", Gun("", "", "explosion", "large explosion", MediumWater, 96, 1000)));
+            ("ARAKING 1", "Lightning", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 900)),
+            ("ARAKING 2", "Meteor", Gun("line of sight", "", "", "fireball explosion", MediumWater, 100, 2000, Spell)),
+            ("ARAKING 3", "Earthen Wave", Gun("remote effect", "", "", "", "", 500, 5000, Only | Spell)),
+            ("TARNECRO 1", "Fire Ball", Gun("line of sight", "", "", "flamestrike", "", 100, 800, Fire)),
+            ("TARNECRO 2", "Guided Fire Ball", Gun("guided", "", "", "volcblast", "", 150, 1000, Fire | Spell)),
+            ("TARNECRO 3", "Fire Wave", Gun("remote effect", "", "", "", "", 500, 5000, Only | Spell)),
+            ("VERMAGE 1", "Water Ball", Gun("line of sight", "", "", "water splash", "", 100, 1500)),
+            ("VERMAGE 2", "Water Burst", Gun("guided", "", "", "waterballexp", "", 50, 2000, Spell)),
+            ("ZONHUNT 1", "Lightning", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 1000)),
+            ("ZONHUNT 2", "Lightning Ball", Gun("guided", "", "", "blue_shockring", "", 60, 1400, Spell)),
+            ("TARPRIES 1", "Lightning", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 750)),
+            ("TARPRIES 2", "Ball Lightning", Gun("guided", "", "", "blue_shockring", "", 50, 900, Fire | Spell)),
+            ("TARPRIES 3", "Fire Bomb", Gun("guided", "", "", "fireball explosion", "", 80, 800, Fire | Spell)),
+            ("VERDRAG 2", "Water Ball", Gun("guided", "", "", "tsunamiexp", "", 50, 800, Spell)),
+            ("CRECHIE 1", "Taser", Gun("line of sight", "lightning", "", "", "", 40, 1000, Spell)),
+            ("CRECHIE 2", "Freeze Blast", Gun("line of sight", "turntofrozen", "", "lightning explosion", "", 0, 1, Spell)),
+            ("CRECHIE 3", "Long Term Stun", Gun("line of sight", "lightning", "paralyzer", "", "", 0, 1000, Spell)),
+            ("CREPRIS 1", "Lightbeam", Gun("line of sight", "lightning", "", "", "", 0, 1000)),
+            ("ZONSHAM 1", "lightning", Gun("line of sight", "lightning", "", "lightning explosion", "", 0, 600)),
+            ("ARABOW 1", "Standard Arrow", Gun("ballistic", "", "", "", SmallWater, 0, 450)),
+            ("ARABOW 2", "Tracking Arrow", Gun("guided", "", "", "teeny explosion", SmallWater, 0, 550, Spell)),
+            ("TARARCH 1", "Flame Arrow", Gun("ballistic", "", "", "teeny explosion", SmallWater, 0, 350, Fire)),
+            ("VERARCH 1", "Bolt", Gun("line of sight", "", "", "", SmallWater, 0, 300)),
+            ("CREGATL 1", "Arrow", Gun("ballistic", "", "", "medium dust puff", SmallWater, 24, 300)),
+            ("VERKNIGH 1", "Spear", Gun("ballistic", "", "", "small dust puff", SmallWater, 20, 300)),
+            ("ZONTER 1", "spear", Gun("ballistic", "", "", "", SmallWater, 0, 270)),
+            ("ZONGIANT 1", "Flying Stones", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 32, 1250)),
+            ("ARACAN 1", "Cannon", Gun("ballistic", "", "explosion", "large explosion", MediumWater, 90, 2000)),
+            ("VERMUSK 1", "Musket", Gun("ballistic", "", "", "teeny explosion", SmallWater, 0, 700)),
+            ("ARAPULT 1", "Cannonball", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 100, 1250)),
+            ("VERPULT 1", "Rocky in the Sky", Gun("ballistic", "", "explosion", "large dust puff", MediumWater, 50, 1500)),
+            ("TARMAGE 3", "Fire Storm", Gun("remote effect", "hailstorm", "", "fireball explosion", "", 200, 300, Fire | Spell)),
+            ("ARAPRIES 2", "Hail Shower", Gun("remote effect", "hailstorm", "", "iceballexp", MediumWater, 200, 70, Spell)),
+            ("ARAPRIES 3", "Turn To Stone", Gun("line of sight", "turntostone", "", "blue_shockring", "", 0, 1, Spell)),
+            ("ARADRAG 1", "Fire Breath", Gun("line of sight", "fire", "fire", "", "", 50, 850, Fire)),
+            ("ARADRAG 2", "Fire Ball", Gun("guided", "", "", "fireball explosion", "", 45, 850, Fire | Spell)),
+            ("TARKNIGH 1", "fire_breath", Gun("line of sight", "fire", "fire", "", "", 0, 800, Fire)),
+            ("TARHEL 1", "Fire Ball", Gun("line of sight", "", "", "flamestrike", "", 100, 400, Fire)),
+            ("TARDRAG 2", "Fire Ball", Gun("guided", "", "", "fireball explosion", "", 60, 800, Fire | Spell)),
+            ("TARMIND 1", "Individual Mind Control", Gun("line of sight", "mindcontrol", "", "mind control", "", 0, 1, Only | Spell)),
+            ("TARWITCH 1", "Tornado", Gun("wandering", "", "", "", "", 30, 50, Spell)),
+            ("ZONSPIDE 1", "Claws", Gun("line of sight", "", "paralyzer", "green_shockring", "", 0, 200)),
+            ("MOCK ARROW", null, Gun("ballistic", "", "", "", SmallWater, 0, 200)),
+            ("MOCK FIREBALL", null, Gun("ballistic", "", "", "teeny explosion", "", 24, 300, Fire)),
+            ("MOCK FIREBALL SPELL", null, Gun("guided", "", "", "fireball explosion", "", 64, 600, Fire | Spell)),
+            ("MOCK FROST SPELL", null, Gun("line of sight", "", "", "iceballexp", "", 24, 400, Spell)),
+            ("MOCK SWORD", null, Gun("melee", "", "", "", "", 0, 180)),
+            ("MOCK DEATH BLAST", null, Gun("", "", "explosion", "large explosion", MediumWater, 96, 1000)));
 
-        static Dictionary<string, WeaponInfo> Weapons(params (string name, WeaponInfo w)[] rows)
+        static Dictionary<string, WeaponInfo> Weapons(params (string key, string data, WeaponInfo w)[] rows)
         {
             var d = new Dictionary<string, WeaponInfo>();
-            foreach (var (name, w) in rows)
+            foreach (var (key, data, w) in rows)
             {
-                w.Name = name;
-                d[name] = w;
+                w.Name = data == null ? key : key.Substring(0, key.IndexOf(' ')) + " " + data;
+                d[key] = w;
             }
             return d;
         }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using OpenKingdomsUnity.Game;
+using OpenKingdomsUnity.Game.World;
 using UnityEngine;
 
 namespace OpenKingdomsUnity.Tests
@@ -47,6 +48,9 @@ namespace OpenKingdomsUnity.Tests
         }
 
         static int LastBlast(MockBackend b) => Blasts(b).Select(e => e.Id).DefaultIfEmpty(0).Max();
+
+        // Whether a blast came from one of the mock's staged weapons.
+        static bool Of(in BlastEvent e, string weapon) => e.Weapon != null && e.Weapon == MockBackend.FxWeaponNamed(weapon)?.Info;
 
         // Takes away the map's own scenery, so only a test's stands, and
         // returns the last feature event.
@@ -92,7 +96,7 @@ namespace OpenKingdomsUnity.Tests
             var all = Blasts(b);
             for (int i = 1; i < all.Count; i++) Assert.AreEqual(all[i - 1].Id + 1, all[i].Id, "ids rise by one");
 
-            var cannon = all.First(e => e.Weapon != null && e.Weapon.Name == "ARACAN 1");
+            var cannon = all.First(e => Of(e, "ARACAN 1"));
             Assert.AreEqual(BlastCause.Weapon, cannon.Cause);
             Assert.AreEqual("ballistic", cannon.Weapon.Type);
             Assert.AreEqual("explosion", cannon.Weapon.DamageKind);
@@ -109,11 +113,11 @@ namespace OpenKingdomsUnity.Tests
             Assert.GreaterOrEqual(cannon.Shooter, 0, "the staged gunner");
 
             // A shower is one hidden shot to the engine, so one blast where it lands.
-            var hail = all.Where(e => e.Weapon?.Name == "ARAPRIES 2").ToList();
+            var hail = all.Where(e => Of(e, "ARAPRIES 2")).ToList();
             Assert.That(hail.Count, Is.InRange(1, 2), "one a cast");
             Assert.AreEqual(1, hail.Select(e => new Vector2(e.Position.x, e.Position.z)).Distinct().Count(), "where the spell lands");
             Assert.AreEqual("hailstorm", hail[0].Weapon.Subtype);
-            Assert.IsTrue(all.Any(e => e.Weapon?.Name == "TARMAGE 3" && (e.Flags & BlastFlags.FireStarter) != 0), "the fire storm's meteors start fires");
+            Assert.IsTrue(all.Any(e => Of(e, "TARMAGE 3") && (e.Flags & BlastFlags.FireStarter) != 0), "the fire storm's meteors start fires");
         }
 
         [Test]
@@ -155,7 +159,7 @@ namespace OpenKingdomsUnity.Tests
             var to = new Vector3(c.x, b.GroundHeight(c.x, c.z + 6f) + 0.8f, c.z + 6f);
             b.FireFx("ARABOW 1", from, to, archer.Handle, foe.Handle);
             b.Advance(Tps * 2);
-            var hit = Blasts(b, since).First(e => e.Weapon?.Name == "ARABOW 1");
+            var hit = Blasts(b, since).First(e => Of(e, "ARABOW 1"));
             Assert.AreEqual(foe.Handle, hit.Unit);
             Assert.IsTrue((hit.Flags & BlastFlags.DirectHit) != 0, "an arrow has no area, so scenery is spared");
             Assert.AreEqual(0f, hit.Radius);
@@ -187,9 +191,50 @@ namespace OpenKingdomsUnity.Tests
             foreach (var w in MockBackend.FxWeapons)
             {
                 Assert.IsNotEmpty(w.Info.Type, w.Name + " has a type");
-                Assert.AreEqual(w.Name, w.Info.Name);
+                string unit = w.Name.Substring(0, w.Name.IndexOf(' '));
+                Assert.That(w.Info.Name, Does.StartWith(unit + " "), "named by its unit, then its own name");
+                Assert.Greater(w.Info.Name.Length, unit.Length + 1);
                 Assert.AreEqual(w.Light, w.Info.Light);
             }
+            Assert.AreEqual("ARAKING Earthen Wave", MockBackend.FxWeaponNamed("ARAKING 3").Info.Name);
+        }
+
+        // Each staged weapon falls in the kind its own data gives it, so
+        // every kind of blast can be seen on the mock.
+        [Test]
+        public void EveryKindOfBlastComesOutOnTheMock()
+        {
+            var want = new Dictionary<string, BlastKind>
+            {
+                ["ARAKING 1"] = BlastKind.Lightning, ["ARAKING 2"] = BlastKind.Fire, ["ARAKING 3"] = BlastKind.Earth,
+                ["TARNECRO 1"] = BlastKind.Fire, ["TARNECRO 2"] = BlastKind.Fire, ["TARNECRO 3"] = BlastKind.Fire,
+                ["VERMAGE 1"] = BlastKind.Water, ["VERMAGE 2"] = BlastKind.Water, ["ZONHUNT 1"] = BlastKind.Lightning,
+                ["ZONHUNT 2"] = BlastKind.Lightning, ["TARPRIES 1"] = BlastKind.Lightning, ["TARPRIES 2"] = BlastKind.Lightning,
+                ["TARPRIES 3"] = BlastKind.Fire, ["VERDRAG 2"] = BlastKind.Water, ["CRECHIE 1"] = BlastKind.Lightning,
+                ["CRECHIE 2"] = BlastKind.Frost, ["CRECHIE 3"] = BlastKind.Lightning, ["CREPRIS 1"] = BlastKind.Lightning,
+                ["ZONSHAM 1"] = BlastKind.Lightning, ["ARABOW 1"] = BlastKind.Arrow, ["ARABOW 2"] = BlastKind.Arrow,
+                ["TARARCH 1"] = BlastKind.Arrow, ["VERARCH 1"] = BlastKind.Arrow, ["CREGATL 1"] = BlastKind.Arrow,
+                ["VERKNIGH 1"] = BlastKind.Arrow, ["ZONTER 1"] = BlastKind.Arrow, ["ZONGIANT 1"] = BlastKind.Siege,
+                ["ARACAN 1"] = BlastKind.Gunpowder, ["VERMUSK 1"] = BlastKind.Gunpowder, ["ARAPULT 1"] = BlastKind.Siege,
+                ["VERPULT 1"] = BlastKind.Siege, ["TARMAGE 3"] = BlastKind.Fire, ["ARAPRIES 2"] = BlastKind.Frost,
+                ["ARAPRIES 3"] = BlastKind.Holy, ["ARADRAG 1"] = BlastKind.Breath, ["ARADRAG 2"] = BlastKind.Fire,
+                ["TARKNIGH 1"] = BlastKind.Breath, ["TARHEL 1"] = BlastKind.Fire, ["TARDRAG 2"] = BlastKind.Fire,
+                ["TARMIND 1"] = BlastKind.Dark, ["TARWITCH 1"] = BlastKind.Wind, ["ZONSPIDE 1"] = BlastKind.Lightning,
+                ["MOCK ARROW"] = BlastKind.Arrow, ["MOCK FIREBALL"] = BlastKind.Fire,
+                ["MOCK FIREBALL SPELL"] = BlastKind.Fire, ["MOCK FROST SPELL"] = BlastKind.Frost,
+            };
+            var wrong = new List<string>();
+            var seen = new HashSet<BlastKind>();
+            foreach (var w in MockBackend.FxWeapons)
+            {
+                var got = FxKinds.Of(w.Info);
+                seen.Add(got);
+                if (!want.TryGetValue(w.Name, out var kind)) wrong.Add(w.Name + " has no kind to check");
+                else if (got != kind) wrong.Add($"{w.Name} ({w.Info.Name}): {got}, not {kind}");
+            }
+            Assert.IsEmpty(wrong, string.Join("\n", wrong));
+            foreach (BlastKind k in System.Enum.GetValues(typeof(BlastKind)))
+                if (k != BlastKind.None) Assert.IsTrue(seen.Contains(k), k + " among the mock's weapons");
         }
 
         [Test]
@@ -240,7 +285,7 @@ namespace OpenKingdomsUnity.Tests
             int since = LastBlast(b);
             Shoot(b, "ARACAN 1", tree);
             b.Advance(Tps * 3);
-            var shot = Blasts(b, since).First(e => e.Weapon?.Name == "ARACAN 1");
+            var shot = Blasts(b, since).First(e => Of(e, "ARACAN 1"));
             Assert.AreEqual(tree, shot.Feature, "it landed on the tree");
             Assert.IsTrue(FeatureEvents(b, events).All(e => e.Kind == FeatureEventKind.Placed));
             Assert.AreEqual(Def(b, "mock_tree"), FeatureAt(b, tree).Def);
@@ -257,7 +302,7 @@ namespace OpenKingdomsUnity.Tests
             int since = FeatureEvents(b).Last().Id;
             Shoot(b, "ARACAN 1", tree);
             b.Advance(Tps * 2);
-            var shot = Blasts(b).Last(e => e.Weapon?.Name == "ARACAN 1");
+            var shot = Blasts(b).Last(e => Of(e, "ARACAN 1"));
             var events = FeatureEvents(b, since);
             var hit = events.First(e => e.Kind == FeatureEventKind.Hit && e.Feature == tree);
             Assert.AreEqual(shot.Id, hit.Blast);
@@ -403,13 +448,13 @@ namespace OpenKingdomsUnity.Tests
             int since = LastBlast(b);
             b.FireFx("ARACAN 1", c + new Vector3(0f, 1f, -8f), c);
             b.Advance(Tps * 2);
-            var unseen = Blasts(b, since).First(e => e.Weapon?.Name == "ARACAN 1");
+            var unseen = Blasts(b, since).First(e => Of(e, "ARACAN 1"));
             Assert.IsTrue((unseen.Flags & BlastFlags.OutOfSight) != 0, "the middle of the map is in the fog");
             b.SeeAll(true);
             since = unseen.Id;
             b.FireFx("ARACAN 1", c + new Vector3(0f, 1f, -8f), c);
             b.Advance(Tps * 2);
-            var seen = Blasts(b, since).First(e => e.Weapon?.Name == "ARACAN 1");
+            var seen = Blasts(b, since).First(e => Of(e, "ARACAN 1"));
             Assert.AreEqual(BlastFlags.None, seen.Flags & BlastFlags.OutOfSight);
         }
 
@@ -426,7 +471,7 @@ namespace OpenKingdomsUnity.Tests
             int since = LastBlast(b);
             b.FireFx("ARACAN 1", sea.Value + new Vector3(0f, 4f, -8f), sea.Value);
             b.Advance(Tps * 2);
-            var splash = Blasts(b, since).First(e => e.Weapon?.Name == "ARACAN 1");
+            var splash = Blasts(b, since).First(e => Of(e, "ARACAN 1"));
             Assert.IsTrue((splash.Flags & BlastFlags.Water) != 0);
             Assert.AreEqual("medium water explosion", splash.Weapon.WaterExplosionClass);
         }

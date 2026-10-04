@@ -49,7 +49,7 @@ namespace OpenKingdomsUnity.Tests
             var found = new List<BlastEvent>();
             int n = b.ReadBlasts(0, buf);
             for (int i = 0; i < n; i++)
-                if (buf[i].Weapon != null && buf[i].Weapon.Name == weapon) found.Add(buf[i]);
+                if (buf[i].Weapon != null && buf[i].Weapon == MockBackend.FxWeaponNamed(weapon)?.Info) found.Add(buf[i]);
             return found;
         }
 
@@ -144,12 +144,12 @@ namespace OpenKingdomsUnity.Tests
             yield return Boot(mock, EffectsQuality.High);
             var scars = root.World.Scars;
             Assert.IsTrue(mock.StageFx("ground", 1000f));
-            yield return Until(mock, () => Blasts(mock, "ARAPRIES 2").Count >= 10, 900);
+            // A shower is one hidden shot to the engine, so one blast where it lands.
+            yield return Until(mock, () => Blasts(mock, "ARAPRIES 2").Count > 0, 900);
             var hail = Blasts(mock, "ARAPRIES 2");
-            Assert.GreaterOrEqual(hail.Count, 10, "the hail shower fell");
-            // The stone farthest from the neighbouring fire storm's craters.
-            var at = hail[0].Position;
-            foreach (var b in hail) if (b.Position.x > at.x) at = b.Position;
+            Assert.AreEqual(1, hail.Count, "the hail shower fell");
+            // Its far side, away from the neighbouring fire storm's crater.
+            var at = hail[0].Position + Vector3.right * hail[0].Radius * 0.5f;
             var fade = scars.TexelAt(ScarMap.Read(scars.Fade), at.x, at.z);
             var shape = scars.TexelAt(ScarMap.Read(scars.Shape), at.x, at.z);
             Debug.Log($"Hail on the mock: frost {fade.r} ({fade.r / 255f * ScarMap.FadeRange:0} s), dip {shape.r}, cracks {shape.b}, offset {ScarMap.GroundOffset(at.x, at.z) * Px:0.00} px");

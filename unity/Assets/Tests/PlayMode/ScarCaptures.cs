@@ -273,7 +273,7 @@ namespace OpenKingdomsUnity.Tests
                 yield return null;
                 int n = mock.ReadBlasts(0, buf), struck = 0;
                 for (int i = 0; i < n; i++)
-                    if (buf[i].Weapon != null && buf[i].Weapon.Name == "ARACAN 1" && buf[i].Unit >= 0) { hit = buf[i]; struck++; }
+                    if (buf[i].Weapon != null && buf[i].Weapon == MockBackend.FxWeaponNamed("ARACAN 1")?.Info && buf[i].Unit >= 0) { hit = buf[i]; struck++; }
                 if (struck >= 3) break;
             }
             Assert.GreaterOrEqual(hit.Unit, 0, "the cannon struck a knight");
