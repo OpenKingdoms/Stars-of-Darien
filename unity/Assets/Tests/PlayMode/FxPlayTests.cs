@@ -90,6 +90,8 @@ namespace OpenKingdomsUnity.Tests
                 var hud = root.Screens.Screen("Hud");
                 if (hud != null) hud.SetActive(false);
                 var fx = root.World.Effects;
+                // The weapon's own glow alone, without its blast's flash.
+                fx.Blasts = false;
                 var at = mock.StageCentre + new Vector3(0, 0, 6);
                 Frame(root, at, 28f);
                 mock.FireFx("ARAPRIES 3", at + new Vector3(0, 1, -4), at + new Vector3(0, 1, 0.5f));

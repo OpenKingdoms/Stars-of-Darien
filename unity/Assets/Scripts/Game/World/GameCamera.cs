@@ -13,6 +13,8 @@ namespace OpenKingdomsUnity.Game.World
         public const float ClassicPitch = 62f;
 
         public Vector3 focus;
+        // How far the effects throw the camera this frame, a blast's shake.
+        public Vector3 shake;
         public float distance = 34f, pitch = ClassicPitch, yaw;
         // From a low cinematic angle to nearly straight down.
         public float minDistance = 8f, maxDistance = 110f, minPitch = 18f, maxPitch = 88f;
@@ -150,7 +152,7 @@ namespace OpenKingdomsUnity.Game.World
             float need = ground != null ? Mathf.Max(0f, ground(pos.x, pos.z) + Clearance - pos.y) : 0f;
             lift = Mathf.Lerp(lift, need, 1f - Mathf.Exp(-dt / 0.8f));
             pos.y += lift;
-            transform.position = pos;
+            transform.position = pos + shake;
         }
 
         public const float HeightEase = 0.9f, SmoothRadius = 16f, Clearance = 1.5f;

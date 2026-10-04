@@ -39,25 +39,25 @@ namespace OpenKingdomsUnity.Game.World
                     return new FxQuality
                     {
                         Level = level, FlyingChunks = 150, RubbleKept = 300, Lights = 4, ScarTexelPixels = 16, Ground = ScarGround.Colour,
-                        ScarsFade = true, Particles = 1500, Debris = 120, Emission = 0.35f, SmokeLife = 0.6f,
+                        ScarsFade = true, Particles = 1000, Debris = 120, Emission = 0.35f, SmokeLife = 0.6f,
                     };
                 case EffectsQuality.Medium:
                     return new FxQuality
                     {
                         Level = level, FlyingChunks = 600, RubbleKept = 1500, Lights = 8, ScarTexelPixels = 8, Ground = ScarGround.Normals,
-                        Particles = 4000, Debris = 400, Emission = 0.65f, SmokeLife = 0.85f,
+                        Particles = 2500, Debris = 400, Emission = 0.65f, SmokeLife = 0.85f,
                     };
                 case EffectsQuality.Ultra:
                     return new FxQuality
                     {
                         Level = level, FlyingChunks = 3000, RubbleKept = 8000, Lights = 48, ScarTexelPixels = 4, Ground = ScarGround.Dips,
-                        Particles = 16000, Debris = 2000, Emission = 1.35f, SmokeLife = 1.5f,
+                        Particles = 10000, Debris = 1600, Emission = 1.35f, SmokeLife = 1.5f,
                     };
                 default:
                     return new FxQuality
                     {
                         Level = EffectsQuality.High, FlyingChunks = 1500, RubbleKept = 4000, Lights = 24, ScarTexelPixels = 4, Ground = ScarGround.Dips,
-                        Particles = 8000, Debris = 1000, Emission = 1f, SmokeLife = 1f,
+                        Particles = 5000, Debris = 800, Emission = 1f, SmokeLife = 1f,
                     };
             }
         }

@@ -1,6 +1,8 @@
 // EffectRenderer.cs - shots in flight, blasts and spells, drawn first as the
 // original draws them (its frames, blend and pace), then remastered: eased
-// frames, glow into the bloom, soft edges, trails, lights and scorch.
+// frames, glow into the bloom, soft edges, trails, lights and scorch, and
+// round each blast its parts in 3D (FxBlast): flash and light, rings along
+// the ground, debris, smoke on the wind, sparks, embers and a shake.
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -24,6 +26,15 @@ namespace OpenKingdomsUnity.Game.World
         readonly FxLights lights = new FxLights();
         readonly FxTrails trails = new FxTrails();
         readonly FxDecals decals = new FxDecals();
+        readonly FxParticles particles;
+        readonly FxShock shock = new FxShock();
+        readonly FxBlasts blasts;
+        readonly FxMesh rings = new FxMesh();
+        readonly FxStuck stuckShots = new FxStuck();
+        int frameNo;
+        float clock = -1f;
+        int clockFrame = -1;
+        readonly System.Diagnostics.Stopwatch blastWatch = new System.Diagnostics.Stopwatch();
         readonly Dictionary<int, (Strip strip, float height)> pictureOf = new Dictionary<int, (Strip, float)>();
         readonly Dictionary<int, bool> shotShown = new Dictionary<int, bool>();
         readonly HashSet<long> scorched = new HashSet<long>(), liveImpacts = new HashSet<long>();
@@ -45,6 +56,7 @@ namespace OpenKingdomsUnity.Game.World
         public bool Lights = true;
         public bool Trails = true;
         public bool Scorch = true;
+        public bool Blasts = true;          // each blast's parts round its picture
 
         // True for what the local player cannot see: an impact at a point
         // (player -1), or a shot of a player's at a point. Null shows all.
@@ -76,6 +88,35 @@ namespace OpenKingdomsUnity.Game.World
         public int ArtPending { get; private set; }
         public int StripsHeld => strips.Count;
 
+        // The blasts' parts: blasts given a look, their lights asked this
+        // frame, rings, debris, particles and smoke alive, and where the smoke is.
+        public int BlastsPlayed => blasts.Played;
+        public int FlashLights => blasts.LightsAsked;
+        public int RingCount => shock.Count;
+        public int DebrisCount => particles.ChunkCount;
+        public int ParticleCount => particles.Count;
+        public int SmokeCount => particles.SmokeCount;
+        public Vector3 SmokeCentre => particles.SmokeCentre;
+        public FxParticles Particles => particles;
+        // Arrows, bolts and spears standing where they landed.
+        public int StuckShots => stuckShots.Count;
+        // The main thread's time for the blasts' parts in the last frame.
+        public float BlastMs { get; private set; }
+        // Steps the parts by the simulation's ticks alone, for tests and captures.
+        public bool FixedClock;
+
+        // Plays a kind of blast at a point, as if the backend had reported it.
+        public void Play(BlastKind kind, Vector3 at, float radius, Vector3 direction) => blasts.Play(kind, at, radius, direction);
+
+        // Lets every part go at once.
+        public void Clear()
+        {
+            particles.Clear();
+            shock.Clear();
+            blasts.Clear();
+            stuckShots.Clear();
+        }
+
         sealed class Strip
         {
             public FxArt Art;
@@ -100,6 +141,9 @@ namespace OpenKingdomsUnity.Game.World
             this.models = models;
             groundAt = backend.GroundHeight;
             shotModels.CastShadows = true;
+            particles = new FxParticles(backend.GroundHeight);
+            particles.MakeActive();
+            blasts = new FxBlasts(backend, particles, shock);
         }
 
         // How far an effect is drawn toward the camera from its point, shrunk
@@ -144,11 +188,12 @@ namespace OpenKingdomsUnity.Game.World
         public void Render(Camera cam)
         {
             if (cam == null) return;
+            frameNo++;
             var eye = Eye.Of(cam.transform);
             float now = backend.Tick / (float)Mathf.Max(1, backend.TicksPerSecond);
             EnsureMaterials();
             foreach (var b in batches.Values) b.Clear();
-            glow.Clear(); smoke.Clear(); ground.Clear(); groundGlow.Clear();
+            glow.Clear(); smoke.Clear(); ground.Clear(); groundGlow.Clear(); rings.Clear();
             shotModels.Clear();
             lights.Begin();
             pictureOf.Clear();
@@ -178,6 +223,7 @@ namespace OpenKingdomsUnity.Game.World
 
             if (Trails) trails.Draw(glow, smoke, eye.Position, now);
             if (Scorch) decals.Draw(ground, groundGlow, now);
+            StepBlasts(cam);
 
             Quads = 0;
             Sprites = 0;
@@ -194,18 +240,66 @@ namespace OpenKingdomsUnity.Game.World
             }
             ground.Draw(markMat);
             groundGlow.Draw(glowMat);
+            rings.Draw(glowMat);
             smoke.Draw(smokeMat);
             glow.Draw(glowMat);
             shotModels.Draw();
             Quads += glow.Quads + smoke.Quads;
-            vertices += ground.Vertices + groundGlow.Vertices + smoke.Vertices + glow.Vertices;
-            Drawn = vertices / 4 + shotModels.Count;
+            vertices += ground.Vertices + groundGlow.Vertices + smoke.Vertices + glow.Vertices + rings.Vertices;
+            Drawn = vertices / 4 + shotModels.Count + particles.Drawn + particles.ChunkCount;
             if (!Lights) lights.Begin();
             lights.Commit(Focus(cam), 40f, Time.unscaledDeltaTime);
             Sweep();
         }
 
         bool Shows(Vector3 at, int player) => Hidden == null || !Hidden(at, player);
+
+        // ── Blasts ────────────────────────────────────────────────────
+
+        // Reads the frame's blasts, steps every part on the game's clock and
+        // draws the particles. Paused, everything holds still.
+        void StepBlasts(Camera cam)
+        {
+            blastWatch.Restart();
+            float dt = Step();
+            var focus = Focus(cam);
+            if (Blasts)
+            {
+                blasts.Hidden = Hidden;
+                particles.Wind = WindNow();
+                blasts.Update(dt, focus, lights);
+            }
+            stuckShots.Settle(frameNo, blasts.ArrowLandings, Blasts ? FxQuality.Current.Debris / 8 : 0);
+            stuckShots.Draw(dt, models, shotModels, Hidden);
+            particles.Step(dt, cam);
+            shock.Step(dt);
+            shock.Draw(rings);
+            particles.Draw(cam);
+            if (rig != null) rig.shake = Blasts ? blasts.Shake : Vector3.zero;
+            if (particles.Count + particles.ChunkCount + shock.Count > 0) lastShowing = Time.unscaledTime;
+            BlastMs = (float)blastWatch.Elapsed.TotalMilliseconds;
+        }
+
+        // Seconds of the game since the last frame. The parts run smoothly
+        // between the simulation's ticks but never ahead of it by more than one.
+        float Step()
+        {
+            int tps = Mathf.Max(1, backend.TicksPerSecond);
+            float sim = backend.Tick / (float)tps;
+            if (clock < 0f || sim < clock - 1f) { clock = sim; return 0f; }
+            // Drawn twice in one frame, the parts move once.
+            if (!FixedClock && Time.frameCount == clockFrame) return 0f;
+            clockFrame = Time.frameCount;
+            float before = clock;
+            clock = FixedClock ? sim : Mathf.Clamp(clock + Time.unscaledDeltaTime, sim - 0.1f, sim + 1f / tps);
+            return Mathf.Max(0f, clock - before);
+        }
+
+        // A light breeze when the simulation has no wind of its own.
+        public static readonly Vector3 Breeze = new Vector3(0.75f, 0f, 0.45f);
+
+        // The simulation's wind as world units a second along the ground.
+        Vector3 WindNow() => backend.ReadWind(out var w) ? w.Toward * (0.4f + 2.6f * w.Strength) : Breeze;
 
         // Where the player looks: the camera rig's focus, else ahead of the lens.
         Vector3 Focus(Camera cam)
@@ -373,6 +467,7 @@ namespace OpenKingdomsUnity.Game.World
                 for (int k = 0; k < mats.Length; k++) if (mats[k] != null) shotModels.Add(mesh, k, mats[k], world);
             }
             if (n > 0) ModelShots++;
+            if (Blasts && n > 0) stuckShots.Track(p.Id, p.Model, p.Position, p.Velocity, frameNo, poses, n, m.Unscale);
         }
 
         // A shot with no art: the classic client's small bright disc, here
@@ -683,7 +778,12 @@ namespace OpenKingdomsUnity.Game.World
             strips.Clear();
             foreach (var b in batches.Values) b.Dispose();
             batches.Clear();
-            glow.Dispose(); smoke.Dispose(); ground.Dispose(); groundGlow.Dispose();
+            glow.Dispose(); smoke.Dispose(); ground.Dispose(); groundGlow.Dispose(); rings.Dispose();
+            particles.Dispose();
+            stuckShots.Clear();
+            shock.Clear();
+            blasts.Clear();
+            if (rig != null) rig.shake = Vector3.zero;
             lights.Dispose();
             trails.Clear();
             decals.Clear();

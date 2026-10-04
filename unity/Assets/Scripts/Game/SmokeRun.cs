@@ -4,7 +4,9 @@
 // The exit code is 0 when the engine ran the battle and says why not
 // otherwise. "-okSmokeMap <name>" picks the map. "-okSmokeViews <views>"
 // reveals the map and, with a GPU, saves SceneryViews pictures of each view
-// in the shots folder. Every line it logs starts with OKSMOKE.
+// in the shots folder. With a GPU it also plays one blast of each kind in
+// view and checks their particles draw, so a shader the build stripped shows.
+// Every line it logs starts with OKSMOKE.
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -18,7 +20,7 @@ namespace OpenKingdomsUnity.Game
         public const string Flag = "-okSmoke", MapFlag = "-okSmokeMap", Prefix = "OKSMOKE ";
         public const float DefaultSeconds = 20f, LoadLimit = 300f;
 
-        public enum Result { Passed = 0, NoEngine = 2, NoMap = 3, LoadFailed = 4, NoTicks = 5, NoModels = 6 }
+        public enum Result { Passed = 0, NoEngine = 2, NoMap = 3, LoadFailed = 4, NoTicks = 5, NoModels = 6, NoBlasts = 7 }
 
         // "-okSmokeShots <folder>" is where the pictures go, with a GPU.
         public const string ShotsFlag = "-okSmokeShots";
@@ -166,6 +168,12 @@ namespace OpenKingdomsUnity.Game
                     Quit(Result.NoModels, why);
                     yield break;
                 }
+                yield return Blasts(root, ShotsDir(Environment.GetCommandLineArgs()), r => why = r);
+                if (why != null)
+                {
+                    Quit(Result.NoBlasts, why);
+                    yield break;
+                }
                 if (views.Count > 0) yield return Views(map, views);
             }
             else Say("no graphics device, so no picture: run without -nographics to check what draws");
@@ -192,6 +200,39 @@ namespace OpenKingdomsUnity.Game
         }
 
         static readonly UnitState[] unitBuf = new UnitState[2048];
+
+        // One blast of each kind in a ring round the camera's focus, drawn a
+        // moment later into smoke-blasts.png. done gets why not, or null.
+        static IEnumerator Blasts(GameRoot root, string dir, Action<string> done)
+        {
+            var world = root.World;
+            var cam = world?.Camera != null ? world.Camera.GetComponent<Camera>() : null;
+            if (cam == null || world.Effects == null) { done("the battle has no camera"); yield break; }
+            var fx = world.Effects;
+            var kinds = (World.BlastKind[])Enum.GetValues(typeof(World.BlastKind));
+            var focus = world.Camera.focus;
+            for (int i = 1; i < kinds.Length; i++)
+            {
+                float a = i * Mathf.PI * 2f / (kinds.Length - 1);
+                var at = focus + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * 7f;
+                at.y = root.Backend.GroundHeight(at.x, at.z);
+                fx.Play(kinds[i], at, 2.5f, Vector3.forward);
+            }
+            int most = 0;
+            float until = Time.realtimeSinceStartup + 0.5f;
+            while (Time.realtimeSinceStartup < until)
+            {
+                yield return null;
+                most = Mathf.Max(most, fx.Particles.Drawn);
+            }
+            var pic = Grab(cam);
+            System.IO.Directory.CreateDirectory(dir);
+            string path = System.IO.Path.Combine(dir, "smoke-blasts.png");
+            System.IO.File.WriteAllBytes(path, pic.EncodeToPNG());
+            Destroy(pic);
+            Say($"blasts: {kinds.Length - 1} kinds played, at most {most} particles drawn, {fx.DebrisCount} pieces of debris, {fx.LightsLit} lights; {path}");
+            done(most > 0 ? null : "the blasts' particles do not draw");
+        }
 
         // Draws the battle camera's view twice into pictures, with the
         // models and without, and checks the monarch shows where it stands.
