@@ -222,7 +222,9 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             // Lasting marks last longest at their heart, so their edges go first.
             float spread = kind == K_WATER && i.a.y > 0 ? Across(p, reach, i.a.y) : r / reach;
             float patch = (1 - smoothstep(0.6, 1.0, spread + ragged * 0.5)) * lerp(0.5, 1, saturate(1 - spread));
-            float frost = i.d.x * patch, wet = i.d.y * patch;
+            // Wet ground fades out over most of its reach, damp at its edge.
+            float damp = 1 - smoothstep(0.2, 1.05, spread + ragged * 0.4);
+            float frost = i.d.x * patch, wet = i.d.y * damp;
             float ring = 1 - smoothstep(0.0, 0.22, abs(r / reach - 0.8));
             float holy = i.d.z * max(ring, 0.45 * (1 - smoothstep(0.5, 0.85, r / reach)));
             float heat = i.d.w * CharShape(i, p, r, seed, kind);

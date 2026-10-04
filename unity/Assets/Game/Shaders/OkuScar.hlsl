@@ -156,7 +156,7 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
         half on = step(cell.z, s.marks.a * 0.75) * (1 - smoothstep(size - 0.06, size, cell.x)) * near;
         half3 stone = lerp(half3(0.2, 0.18, 0.15), half3(lum, lum, lum) * 1.2, 0.3) * (0.7 + 0.6 * frac(cell.z * 13.7));
         c = lerp(c, stone, on);
-        gloss = lerp(gloss, 0.2, on);
+        gloss = lerp(gloss, 0.08, on);
     }
 
     // Blight withers what grows, grey and faintly violet.
@@ -189,8 +189,8 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
 
     // Wet ground, darker and glossy until it dries.
     half wet = smoothstep(0, 30, s.left.y) * (0.8 + 0.4 * grain);
-    c *= lerp(1, 0.5, wet);
-    gloss = lerp(gloss, 0.75, wet);
+    c *= lerp(1, 0.6, wet);
+    gloss = lerp(gloss, 0.45, wet);
 
     // Holy light, a pale glow that fades.
     half holy = saturate(s.left.z / 25);
