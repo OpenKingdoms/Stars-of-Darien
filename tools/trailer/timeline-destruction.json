@@ -1,27 +1,163 @@
 {
   "title": "Stars of Darien, destruction trailer: shot list",
   "segments": [
-    {"card": [
-      {"text": "Stars of Darien", "font": "title", "size": 150, "rule": 520},
-      {"text": "The battlefield remembers", "font": "caps", "size": 44, "delay": 0.6}
-    ], "seconds": 4.2},
-    {"shot": "fire-calm", "from": 0.2, "to": 5.0, "trans": 0.8, "style": "fadeblack", "note": "A Taros wood by a lake, at peace"},
-    {"shot": "siege-calm", "from": 0.2, "to": 4.4, "trans": 0.7, "note": "A village at Carin Vel, before the guns come up"},
-    {"shot": "siege-wall", "from": 0.6, "to": 6.4, "trans": 0.3, "note": "The first volley: catapults, trebuchets and cannon, a flash, a shock ring and dust"},
-    {"shot": "fire-catch", "from": 0.2, "to": 5.0, "trans": 0.3, "note": "Fire mages set the wood alight, bark glowing as it burns"},
-    {"shot": "spell-dark", "from": 0.6, "to": 4.6, "trans": 0.3, "note": "Dark magic withers a tree and brings it down"},
-    {"shot": "spell-earth", "from": 0.0, "to": 2.6, "trans": 0.25, "note": "Witch fire in the wood, trees toppling"},
-    {"shot": "spell-lightning", "from": 3.4, "to": 6.6, "trans": 0.25, "note": "Lightning strips a tree to its trunk"},
-    {"shot": "fire-spread", "from": 0.3, "to": 6.0, "trans": 0.3, "note": "Burning trunks topple, smoke drifts on the wind"},
-    {"shot": "dragon-breath", "from": 0.6, "to": 7.4, "trans": 0.3, "note": "Five dragons scorch a swath through the trees"},
-    {"shot": "siege-cavein", "from": 0.3, "to": 8.5, "trans": 0.3, "note": "Houses cave in to rubble under the guns"},
-    {"shot": "craters-field", "from": 0.5, "to": 6.0, "trans": 0.8, "style": "fadeblack", "note": "After three minutes of battle: a cratered, scorched field"},
-    {"shot": "fire-char", "from": 0.5, "to": 5.0, "trans": 0.6, "note": "Ash where the trees stood, the ground charred"},
-    {"shot": "dragon-after", "from": 0.5, "to": 5.0, "trans": 0.6, "note": "The scorched swath, still burning"},
-    {"card": [
-      {"text": "Alpha 1", "font": "title", "size": 130, "rule": 380},
-      {"text": "Join us on Discord", "font": "caps", "size": 50, "delay": 0.6},
-      {"text": "[DISCORD LINK]", "font": "body", "size": 56, "delay": 0.9, "colour": "0xE8C67E"}
-    ], "seconds": 5.5, "trans": 0.8, "style": "fadeblack"}
-  ]
+    {
+      "card": [
+        {
+          "text": "Stars of Darien",
+          "font": "title",
+          "size": 150,
+          "rule": 520
+        },
+        {
+          "text": "The battlefield remembers",
+          "font": "caps",
+          "size": 44,
+          "delay": 0.6
+        }
+      ],
+      "seconds": 4.2
+    },
+    {
+      "shot": "fire-calm",
+      "from": 0.2,
+      "to": 5.0,
+      "trans": 0.8,
+      "style": "fadeblack",
+      "note": "A Taros wood by a lake, at peace"
+    },
+    {
+      "shot": "siege-calm",
+      "from": 0.2,
+      "to": 4.4,
+      "trans": 0.7,
+      "note": "A village at Carin Vel, before the guns come up"
+    },
+    {
+      "shot": "siege-wall",
+      "from": 0.6,
+      "to": 6.4,
+      "trans": 0.3,
+      "note": "The first volley: catapults, trebuchets and cannon, a flash, a shock ring and dust"
+    },
+    {
+      "shot": "fire-catch",
+      "from": 0.2,
+      "to": 5.0,
+      "trans": 0.3,
+      "note": "Fire mages set the wood alight, bark glowing as it burns"
+    },
+    {
+      "shot": "spell-dark",
+      "from": 0.6,
+      "to": 4.6,
+      "trans": 0.3,
+      "note": "Dark magic withers a tree and brings it down"
+    },
+    {
+      "shot": "spell-earth",
+      "from": 0.0,
+      "to": 2.6,
+      "trans": 0.25,
+      "note": "Witch fire in the wood, trees toppling"
+    },
+    {
+      "shot": "spell-lightning",
+      "from": 3.4,
+      "to": 6.6,
+      "trans": 0.25,
+      "note": "Lightning strips a tree to its trunk"
+    },
+    {
+      "shot": "fire-spread",
+      "from": 0.3,
+      "to": 6.0,
+      "trans": 0.3,
+      "note": "Burning trunks topple, smoke drifts on the wind"
+    },
+    {
+      "shot": "dragon-breath",
+      "from": 0.6,
+      "to": 7.4,
+      "trans": 0.3,
+      "note": "Five dragons scorch a swath through the trees"
+    },
+    {
+      "shot": "siege-cavein",
+      "from": 0.3,
+      "to": 5.6,
+      "trans": 0.3,
+      "note": "Houses cave in to rubble under the guns"
+    },
+    {
+      "shot": "siege-barrage",
+      "from": 1.0,
+      "to": 8.0,
+      "trans": 0.3,
+      "note": "Every gun on the village at once, the long houses coming down in dust"
+    },
+    {
+      "shot": "siege-ruins",
+      "from": 0.3,
+      "to": 7.0,
+      "trans": 0.5,
+      "note": "The village reduced to ruins and craters, dust rising off it"
+    },
+    {
+      "shot": "siege-smoke",
+      "from": 0.5,
+      "to": 5.5,
+      "trans": 0.8,
+      "style": "fadeblack",
+      "note": "The smoke drifting off the ruins"
+    },
+    {
+      "shot": "craters-field",
+      "from": 0.5,
+      "to": 5.5,
+      "trans": 0.6,
+      "note": "After three minutes of battle: a cratered, scorched field"
+    },
+    {
+      "shot": "fire-char",
+      "from": 0.5,
+      "to": 4.5,
+      "trans": 0.6,
+      "note": "Ash where the trees stood, the ground charred"
+    },
+    {
+      "shot": "dragon-after",
+      "from": 0.5,
+      "to": 4.8,
+      "trans": 0.6,
+      "note": "The scorched swath, still burning"
+    },
+    {
+      "card": [
+        {
+          "text": "Alpha 1",
+          "font": "title",
+          "size": 130,
+          "rule": 380
+        },
+        {
+          "text": "Join us on Discord",
+          "font": "caps",
+          "size": 50,
+          "delay": 0.6
+        },
+        {
+          "text": "[DISCORD LINK]",
+          "font": "body",
+          "size": 56,
+          "delay": 0.9,
+          "colour": "0xE8C67E"
+        }
+      ],
+      "seconds": 5.5,
+      "trans": 0.8,
+      "style": "fadeblack"
+    }
+  ],
+  "stills": []
 }
