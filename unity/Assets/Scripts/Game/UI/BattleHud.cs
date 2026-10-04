@@ -515,6 +515,7 @@ namespace OpenKingdomsUnity.Game.UI
             Solid(mapParts, "MapGround", mr, HudArt.Purple);
             minimap = Tex(mapParts, "Minimap", mr, mapTex, true);
             minimap.gameObject.AddComponent<MinimapInput>().Clicked = OnMinimap;
+            Hover(minimap.gameObject, MinimapLines);
             dots = UiKit.Rect(minimap.transform, "Units").Fill().gameObject.AddComponent<RawImage>();
             dots.texture = dotTex;
             dots.raycastTarget = false;
@@ -784,9 +785,13 @@ namespace OpenKingdomsUnity.Game.UI
             view.localRotation = Quaternion.Euler(0, 0, -cam.yaw);
         }
 
-        // Classic, as the original: a left click sends an own selection
-        // there and otherwise looks, and the right button looks. Modern:
-        // the left looks and the right sends.
+        // Classic, as the original's left click interface: the left button
+        // gives an own selection the armed order there, or a Move, and
+        // otherwise looks, and the right button looks, or lets an armed
+        // order go (legacy:243645-243647, legacy:243703-243716). Modern
+        // swaps the buttons. A drag looks only after a press that looked.
+        bool minimapLooks;
+
         void OnMinimap(Vector2 uv, PointerEventData.InputButton button, bool drag)
         {
             var world = root.World;
@@ -794,16 +799,34 @@ namespace OpenKingdomsUnity.Game.UI
             var size = root.Backend.Terrain.Size;
             var at = new Vector3(uv.x * size.x, 0, (uv.y - 1f) * size.y);
             at.y = root.Backend.GroundHeight(at.x, at.z);
-            var o = root.Orders;
-            bool left = button == PointerEventData.InputButton.Left, right = button == PointerEventData.InputButton.Right;
-            // Once the battle is decided the minimap only looks.
-            bool send = !root.Flow.Decided && (o == null || o.Classic ? left && OwnSelection() : right);
-            if (send)
+            if (drag)
             {
-                if (!drag && o != null) o.MoveBlock(CommandKind.Move, at);
+                if (minimapLooks) world.Camera.focus = at;
                 return;
             }
-            if (left || right) world.Camera.focus = at;
+            minimapLooks = false;
+            var o = root.Orders;
+            bool left = button == PointerEventData.InputButton.Left, right = button == PointerEventData.InputButton.Right;
+            if (!left && !right) return;
+            // Once the battle is decided the minimap only looks.
+            if (!root.Flow.Decided && o != null)
+            {
+                bool armed = o.Armed != null || o.ArmedAction != null;
+                if (right && armed) { o.LetGoArmed(); return; }
+                if (o.Classic ? left && OwnSelection() : right || armed) { o.OrderAt(at); return; }
+            }
+            minimapLooks = true;
+            world.Camera.focus = at;
+        }
+
+        (string, string) MinimapLines()
+        {
+            var o = root.Orders;
+            bool classic = o == null || o.Classic;
+            if (root.Flow.Decided) return ("Minimap", "Click looks there");
+            if (o != null && (o.Armed != null || o.ArmedAction != null))
+                return ("Minimap", "Left orders here, right cancels");
+            return ("Minimap", classic ? "Right looks, left sends units" : "Left looks, right sends units");
         }
 
         bool OwnSelection()

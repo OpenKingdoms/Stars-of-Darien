@@ -121,6 +121,50 @@ namespace OpenKingdomsUnity.Game.World
             world.Entities.Ghost = null;
         }
 
+        // The right button on the minimap with a command armed: let it go
+        // and keep the selection, as a right click on the field does.
+        public bool LetGoArmed()
+        {
+            if (Armed == null && ArmedAction == null) return false;
+            if (Classic && Armed != null) backend.Cancel();
+            DisarmHere();
+            return true;
+        }
+
+        // An order given on the minimap: the armed command or action at a
+        // point on the ground with no unit picked, or else a Move.
+        public void OrderAt(Vector3 at)
+        {
+            if (ArmedAction != null)
+            {
+                var a = ArmedAction;
+                if (a.Target != ActionTarget.Unit && backend.DoAction(a.Id, at, -1, default, Shift) && !Shift) ArmedAction = null;
+                return;
+            }
+            if (Armed == null) { MoveBlock(CommandKind.Move, at); return; }
+            var kind = Armed.Value;
+            var spot = at;
+            if (kind == CommandKind.Build)
+            {
+                if (!backend.CanBuildAt(ArmedDef, at, Facing, out spot)) return;
+                if (Shift) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = spot, Ok = true, Facing = Facing });
+            }
+            if (Classic)
+            {
+                backend.Click(spot, -1, Shift, Keep);
+                if (kind == CommandKind.Build && Shift) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+                PullSelection();
+            }
+            else if (kind == CommandKind.Build)
+            {
+                foreach (var h in Selected)
+                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = spot, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Keep = Keep, Facing = Facing });
+            }
+            else if (kind == CommandKind.Attack) OrderAll(CommandKind.AttackGround, at, -1);
+            else MoveBlock(kind, at);
+            if (!Shift) { DisarmHere(); Queued.Clear(); }
+        }
+
         // Escape and the original's right click: let go of an armed command,
         // or else deselect.
         public void Cancel()
