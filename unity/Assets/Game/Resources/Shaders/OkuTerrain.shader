@@ -9,6 +9,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
         _MainTex ("Texture", 2D) = "white" {}
         _SeaLevel ("Sea level", Float) = -100
         _Glossiness ("Smoothness", Range(0, 1)) = 0.05
+        _OkuDip ("Dips by the scar map", Float) = 0
     }
     // URP: the same look, lit by OkuLit.hlsl.
     SubShader
@@ -21,8 +22,18 @@ Shader "OpenKingdoms/Presentation/Terrain"
             float4 _MainTex_ST;
             float _SeaLevel;
             half _Glossiness;
+            float _OkuDip;
         CBUFFER_END
         struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
+        #include "../../Shaders/OkuScar.hlsl"
+        // Where a vertex of the ground lies in the world, dipped by the scar
+        // map in every pass alike, so shadows and depth follow the craters.
+        float3 OkuGroundWS(float3 positionOS)
+        {
+            float3 p = TransformObjectToWorld(positionOS);
+            if (_OkuDip > 0.5) p.y += OkuScarDip(p, _SeaLevel);
+            return p;
+        }
         ENDHLSL
         Pass
         {
@@ -50,7 +61,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
-                o.positionWS = TransformObjectToWorld(v.positionOS.xyz);
+                o.positionWS = OkuGroundWS(v.positionOS.xyz);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
@@ -102,13 +113,24 @@ Shader "OpenKingdoms/Presentation/Terrain"
                         n = normalize(n - half3(d.g * 2 - 1, 0, d.b * 2 - 1) * fade * 0.8);
                     }
                 }
+                // The battle's scars: dug and thrown earth, stone, blight,
+                // char, cracks, frost, wet and holy light, lit through their dips.
+                half gloss = _Glossiness;
+                half3 emit = 0;
+                OkuScarHere scar = OkuScarRead(i.positionWS);
+                if (scar.any > 0)
+                {
+                    half near = saturate((140 - distance(GetCameraPositionWS(), i.positionWS)) / 70);
+                    n = OkuScarNormal(n, i.positionWS);
+                    c.rgb = OkuScarColour(c.rgb, scar, i.positionWS, near, n, gloss, emit);
+                }
                 half wet = saturate(1 - (i.positionWS.y - _SeaLevel) / 0.6);
                 c.rgb *= lerp(1, 0.72, wet) * OkuWetBand(i.positionWS);
                 c.rgb = OkuBed(c.rgb, i.positionWS);
                 n = normalize(lerp(n, half3(0, 1, 0), OkuBedFlat(i.positionWS)));
                 half shadow;
-                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(_Glossiness, 0.6, wet), i.positionWS), 0,
-                    saturate(OkuUnder(i.positionWS) / 1.5), 1 + steep * _OkuRockParams.y, shadow);
+                half3 rgb = OkuLight(c.rgb, i.positionWS, n, i.positionCS, OkuBedGloss(lerp(gloss, 0.6, wet), i.positionWS), 0,
+                    saturate(OkuUnder(i.positionWS) / 1.5), 1 + steep * _OkuRockParams.y, shadow) + emit;
                 float2 gx = ddx(i.positionWS.xz), gy = ddy(i.positionWS.xz);
                 if (i.positionWS.y < _OkuSeaLevel - 0.02 && _OkuWaterSigma.a > 0)
                     rgb += c.rgb * _MainLightColor.rgb * (OkuCaustics(i.positionWS, _MainLightPosition.xyz, gx, gy) * shadow);
@@ -136,7 +158,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             {
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
-                float3 p = TransformObjectToWorld(v.positionOS.xyz);
+                float3 p = OkuGroundWS(v.positionOS.xyz);
                 float3 n = TransformObjectToWorldNormal(v.normalOS);
             #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                 float3 dir = normalize(_LightPosition - p);
@@ -171,7 +193,7 @@ Shader "OpenKingdoms/Presentation/Terrain"
             {
                 Varyings o;
                 UNITY_SETUP_INSTANCE_ID(v);
-                o.positionCS = TransformObjectToHClip(v.positionOS.xyz);
+                o.positionCS = TransformWorldToHClip(OkuGroundWS(v.positionOS.xyz));
                 o.uv = 0;
                 o.color = 1;
                 return o;

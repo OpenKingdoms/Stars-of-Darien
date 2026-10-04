@@ -1,0 +1,181 @@
+// OkuScar.hlsl - the battlefield's scars as the ground draws them, from the
+// three textures ScarMap.cs keeps: char, soil, blight and stone, the dip,
+// rim and cracks, and the seconds left of frost, wet, holy light and heat.
+#ifndef OKU_SCAR_INCLUDED
+#define OKU_SCAR_INCLUDED
+
+sampler2D _OkuScarMarks;
+sampler2D _OkuScarShape;
+sampler2D _OkuScarFade;
+float4 _OkuScarRect;    // x, z of the north-west corner, width, depth
+float4 _OkuScarTexel;   // 1 / texels across, 1 / texels down, world units a texel spans across and down
+float4 _OkuScarOn;      // on, lit through normals, dips, seconds since the fade texture last stepped
+float4 _OkuScarSoil;    // the climate's soil, linear, and how wet a crater's floor lies
+float4 _OkuScarSnow;    // what dug snow shows, and 1 on a snow map
+
+float2 OkuScarUv(float3 p)
+{
+    return float2((p.x - _OkuScarRect.x) / _OkuScarRect.z, 1 + (p.z - _OkuScarRect.y) / _OkuScarRect.w);
+}
+
+bool OkuScarInside(float2 uv) { return all(uv >= 0) && all(uv <= 1); }
+
+// The drawn ground's change in world units from the dip and the rim,
+// as ScarStamps.Height has it: the rim only where the ground is not dug.
+float OkuScarHeightAt(float2 uv)
+{
+    float2 s = tex2Dlod(_OkuScarShape, float4(uv, 0, 0)).rg;
+    float depthPx = s.r * 12, rimPx = s.g * 4;
+    return (rimPx * (1 - saturate(depthPx * 0.5)) - depthPx) * 0.0625;
+}
+
+// How far the ground at a point dips, kept just above the water so a
+// crater by the shore fills to the waterline.
+float OkuScarDip(float3 p, float seaLevel)
+{
+    if (_OkuScarOn.z < 0.5) return 0;
+    float2 uv = OkuScarUv(p);
+    if (!OkuScarInside(uv)) return 0;
+    return max(OkuScarHeightAt(uv), min(0, seaLevel + 0.05 - p.y));
+}
+
+float OkuScarHash(float2 p)
+{
+    p = frac(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return frac(p.x * p.y);
+}
+
+float OkuScarNoise(float2 p)
+{
+    float2 i = floor(p), f = frac(p);
+    f = f * f * (3 - 2 * f);
+    return lerp(lerp(OkuScarHash(i), OkuScarHash(i + float2(1, 0)), f.x), lerp(OkuScarHash(i + float2(0, 1)), OkuScarHash(i + 1), f.x), f.y);
+}
+
+struct OkuScarHere
+{
+    float4 marks;   // char, soil, blight, stone
+    float4 shape;   // dip, rim, cracks
+    float4 left;    // seconds of frost, wet, holy light and heat left
+    float any;
+};
+
+OkuScarHere OkuScarRead(float3 p)
+{
+    OkuScarHere s;
+    s.marks = 0; s.shape = 0; s.left = 0; s.any = 0;
+    if (_OkuScarOn.x < 0.5) return s;
+    float2 uv = OkuScarUv(p);
+    if (!OkuScarInside(uv)) return s;
+    s.marks = tex2Dlod(_OkuScarMarks, float4(uv, 0, 0));
+    s.shape = tex2Dlod(_OkuScarShape, float4(uv, 0, 0));
+    s.left = max(tex2Dlod(_OkuScarFade, float4(uv, 0, 0)) * 127.5 - _OkuScarOn.w, 0);
+    s.any = step(0.004, dot(s.marks, 1) + dot(s.shape.rgb, 1) + dot(s.left, 1) * 0.01);
+    return s;
+}
+
+// The ground's normal with the scars' dips and rims, from the slopes of
+// the dent between neighbouring texels.
+half3 OkuScarNormal(half3 n, float3 p)
+{
+    if (_OkuScarOn.y < 0.5) return n;
+    float2 uv = OkuScarUv(p);
+    float2 du = float2(_OkuScarTexel.x, 0), dv = float2(0, _OkuScarTexel.y);
+    float gx = (OkuScarHeightAt(uv + du) - OkuScarHeightAt(uv - du)) / (2 * _OkuScarTexel.z);
+    float gz = (OkuScarHeightAt(uv + dv) - OkuScarHeightAt(uv - dv)) / (2 * _OkuScarTexel.w);
+    return normalize(n + half3(-gx, 0, -gz) * n.y);
+}
+
+// The nearest feature point of a jittered grid of cells, for pebbles and
+// cracks: x the distance to it, y to the second nearest, z its own hash.
+float3 OkuScarCells(float2 q)
+{
+    float2 c = floor(q);
+    float d1 = 9, d2 = 9, h1 = 0;
+    [unroll] for (int y = -1; y <= 1; y++)
+    [unroll] for (int x = -1; x <= 1; x++)
+    {
+        float2 cell = c + float2(x, y);
+        float h = OkuScarHash(cell);
+        float2 at = cell + float2(h, OkuScarHash(cell + 17.3)) * 0.8 + 0.1;
+        float d = distance(q, at);
+        if (d < d1) { d2 = d1; d1 = d; h1 = h; }
+        else if (d < d2) d2 = d;
+    }
+    return float3(d1, d2, h1);
+}
+
+// The ground's colour with its scars, its normal and gloss, and the light
+// that fresh char and holy marks give off. near is 1 up close and 0 far.
+half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, inout half gloss, out half3 emit)
+{
+    emit = 0;
+    half lum = dot(c, half3(0.3, 0.59, 0.11));
+    half mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
+    half sat = (mx - mn) / max(mx, 0.001);
+    // Snow is bright and grey, grass is greener than it is red or blue.
+    half snowy = max(_OkuScarSnow.w * 0.5, smoothstep(0.3, 0.55, lum) * (1 - smoothstep(0.1, 0.28, sat)));
+    half green = saturate((c.g - max(c.r, c.b)) / max(mx, 0.001) * 4);
+    half grain = lerp(0.5, OkuScarNoise(p.xz * 3.1) * 0.6 + OkuScarNoise(p.xz * 9.7) * 0.4, near);
+
+    // Earth dug and thrown: the climate's soil tinted by the ground, slush on snow.
+    half3 soil = lerp(_OkuScarSoil.rgb, c * 0.55, 0.25);
+    soil = lerp(soil, _OkuScarSnow.rgb, snowy * 0.7);
+    half dug = s.shape.r;
+    c = lerp(c, soil * (0.75 + 0.5 * grain), s.marks.g * 0.9);
+    c *= 1 - saturate(dug * 1.5) * 0.3;
+    half pool = _OkuScarSoil.w * saturate(dug * 4);
+    c *= 1 - pool * 0.45;
+    gloss = lerp(gloss, 0.8, pool);
+
+    // Scattered stone, pebble by pebble up close.
+    if (s.marks.a > 0.02 && near > 0)
+    {
+        float3 cell = OkuScarCells(p.xz / 0.45);
+        half size = 0.25 + 0.2 * frac(cell.z * 7.1);
+        half on = step(cell.z, s.marks.a * 0.75) * (1 - smoothstep(size - 0.06, size, cell.x)) * near;
+        half3 stone = lerp(half3(0.2, 0.18, 0.15), half3(lum, lum, lum) * 1.2, 0.3) * (0.7 + 0.6 * frac(cell.z * 13.7));
+        c = lerp(c, stone, on);
+        gloss = lerp(gloss, 0.2, on);
+    }
+
+    // Blight withers what grows, grey and faintly violet.
+    half3 withered = lerp(half3(lum, lum, lum), c, 0.15) * half3(0.78, 0.72, 0.84);
+    c = lerp(c, withered, s.marks.b * lerp(0.55, 1, green));
+
+    // Char, black soot while it is fresh, settling to dark burnt soil.
+    half3 charred = lerp(soil * 0.35, half3(0.013, 0.010, 0.008), 0.5) * (0.8 + 0.4 * grain);
+    c = lerp(c, charred, s.marks.r * 0.92);
+    half fresh = saturate(s.left.w / 20);
+    c = lerp(c, half3(0.005, 0.0045, 0.004), fresh * s.marks.r * 0.8);
+    half glow = pow(saturate(s.left.w / 25), 3) * 2.5 + saturate(s.left.w / 3) * 0.15;
+    emit += half3(1.0, 0.32, 0.06) * glow * saturate(s.marks.r * 2) * (0.4 + 0.6 * grain);
+
+    // Cracks: the edges of a coarse grid of cells, where the cracks reach.
+    if (s.shape.b > 0.02 && near > 0)
+    {
+        float3 cell = OkuScarCells(p.xz / 0.55);
+        half seam = 1 - smoothstep(0.02, 0.06 + 0.04 * s.shape.b, cell.y - cell.x);
+        c *= 1 - seam * saturate(s.shape.b * 1.5) * 0.75 * near;
+    }
+
+    // Rime, bright and icy, melting from its edges as its seconds run out.
+    half frost = saturate(s.left.x / 12);
+    frost *= smoothstep(0.15, 0.45, grain + frost * 0.6);
+    c = lerp(c, half3(0.68, 0.77, 0.87) * (0.85 + 0.3 * grain), frost * 0.9);
+    gloss = lerp(gloss, 0.55, frost);
+
+    // Wet ground, darker and glossy until it dries.
+    half wet = saturate(s.left.y / 20);
+    c *= lerp(1, 0.5, wet);
+    gloss = lerp(gloss, 0.75, wet);
+
+    // Holy light, a pale glow that fades.
+    half holy = saturate(s.left.z / 25);
+    c = lerp(c, c * 1.15 + 0.03, holy);
+    emit += half3(1.0, 0.87, 0.58) * holy * holy * 1.5;
+    return c;
+}
+
+#endif

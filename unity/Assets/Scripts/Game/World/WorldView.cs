@@ -14,6 +14,9 @@ namespace OpenKingdomsUnity.Game.World
         public EntityRenderer Entities { get; private set; }
         public EffectRenderer Effects { get; private set; }
         public FogView Fog { get; private set; }
+        // The battle's craters and marks on the ground.
+        public ScarMap Scars { get; private set; }
+        string climate = "";
         public GameCamera Camera { get; private set; }
         readonly IGameBackend backend;
 
@@ -99,6 +102,7 @@ namespace OpenKingdomsUnity.Game.World
 
         void Sky(MapInfo map, GameOptions options)
         {
+            climate = map != null ? map.Climate ?? "" : "";
             var size = backend.Terrain.Size;
             Atmosphere.Build(Root.transform, map != null ? map.Climate : "", options.Weather, options.Shadows, Mathf.Max(size.x, size.y));
             Terrain.SetSeaClimate(map != null ? map.Climate : "");
@@ -113,6 +117,7 @@ namespace OpenKingdomsUnity.Game.World
             // Impacts show in sight, and shots also when a friend fired them.
             Effects.Hidden = (at, player) => !Fog.InSight(at) && (player < 0 || !Friendly(player));
             Effects.Warm(backend.WarmEffectStrips());
+            Scars = ScarMap.Begin(backend, Terrain, climate, FxQuality.Current.Level);
             Entities.Unseen = p => Fog.State(p) == 0;
         }
 
@@ -202,6 +207,8 @@ namespace OpenKingdomsUnity.Game.World
             // cascades spend their texels where the eye is.
             using (new Unity.Profiling.ProfilerMarker("Oku.Shadows").Auto()) Looks.ShadowDistance(Mathf.Clamp(Camera.distance * 2.4f + 25f, 50f, 260f));
             using (new Unity.Profiling.ProfilerMarker("Oku.Fog").Auto()) Fog.Update();
+            // Before the units, so they sit in this frame's craters.
+            using (new Unity.Profiling.ProfilerMarker("Oku.Scars").Auto()) Scars?.Update(backend.Tick / (float)Mathf.Max(1, backend.TicksPerSecond));
             using (new Unity.Profiling.ProfilerMarker("Oku.Entities").Auto()) Entities.Render(cam);
             // An edit in the map editor can make a sea where there was none.
             WaterView.Prepare(cam, Terrain.Sea != null);
@@ -216,6 +223,8 @@ namespace OpenKingdomsUnity.Game.World
             building.Clear();
             Entities?.Dispose();
             Effects?.Dispose();
+            Scars?.Dispose();
+            Scars = null;
             Fog?.Dispose();
             Models?.Dispose();
             Terrain.Dispose();

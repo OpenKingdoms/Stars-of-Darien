@@ -627,7 +627,7 @@ namespace OpenKingdomsUnity.Game.World
             float height = 1.5f, radius = 0.6f, air = 0f;
             var kind = def != null ? def.Float : FloatKind.None;
             var hull = kind == FloatKind.Ship && model != null ? HullOf(model) : default;
-            var sway = kind == FloatKind.Ship && model != null ? Sway(u, hull) : Matrix4x4.identity;
+            var sway = kind == FloatKind.Ship && model != null ? Sway(u, hull) : ScarMap.Sink(u.Position);
             int posedCount = 0;
             if (model != null && model.Override != null)
             {
@@ -956,7 +956,7 @@ namespace OpenKingdomsUnity.Game.World
                 featureHidden[i] = Unseen != null && Unseen(features[i].Position);
                 if (featureHidden[i]) continue;
                 var e = featureEntries[i];
-                foreach (var d in e.Draws) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, d.m);
+                foreach (var d in e.Draws) (d.flat ? billboards : solid).Add(d.mesh, d.sub, d.mat, ScarMap.Sink(e.Position) * d.m);
                 if (!e.Card) continue;
                 var mat = SpriteMaterial(e.Sprite);
                 if (mat != null) billboards.Add(quad, 0, mat, CardMatrix(e.Position, e.W, e.Bottom, e.Top, e.OffX, cam.transform));

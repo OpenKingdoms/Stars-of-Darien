@@ -88,13 +88,56 @@ namespace OpenKingdomsUnity.Game.World
             Quads(tris, 0, xs.Count - 1, zs.Count - 1);
 
             // Skirts: each edge ring copied down, faces pointing outward.
-            int w = xs.Count, h = zs.Count;
+            Skirts(d, tris, xs.Count, zs.Count, SkirtDepth);
+            return d;
+        }
+
+        // The region's samples split factor times each way, for the scar
+        // map's dips: heights and normals between samples taken bilinearly,
+        // and a short skirt round the edge where a neighbour is coarser.
+        public static TerrainMeshData Refined(MapTerrain t, int rx, int ry, int factor)
+        {
+            factor = Mathf.Max(1, factor);
+            var d = new TerrainMeshData();
+            int n = SamplesPerBlock(t);
+            int s0x = rx * RegionBlocks * n, s0z = ry * RegionBlocks * n;
+            int s1x = Mathf.Min(t.BlocksW, (rx + 1) * RegionBlocks) * n, s1z = Mathf.Min(t.BlocksH, (ry + 1) * RegionBlocks) * n;
+            float span = RegionBlocks * n;
+            int sw = s1x - s0x + 1, sh = s1z - s0z + 1;
+            var normals = new Vector3[sw * sh];
+            for (int z = 0; z < sh; z++)
+                for (int x = 0; x < sw; x++)
+                    normals[z * sw + x] = Normal(t, s0x + x, s0z + z);
+            int cx = (s1x - s0x) * factor, cz = (s1z - s0z) * factor;
+            for (int gz = 0; gz <= cz; gz++)
+                for (int gx = 0; gx <= cx; gx++)
+                {
+                    int ix = gx / factor, iz = gz / factor;
+                    float fx = (gx - ix * factor) / (float)factor, fz = (gz - iz * factor) / (float)factor;
+                    int jx = Mathf.Min(ix + 1, sw - 1), jz = Mathf.Min(iz + 1, sh - 1);
+                    float sx = s0x + ix + fx, sz = s0z + iz + fz;
+                    float h = Mathf.Lerp(Mathf.Lerp(t.HeightAt(s0x + ix, s0z + iz), t.HeightAt(s0x + jx, s0z + iz), fx),
+                        Mathf.Lerp(t.HeightAt(s0x + ix, s0z + jz), t.HeightAt(s0x + jx, s0z + jz), fx), fz);
+                    var nrm = Vector3.Lerp(Vector3.Lerp(normals[iz * sw + ix], normals[iz * sw + jx], fx),
+                        Vector3.Lerp(normals[jz * sw + ix], normals[jz * sw + jx], fx), fz).normalized;
+                    d.Vertices.Add(new Vector3(sx * t.CellSize, h, -sz * t.CellSize));
+                    d.Normals.Add(nrm);
+                    d.Uvs.Add(new Vector2((sx - s0x) / span, 1f - (sz - s0z) / span));
+                }
+            Quads(d.For(-1), 0, cx, cz);
+            Skirts(d, d.For(-1), cx + 1, cz + 1, 0.4f);
+            return d;
+        }
+
+        // Each edge ring of a w by h grid copied down by depth, faces outward.
+        static void Skirts(TerrainMeshData d, List<int> tris, int w, int h, float depth)
+        {
             void Skirt(IList<int> ring)
             {
                 int basev = d.Vertices.Count;
                 foreach (int i in ring)
                 {
-                    d.Vertices.Add(d.Vertices[i] + Vector3.down * SkirtDepth);
+                    d.Vertices.Add(d.Vertices[i] + Vector3.down * depth);
                     d.Normals.Add(d.Normals[i]);
                     d.Uvs.Add(d.Uvs[i]);
                 }
@@ -110,7 +153,6 @@ namespace OpenKingdomsUnity.Game.World
             var west = new List<int>(); for (int z = 0; z < h; z++) west.Add(z * w);
             var east = new List<int>(); for (int z = h - 1; z >= 0; z--) east.Add(z * w + w - 1);
             Skirt(north); Skirt(south); Skirt(west); Skirt(east);
-            return d;
         }
 
         static List<int> Steps(int from, int to, int step)
@@ -168,7 +210,7 @@ namespace OpenKingdomsUnity.Game.World
             return img;
         }
 
-        public static Mesh ToMesh(TerrainMeshData d, string name, IList<int> order)
+        public static Mesh ToMesh(TerrainMeshData d, string name, IList<int> order, bool tangents = true)
         {
             var mesh = new Mesh { name = name, indexFormat = IndexFormat.UInt32 };
             mesh.SetVertices(d.Vertices);
@@ -177,7 +219,7 @@ namespace OpenKingdomsUnity.Game.World
             mesh.subMeshCount = order.Count;
             for (int i = 0; i < order.Count; i++) mesh.SetTriangles(d.Triangles[order[i]], i, false);
             mesh.RecalculateBounds();
-            mesh.RecalculateTangents();
+            if (tangents) mesh.RecalculateTangents();
             return mesh;
         }
     }

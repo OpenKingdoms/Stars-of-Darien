@@ -194,6 +194,70 @@ namespace OpenKingdomsUnity.Game.World
             Regions++;
         }
 
+        // ── Dips ──────────────────────────────────────────────────────
+
+        // Regions the scar map dents, rebuilt near with factor times their
+        // samples on a worker and drawn with a material that dips by it.
+        readonly Dictionary<(int, int), int> refined = new Dictionary<(int, int), int>();
+        readonly List<(int rx, int ry, int factor, System.Threading.Tasks.Task<TerrainMeshData> job)> refining =
+            new List<(int, int, int, System.Threading.Tasks.Task<TerrainMeshData>)>();
+        readonly HashSet<(int, int)> dented = new HashSet<(int, int)>();
+        public int RefinedRegions => dented.Count;
+
+        public int RefinedFactor(int rx, int ry) => refined.TryGetValue((rx, ry), out int f) ? f : 1;
+
+        public void Refine(int rx, int ry, int factor)
+        {
+            if (regions == null || factor <= 1 || rx < 0 || ry < 0 || rx >= regions.GetLength(0) || ry >= regions.GetLength(1)) return;
+            if (refined.TryGetValue((rx, ry), out int f) && f >= factor) return;
+            refined[(rx, ry)] = factor;
+            var t = backend.Terrain;
+            refining.Add((rx, ry, factor, System.Threading.Tasks.Task.Run(() => TerrainBuilder.Refined(t, rx, ry, factor))));
+        }
+
+        // Puts at most one finished region in place. Returns how many are
+        // still being built.
+        public int StepRefine()
+        {
+            for (int i = 0; i < refining.Count; i++)
+            {
+                var (rx, ry, factor, job) = refining[i];
+                if (!job.IsCompleted) continue;
+                refining.RemoveAt(i);
+                if (job.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && regions != null && refined.TryGetValue((rx, ry), out int f) && f == factor)
+                    PutRefined(rx, ry, job.Result);
+                break;
+            }
+            return refining.Count;
+        }
+
+        void PutRefined(int rx, int ry, TerrainMeshData data)
+        {
+            var region = regions[rx, ry];
+            var near = region != null ? region.transform.Find("LOD0") : null;
+            if (near == null || !regionOwned.TryGetValue(region, out var mine)) return;
+            var filter = near.GetComponent<MeshFilter>();
+            var renderer = near.GetComponent<MeshRenderer>();
+            var mesh = TerrainBuilder.ToMesh(data, $"terrain dented {rx},{ry}", new List<int> { -1 }, false);
+            // Room for the deepest dip and the highest rim.
+            var b = mesh.bounds;
+            b.Expand(new Vector3(0f, 2f, 0f));
+            mesh.bounds = b;
+            mine.Add(mesh);
+            var old = filter.sharedMesh;
+            filter.sharedMesh = mesh;
+            if (old != null) { mine.Remove(old); Looks.Release(old); }
+            if (renderer.sharedMaterial != null && renderer.sharedMaterial.GetFloat("_OkuDip") < 0.5f)
+            {
+                var dip = new Material(renderer.sharedMaterial) { hideFlags = HideFlags.DontSave };
+                dip.SetFloat("_OkuDip", 1f);
+                mine.Add(dip);
+                renderer.sharedMaterial = dip;
+            }
+            region.GetComponent<LODGroup>()?.RecalculateBounds();
+            dented.Add((rx, ry));
+        }
+
         // Rebuilds the regions that cover a rectangle of blocks, after the
         // ground there was edited: heights, or which picture a block shows.
         public void Rebuild(RectInt blocks)
@@ -209,6 +273,8 @@ namespace OpenKingdomsUnity.Game.World
                 for (int rx = x0; rx <= x1; rx++)
                 {
                     var old = regions[rx, ry];
+                    refined.Remove((rx, ry));
+                    dented.Remove((rx, ry));
                     if (regionOwned.TryGetValue(old, out var list)) { foreach (var o in list) Looks.Release(o); regionOwned.Remove(old); }
                     Looks.Release(old);
                     Regions--;
@@ -341,6 +407,9 @@ namespace OpenKingdomsUnity.Game.World
             regionOwned.Clear();
             regions = null;
             Regions = 0;
+            refined.Clear();
+            refining.Clear();
+            dented.Clear();
         }
     }
 }

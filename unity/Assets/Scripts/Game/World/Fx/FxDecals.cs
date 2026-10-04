@@ -1,5 +1,6 @@
 // FxDecals.cs - scorch and embers where fire struck, fading, and the soft
-// shadow straight under a shot, all draped over the ground's heights.
+// shadow straight under a shot, all draped over the ground's heights. Once
+// blasts are reported the scar map keeps the scorch and only embers draw here.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -36,6 +37,7 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Draw(FxMesh ground, FxMesh glow, float now)
         {
+            bool scarred = ScarMap.Current != null && ScarMap.Current.BlastsSeen > 0;
             for (int i = marks.Count - 1; i >= 0; i--)
             {
                 var m = marks[i];
@@ -44,7 +46,7 @@ namespace OpenKingdomsUnity.Game.World
                 float fadeIn = Mathf.Clamp01(age / 0.25f);
                 float fadeOut = Mathf.Clamp01((FxLook.ScorchSeconds - age) / 5f);
                 var dark = new Color32(34, 27, 22, (byte)Mathf.RoundToInt(200f * fadeIn * fadeOut));
-                Drape(ground, m.Scorch, Grid, dark, FxMesh.ScorchRect, default);
+                if (!scarred) Drape(ground, m.Scorch, Grid, dark, FxMesh.ScorchRect, default);
                 float ember = 1f - age / EmberSeconds;
                 if (ember > 0f)
                 {

@@ -1,0 +1,271 @@
+// ScarStamps.cs - what each kind of blast leaves on the ground, and the
+// crater's shape. OkuScarStamp.shader draws the same shape into the scar
+// map, so the dip the ground shows and the one units sit in agree.
+using UnityEngine;
+
+namespace OpenKingdomsUnity.Game.World
+{
+    public enum ScarKind : byte
+    {
+        None,
+        Gunpowder,  // a crater with a thrown rim, scorch and earth flung out in rays
+        Siege,      // a narrow pit with scattered stone
+        Impact,     // a big spell's meteor or fireball: the deepest crater, charred
+        Fire,       // char that glows and then darkens
+        Breath,     // a scorched swath back along the breath's line
+        Lightning,  // a scorched fork round a charred star
+        Frost,      // rime that melts from its edges, and cracks
+        Dark,       // blight that withers grass grey
+        Water,      // wet ground that dries from its edges
+        Holy,       // a pale ring of light that fades
+        Earth,      // cracks and churned soil along fissures
+        Dust,       // a scuff of churned soil
+    }
+
+    // One mark on the ground. Strengths run 0 to 1, lasting marks are in
+    // seconds, and a swath runs Length back from its centre against Dir.
+    public struct ScarStamp
+    {
+        public ScarKind Kind;
+        public float X, Z;
+        public float DirX, DirZ;
+        public float Reach;         // world units: the farthest any mark goes, a swath's half width
+        public float Length;
+        public float Dent;          // world units: the crater's radius, 0 for none
+        public float Depth, Rim;    // pixels, at the centre and along the rim
+        public float Floor;         // the share of the dent that is flat floor
+        public float Char, Soil, Blight, Stone, Crack;
+        public float Frost, Wet, Holy, Heat;
+        public int Seed;
+
+        // The farthest the stamp reaches from its centre, swath and all.
+        public float Extent => Reach + Length;
+    }
+
+    public static class ScarStamps
+    {
+        public const float PixelsPerUnit = 16f;
+        // The scar map's range for a dip and a rim, in pixels.
+        public const float MaxDepthPx = 12f, MaxRimPx = 4f;
+        // The owner's limits: a cannon's crater and the largest spells'.
+        public const float CannonDepthPx = 6f, SpellDepthPx = 10f;
+        // How long a mark of each lasting kind stays at its strongest point.
+        public const float FrostSeconds = 60f, WetSeconds = 60f, HolySeconds = 25f, FireHeatSeconds = 20f;
+
+        // ── Kinds ─────────────────────────────────────────────────────
+
+        // The kind of mark a blast leaves, from its weapon's data. A blast
+        // on water or one that struck a unit directly leaves none.
+        public static ScarKind KindOf(in BlastEvent b)
+        {
+            if ((b.Flags & (BlastFlags.Water | BlastFlags.DirectHit)) != 0) return ScarKind.None;
+            var w = b.Weapon;
+            if (w == null) return b.Radius > 0.4f ? (b.Cause == BlastCause.Death ? ScarKind.Gunpowder : ScarKind.Dust) : ScarKind.None;
+            return KindOf(w, b.Radius);
+        }
+
+        public static ScarKind KindOf(WeaponInfo w, float radius)
+        {
+            string cls = Lower(w.ExplosionClass), sub = Lower(w.Subtype), dmg = Lower(w.DamageKind), type = Lower(w.Type), name = Lower(w.Name);
+            if (type == "melee") return ScarKind.None;
+            bool starter = (w.Flags & WeaponFlags.FireStarter) != 0;
+            bool fiery = starter || dmg == "fire" || sub == "fire" || Has(cls, "fire") || Has(cls, "flame") || Has(cls, "volc") ||
+                         cls == "explodeb" || Has(name, "fire") || Has(name, "flame") || Has(name, "meteor");
+            if (Has(cls, "water") || Has(cls, "tsunami") || Has(cls, "splash") || Has(name, "water") || Has(name, "tsunami")) return ScarKind.Water;
+            if (!fiery && (Has(cls, "ice") || Has(sub, "hail") || Has(sub, "frozen") || Has(sub, "freez") ||
+                           Has(name, "frost") || Has(name, "freez") || Has(name, "hail") || Has(name, "ice "))) return ScarKind.Frost;
+            if (Has(sub, "earthquake") || Has(name, "quake") || Has(name, "earthen")) return ScarKind.Earth;
+            if (dmg == "explosion")
+                return Has(cls, "dust") || Has(cls, "dirt") || Has(cls, "rock") || Has(cls, "stone") || Has(cls, "boulder") ? ScarKind.Siege : ScarKind.Gunpowder;
+            bool spell = (w.Flags & WeaponFlags.Spell) != 0;
+            if (Has(sub, "turntostone") || Has(sub, "mindcontrol") || Has(cls, "soul") || Has(cls, "mind") ||
+                spell && (Has(name, "death") || Has(name, "dark") || Has(name, "soul") || Has(name, "curse") || Has(name, "plague") || Has(name, "blight")))
+                return ScarKind.Dark;
+            if (Has(sub, "lightning") || Has(cls, "lightning") || Has(cls, "blue_shockring") || Has(name, "lightning") || !fiery && Has(name, "storm"))
+                return ScarKind.Lightning;
+            if (fiery)
+            {
+                if (sub == "fire" || Has(name, "breath")) return ScarKind.Breath;
+                if (Has(cls, "volc") || Has(name, "meteor") || spell && radius >= 3.5f) return ScarKind.Impact;
+                return ScarKind.Fire;
+            }
+            if (Has(cls, "holy") || Has(cls, "gold") || Has(cls, "yellow_shockring") || Has(cls, "white_shockring") ||
+                spell && (Has(name, "holy") || Has(name, "divine") || Has(name, "heal") || Has(name, "bless") || Has(name, "sacred") ||
+                          Has(name, "smite") || Has(name, "light"))) return ScarKind.Holy;
+            if (Has(cls, "dust") || Has(cls, "dirt")) return ScarKind.Dust;
+            if (Has(cls, "explosion")) return ScarKind.Gunpowder;
+            // A sweeping spell that only reaches units leaves no mark of its own.
+            return radius > 0.4f && (w.Flags & WeaponFlags.UnitsOnly) == 0 ? ScarKind.Dust : ScarKind.None;
+        }
+
+        static string Lower(string s) => string.IsNullOrEmpty(s) ? "" : s.ToLowerInvariant();
+        static bool Has(string s, string part) => s.IndexOf(part, System.StringComparison.Ordinal) >= 0;
+
+        // ── Stamps ────────────────────────────────────────────────────
+
+        // The stamp a blast leaves, or false for none. A blast well above the
+        // ground leaves less, and one high in the air nothing.
+        public static bool Make(in BlastEvent b, float ground, out ScarStamp s)
+        {
+            s = default;
+            var kind = KindOf(b);
+            if (kind == ScarKind.None) return false;
+            float above = b.Position.y - ground;
+            float strength = Mathf.Clamp01(1f - (above - 0.4f) / (b.Radius + 0.6f));
+            if (strength < 0.05f) return false;
+            var dir = new Vector3(b.Direction.x, 0f, b.Direction.z);
+            s = Make(kind, b.Position, b.Radius, dir, strength, b.Id);
+            if (kind == ScarKind.Water && b.Weapon != null && Has(Lower(b.Weapon.ExplosionClass), "tsunami") && dir.sqrMagnitude > 1e-4f) s.Length = 6f * strength;
+            return true;
+        }
+
+        // A stamp of a kind at a world point, for a blast of the given
+        // radius (world units, half its areaofeffect) facing dir.
+        public static ScarStamp Make(ScarKind kind, Vector3 at, float radius, Vector3 dir, float strength = 1f, int seed = 0)
+        {
+            float r = Mathf.Max(0f, radius);
+            var flat = new Vector2(dir.x, dir.z);
+            if (flat.sqrMagnitude < 1e-6f)
+            {
+                float a = Hash01(seed) * Mathf.PI * 2f;
+                flat = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
+            }
+            flat.Normalize();
+            var s = new ScarStamp { Kind = kind, X = at.x, Z = at.z, DirX = flat.x, DirZ = flat.y, Seed = ((seed % 1024) + 1024) % 1024 };
+            switch (kind)
+            {
+                case ScarKind.Gunpowder:
+                    if (r < 0.4f)
+                    {
+                        // A musket ball or a teeny explosion scorches without digging.
+                        s.Reach = 0.45f; s.Char = 0.55f; s.Soil = 0.35f; s.Heat = 2f;
+                        break;
+                    }
+                    s.Dent = Mathf.Min(0.8f * r, 4f);
+                    s.Depth = Mathf.Min(2f + 1.6f * r, CannonDepthPx);
+                    s.Rim = 0.4f * s.Depth;
+                    s.Floor = 0.3f;
+                    s.Char = 0.8f; s.Soil = 0.9f; s.Heat = 4f;
+                    s.Reach = 2.4f * s.Dent;
+                    break;
+                case ScarKind.Siege:
+                    s.Dent = Mathf.Clamp(0.45f * r, 0.45f, 2.2f);
+                    s.Depth = Mathf.Min(2f + 1.2f * r, 5f);
+                    s.Rim = 0.25f * s.Depth;
+                    s.Floor = 0.12f;
+                    s.Soil = 0.75f; s.Stone = 0.85f;
+                    s.Reach = 2.8f * s.Dent;
+                    break;
+                case ScarKind.Impact:
+                    s.Dent = Mathf.Clamp(0.55f * r, 0.8f, 5f);
+                    s.Depth = Mathf.Min(3f + 1.4f * r, SpellDepthPx);
+                    s.Rim = 0.35f * s.Depth;
+                    s.Floor = 0.3f;
+                    s.Char = 1f; s.Soil = 0.8f; s.Heat = 25f;
+                    s.Reach = 2.2f * s.Dent;
+                    break;
+                case ScarKind.Fire:
+                    s.Reach = Mathf.Max(r, 0.5f) * 1.1f; s.Char = 0.9f; s.Heat = FireHeatSeconds;
+                    break;
+                case ScarKind.Breath:
+                    s.Reach = Mathf.Max(r, 0.6f) * 0.9f; s.Length = 3.5f; s.Char = 0.85f; s.Heat = 15f;
+                    break;
+                case ScarKind.Lightning:
+                    s.Reach = Mathf.Max(r * 1.2f, 1.6f); s.Char = 0.95f; s.Heat = 3f;
+                    break;
+                case ScarKind.Frost:
+                    s.Reach = Mathf.Max(r, 1f) * 1.1f; s.Frost = FrostSeconds; s.Crack = 0.6f;
+                    break;
+                case ScarKind.Dark:
+                    s.Reach = Mathf.Max(r, 1.2f) * 1.2f; s.Blight = 0.9f;
+                    break;
+                case ScarKind.Water:
+                    s.Reach = Mathf.Max(r, 1f) * 1.3f; s.Wet = WetSeconds;
+                    break;
+                case ScarKind.Holy:
+                    s.Reach = Mathf.Max(r, 1.5f); s.Holy = HolySeconds;
+                    break;
+                case ScarKind.Earth:
+                    s.Reach = Mathf.Clamp(r * 0.5f, 3f, 8f); s.Crack = 0.9f; s.Soil = 0.5f;
+                    break;
+                case ScarKind.Dust:
+                    s.Reach = Mathf.Max(r, 0.4f); s.Soil = 0.35f;
+                    break;
+                default:
+                    return s;
+            }
+            float k = Mathf.Clamp01(strength);
+            s.Depth *= k; s.Rim *= k;
+            s.Char *= k; s.Soil *= k; s.Blight *= k; s.Stone *= k; s.Crack *= k;
+            s.Frost *= k; s.Wet *= k; s.Holy *= k; s.Heat *= k;
+            if (s.Depth < 0.25f) s.Dent = s.Depth = s.Rim = 0f;
+            return s;
+        }
+
+        // Folds b into a, kept where a is: each mark the stronger of the two.
+        // A queue past its cap trades b's place for keeping its strength.
+        public static void Merge(ref ScarStamp a, in ScarStamp b)
+        {
+            a.Reach = Mathf.Max(a.Reach, b.Reach);
+            a.Length = Mathf.Max(a.Length, b.Length);
+            if (b.Dent > 0f && b.Depth > a.Depth) { a.Dent = Mathf.Max(a.Dent, b.Dent); a.Depth = b.Depth; a.Rim = b.Rim; a.Floor = b.Floor; }
+            a.Char = Mathf.Max(a.Char, b.Char); a.Soil = Mathf.Max(a.Soil, b.Soil); a.Blight = Mathf.Max(a.Blight, b.Blight);
+            a.Stone = Mathf.Max(a.Stone, b.Stone); a.Crack = Mathf.Max(a.Crack, b.Crack);
+            a.Frost = Mathf.Max(a.Frost, b.Frost); a.Wet = Mathf.Max(a.Wet, b.Wet); a.Holy = Mathf.Max(a.Holy, b.Holy); a.Heat = Mathf.Max(a.Heat, b.Heat);
+        }
+
+        // ── The crater's shape ────────────────────────────────────────
+
+        // How deep a crater is at x, its distance from the centre over its
+        // radius, as a share of its depth: a flat floor, then a smooth wall.
+        public static float DepthAt(float x, float floor) => 1f - SmoothStep(floor, 1f, x);
+
+        // How high its thrown rim stands at x and angle a, as a share of the
+        // rim's height: a ring just outside the dip, lumpy round its length.
+        public static float RimAt(float x, float a, int seed) => RimAt(x, Mathf.Cos(a), Mathf.Sin(a), Phases(seed));
+
+        // The same from the angle's cosine and sine and the seed's phases,
+        // with no trigonometry a texel.
+        public static float RimAt(float x, float c, float s, Vector4 phases)
+        {
+            float t = (x - 1.05f) / 0.45f;
+            if (t <= -1f || t >= 1f) return 0f;
+            float bump = (1f - t * t) * (1f - t * t);
+            return bump * Lumps(c, s, phases);
+        }
+
+        // 0.75 + 0.25 sin(3a + p) cos(2a + q), p and q from the seed.
+        public static float Lumps(float c, float s, Vector4 phases)
+        {
+            float sin3 = s * (3f - 4f * s * s), cos3 = c * (4f * c * c - 3f);
+            float cos2 = c * c - s * s, sin2 = 2f * s * c;
+            return 0.75f + 0.25f * (sin3 * phases.x + cos3 * phases.y) * (cos2 * phases.z - sin2 * phases.w);
+        }
+
+        // cos p, sin p, cos q, sin q for a seed's lumps.
+        public static Vector4 Phases(int seed)
+        {
+            float p = Frac(seed * 0.1234f) * 6.2831853f, q = Frac(seed * 0.5678f) * 6.2831853f;
+            return new Vector4(Mathf.Cos(p), Mathf.Sin(p), Mathf.Cos(q), Mathf.Sin(q));
+        }
+
+        // The drawn ground's change in pixels from what the scar map keeps:
+        // the deepest dip, and the highest rim where the ground is not dug.
+        public static float Height(float depthPx, float rimPx) => rimPx * (1f - Mathf.Clamp01(depthPx * 0.5f)) - depthPx;
+
+        static float SmoothStep(float a, float b, float x)
+        {
+            float t = Mathf.Clamp01((x - a) / (b - a));
+            return t * t * (3f - 2f * t);
+        }
+
+        static float Frac(float v) => v - Mathf.Floor(v);
+
+        static float Hash01(int n)
+        {
+            uint h = (uint)n * 2654435761u;
+            h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12;
+            return (h & 0xffffff) / 16777216f;
+        }
+    }
+}
