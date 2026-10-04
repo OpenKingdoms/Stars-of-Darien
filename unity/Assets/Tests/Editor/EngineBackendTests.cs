@@ -843,6 +843,131 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(-1, b.Unit);
         }
 
+        // The engine's wind, a fire starter, the stages scenery breaks into,
+        // and an archer that our own rock kills throwing its pieces.
+        [Test, Order(10)]
+        public void TheEngineTellsItsWindStagesAndThrownPieces()
+        {
+            Assert.AreEqual(GameStatus.Running, backend.Status);
+            Assert.IsTrue(backend.ReadWind(out var wind), "the simulation's wind");
+            Debug.Log($"wind: heading {wind.Heading:0}, {wind.Speed:0} of {wind.MaxSpeed:0}");
+            Assert.That(wind.Heading, Is.InRange(0f, 360f));
+            Assert.Greater(wind.MaxSpeed, 0f);
+            Assert.That(wind.Strength, Is.InRange(0f, 1f));
+            int Unit(string name) => backend.UnitDefs.First(d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)).Id;
+            Assert.AreEqual(WeaponFlags.FireStarter, backend.Weapon(Unit("TARNECRO"), 0).Flags & WeaponFlags.FireStarter);
+            Assert.AreEqual(WeaponFlags.None, backend.Weapon(Unit("ARAPULT"), 0).Flags & WeaponFlags.FireStarter);
+            int dies = backend.FeatureDefs.Count(f => f.Breakable && f.DeadDef >= 0);
+            int burns = backend.FeatureDefs.Count(f => f.Flammable && f.BurntDef >= 0);
+            int stands = backend.FeatureDefs.Count(f => f.Indestructible);
+            Debug.Log($"feature defs: {dies} die into a stage, {burns} burn into one, {stands} stand");
+            Assert.Greater(dies, 50);
+            Assert.Greater(burns, 50);
+            Assert.Greater(stands, 50);
+
+            int pult = OkEngine.okx_place_unit(Unit("ARAPULT"), backend.LocalPlayer);
+            int arch = OkEngine.okx_place_unit(Unit("ARAARCH"), backend.LocalPlayer);
+            Assert.GreaterOrEqual(pult, 0);
+            Assert.GreaterOrEqual(arch, 0);
+            var us = new UnitState[1024];
+            var p = us.Take(backend.ReadUnits(us)).First(x => x.Handle == pult);
+            // Out of the catapult's way and its least reach, then our own rock on it.
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, arch, p.Position + Vector3.right * 20f)));
+            backend.Advance(60 * 8);
+            var buf = new PieceEvent[256];
+            int since = 0;
+            for (int k; (k = backend.ReadPieceEvents(since, buf)) > 0;) since = buf[k - 1].Id;
+            PieceEvent? thrown = null;
+            Vector3 fell = default;
+            for (int shot = 0; shot < 6 && thrown == null; shot++)
+            {
+                var a = us.Take(backend.ReadUnits(us)).FirstOrDefault(x => x.Handle == arch);
+                if (a.Handle != arch) break;
+                fell = a.Position;
+                Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.AttackGround, Unit = pult, Target = a.Position, TargetUnit = -1, BuildDef = -1 }));
+                for (int t = 0; t < 600 && thrown == null; t += 2)
+                {
+                    backend.Advance(2);
+                    int k = backend.ReadPieceEvents(since, buf);
+                    for (int i = 0; i < k; i++) { if (buf[i].Unit == arch && thrown == null) thrown = buf[i]; since = buf[i].Id; }
+                }
+            }
+            Assert.IsNotNull(thrown, "the archer threw a piece");
+            var e = thrown.Value;
+            Vector3 at = e.Pose.GetColumn(3);
+            Debug.Log($"piece: node {e.Piece} {e.How} at {at}, the archer at {fell}");
+            Assert.AreEqual(Unit("ARAARCH"), e.Def);
+            Assert.AreEqual(backend.LocalPlayer, e.Player);
+            Assert.AreNotEqual(PieceExplode.None, e.How);
+            Assert.Less(e.Piece, backend.GetModel(e.Model).Pieces.Length);
+            Assert.Less(Vector2.Distance(new Vector2(at.x, at.z), new Vector2(fell.x, fell.z)), 4f, "where the archer fell");
+        }
+
+        // A catapult's rock on the nearest scenery one rock destroys: the hit
+        // and the stage that takes its cell come back naming the rock's blast.
+        [Test, Order(10)]
+        public void ARockOnSceneryComesBackHitThenDead()
+        {
+            Assert.AreEqual(GameStatus.Running, backend.Status);
+            int def = backend.UnitDefs.First(d => string.Equals(d.Name, "ARAPULT", StringComparison.OrdinalIgnoreCase)).Id;
+            var w = backend.Weapon(def, 0);
+            int h = OkEngine.okx_place_unit(def, backend.LocalPlayer);
+            Assert.GreaterOrEqual(h, 0);
+            var us = new UnitState[1024];
+            var p = us.Take(backend.ReadUnits(us)).First(x => x.Handle == h);
+            var fs = new FeatureState[16384];
+            int nf = Mathf.Min(backend.ReadFeatures(fs), fs.Length);
+            FeatureState target = default;
+            float best = float.MaxValue;
+            for (int i = 0; i < nf; i++)
+            {
+                var d = backend.FeatureDefs[fs[i].Def];
+                float dist = Vector3.Distance(fs[i].Position, p.Position);
+                if (d.Breakable && d.DeadDef >= 0 && d.HitPoints <= w.Damage && dist > 10f && dist < best) { best = dist; target = fs[i]; }
+            }
+            Assert.Less(best, float.MaxValue, "breakable scenery near the start");
+            var buf = new FeatureEvent[256];
+            int since = 0;
+            for (int k; (k = backend.ReadFeatureEvents(since, buf)) > 0;) since = buf[k - 1].Id;
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.AttackGround, Unit = h, Target = target.Position, TargetUnit = -1, BuildDef = -1 }));
+            FeatureEvent? hit = null, dead = null;
+            int idx = target.Index;
+            var heard = new System.Text.StringBuilder();
+            // The catapult may walk into reach first.
+            for (int t = 0; t < 60 * 120 && dead == null; t += 2)
+            {
+                backend.Advance(2);
+                int k = backend.ReadFeatureEvents(since, buf);
+                for (int i = 0; i < k; i++)
+                {
+                    var e = buf[i];
+                    since = e.Id;
+                    if (e.Feature == idx)
+                    {
+                        heard.Append($"{e.Kind}@{e.Tick} ");
+                        if (e.Kind == FeatureEventKind.Hit && hit == null) hit = e;
+                        if (e.Kind == FeatureEventKind.Dead) dead = e;
+                        continue;
+                    }
+                    // A feature that goes below it moves its index down.
+                    bool gone = e.Kind == FeatureEventKind.Removed || e.Kind == FeatureEventKind.Swept ||
+                                (e.Kind == FeatureEventKind.Dead || e.Kind == FeatureEventKind.Burnt) && e.NewDef < 0;
+                    if (gone && e.Feature < idx) idx--;
+                }
+            }
+            Debug.Log($"scenery {backend.FeatureDefs[target.Def].Name} heard: {heard}");
+            Assert.IsNotNull(hit, "the rock hit it");
+            Assert.IsNotNull(dead, "it died into its stage");
+            Debug.Log($"scenery: {backend.FeatureDefs[target.Def].Name} {best:0.0} cells away, hit for {hit.Value.Damage}, " +
+                $"dead into {backend.FeatureDefs[dead.Value.NewDef].Name} after {dead.Value.Tick - hit.Value.Tick} ticks");
+            Assert.AreEqual(w.Damage, hit.Value.Damage);
+            Assert.AreEqual(0, hit.Value.Health);
+            Assert.Greater(hit.Value.Blast, 0);
+            Assert.AreEqual(hit.Value.Blast, dead.Value.Blast, "the stage names the same blast");
+            Assert.AreEqual(backend.FeatureDefs[target.Def].DeadDef, dead.Value.NewDef);
+            Assert.Less(Vector2.Distance(new Vector2(hit.Value.From.x, hit.Value.From.z), new Vector2(target.Position.x, target.Position.z)), 3f);
+        }
+
         // A ship the engine builds is drawn with its origin just under the
         // surface, and posed there too: the engine reports a floater at the
         // sea but poses it on the floor.

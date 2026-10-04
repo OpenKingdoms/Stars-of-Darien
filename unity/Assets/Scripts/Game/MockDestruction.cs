@@ -1,7 +1,7 @@
-// MockDestruction.cs - the mock's side of destruction as the engine will
-// report it: a blast for every shot, spell and death that bursts, pieces
-// thrown by dying units, and with SceneryBreaks on the original's rules for
-// scenery (hit points, dead stages, fire that spreads downwind) and its wind.
+// MockDestruction.cs - the mock's side of destruction as the engine
+// reports it: a blast for every shot, spell and death that bursts, pieces
+// thrown by dying units, and the original's rules for scenery (hit points,
+// dead stages, fire that spreads downwind) and its wind.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,8 +10,8 @@ namespace OpenKingdomsUnity.Game
     public sealed partial class MockBackend
     {
         // Blasts hurt, kill and burn scenery by the original's rules, and the
-        // wind blows. Off by default, as the engine has neither yet.
-        public bool SceneryBreaks;
+        // wind blows, as in the engine. Off keeps the scenery standing.
+        public bool SceneryBreaks = true;
         // The chance a flammable feature catches from a neighbour's sparks.
         public float SpreadChance = 0.4f;
         // How many of each kind of event the rings keep.

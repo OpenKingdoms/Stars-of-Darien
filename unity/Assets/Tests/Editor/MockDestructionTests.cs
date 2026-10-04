@@ -1,7 +1,7 @@
 // MockDestructionTests.cs - the mock reports destruction as the contract
 // says: a blast with its weapon for every shot that lands, pieces thrown by
-// the dying, and with SceneryBreaks on scenery that dies into its stages,
-// fire that spreads downwind, and a wind that turns.
+// the dying, scenery that dies into its stages, fire that spreads downwind,
+// and a wind that turns.
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
@@ -278,7 +278,8 @@ namespace OpenKingdomsUnity.Tests
         public void SceneryStandsUnlessItBreaks()
         {
             var b = Loaded();
-            Assert.IsFalse(b.SceneryBreaks, "off, as the engine is today");
+            Assert.IsTrue(b.SceneryBreaks, "on, as in the engine");
+            b.SceneryBreaks = false;
             Assert.AreEqual(0, FeatureEvents(b).Count, "the map's own scenery is no news");
             int events = Bare(b);
             int tree = Place(b, "mock_tree");
@@ -390,7 +391,8 @@ namespace OpenKingdomsUnity.Tests
         public void TheWindTurnsAtMostFortyFiveDegreesAtATime()
         {
             var b = Loaded(0f);
-            Assert.IsFalse(b.ReadWind(out _), "no wind until scenery breaks, as the engine has none yet");
+            b.SceneryBreaks = false;
+            Assert.IsFalse(b.ReadWind(out _), "no wind while the scenery stands");
             b.SceneryBreaks = true;
             Assert.IsTrue(b.ReadWind(out var wind));
             float last = wind.Heading;
