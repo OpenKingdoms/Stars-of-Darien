@@ -128,16 +128,31 @@ namespace OpenKingdomsUnity.Game.World
         public void Update(float simSeconds)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
+            int gcs = System.GC.CollectionCount(0);
             if (FxQuality.Current.Level != Level) Requalify(FxQuality.Current.Level);
             if (simSeconds < now) steppedAt = simSeconds;
             now = simSeconds;
             ReadBlasts();
+            double read = clock.Elapsed.TotalMilliseconds;
             StampSome();
+            double stamped = clock.Elapsed.TotalMilliseconds;
             ground?.StepRefine();
+            double refined = clock.Elapsed.TotalMilliseconds;
             StepFading();
             SetGlobals();
             LastMs = clock.Elapsed.TotalMilliseconds;
+            if (LastMs > WorstMs)
+            {
+                WorstMs = LastMs;
+                WorstParts = $"read {read:0.00} stamp {stamped - read:0.00} ({StampedLastFrame}) refine {refined - stamped:0.00} fade {LastMs - refined:0.00}" +
+                             (System.GC.CollectionCount(0) != gcs ? ", a collection ran" : "");
+            }
         }
+
+        // The slowest update so far and what it spent its time on, for tests.
+        public double WorstMs { get; private set; }
+        public string WorstParts { get; private set; } = "";
+        public void ResetWorst() { WorstMs = 0; WorstParts = ""; }
 
         void ReadBlasts()
         {
