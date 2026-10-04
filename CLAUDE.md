@@ -33,6 +33,8 @@ On Apple silicon, with Unity 6000.3.25f1 from Unity Hub and Xcode's command line
 - `bash scripts/build-engine-mac.sh` builds `libokengine.dylib` from an OpenKingdoms checkout of `unity-embed` (`~/dev/OpenKingdoms`, or set `OK_ENGINE_SRC`), with SDL2 built from source and linked in. It runs the engine's own `test_embed` and puts the library in the plugin folder, where Unity loads it after a restart. It needs cmake, and a Homebrew under `/usr/local` is kept out of the build.
 - `bash scripts/unity-test-mac.sh EditMode` runs one suite headless, and with no argument it runs both. Close the editor on the project first. Results and logs go to `~/unity-test`.
 - The game files are looked for in `~/Games/Total Annihilation Kingdoms`. OpenKingdoms, then Settings, in the editor picks another folder, and `OK_GAME_DIR` wins over both.
+- When the owner asks to catch up, or to get the latest, run `bash scripts/mac-catch-up.sh` in `~/dev/stars-of-darien` and report what it printed. It fast-forwards the checkout only when no tracked file has changes and puts the engine library `engine/VERSION` names into the plugin folder, from the commit or from GitHub's Mac build on the `mac-engine` branch. Never stash, reset or commit his changes to make it pull. Its log is `~/Library/Logs/stars-of-darien-catch-up.log`.
+- `bash scripts/mac-catch-up.sh install-auto` makes the Mac catch up by itself at login, on waking and when a network comes up, and `remove-auto` stops it. GitHub builds the Mac library for every engine published to main, so nothing needs building on the Mac. `engine/README.md` has the details.
 
 ## Where things are
 

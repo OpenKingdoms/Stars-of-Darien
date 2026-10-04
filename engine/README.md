@@ -28,7 +28,7 @@ Unity cannot unload a native library once it has used it. If a pull brings a new
 ## Publishing a new engine
 
 1. Build okengine as Release with `scripts/build-engine.sh`, or take a published build such as `D:\OKBuild\okengine-published`. A Debug build's version can't be read, and the script refuses it.
-2. Build the Mac library from the same unity-embed commit on a Mac with `scripts/build-engine-mac.sh`. It leaves `libokengine.dylib` and `VERSION-macos.txt` in `~/okbuild/embed-mac/publish`. Copy both beside `okengine.dll`.
+2. Leave the Mac library to GitHub, or build it from the same unity-embed commit on a Mac with `scripts/build-engine-mac.sh`, which leaves `libokengine.dylib` and `VERSION-macos.txt` in `~/okbuild/embed-mac/publish` to copy beside `okengine.dll`. The next section says what GitHub does.
 3. When the API changed, bump `OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs` to the engine's `OKX_API_VERSION`.
 4. Run `bash scripts/publish-engine.sh <folder>`. It needs Python on PATH. It checks the version of every library in the folder against the binding, writes them here as `okengine-api<N>.dll` with the `SDL2.dll` beside it and `okengine-api<N>.dylib`, removes the older ones and rewrites `VERSION`. A folder with only one of the two publishes that one and keeps the other.
 5. Commit this folder in the same commit as the binding change. The EditMode test `EngineInstallerTests` fails if a library here does not match the binding.
@@ -36,3 +36,23 @@ Unity cannot unload a native library once it has used it. If a pull brings a new
 A new build of the same API version needs no bump. Publish it the same way and every clone picks it up.
 
 When the API changes and no Mac build comes with it, the script removes the old Mac library, since it can't run with the new binding. A Mac then shows the stand-in world and says so in the editor until a Mac build of the new API is published, or until someone on that Mac builds one with `scripts/build-engine-mac.sh`.
+
+## The Mac library from GitHub
+
+A push to main that changes `VERSION` starts the Mac engine workflow, `.github/workflows/mac-engine.yml`. When the Mac library is not from the unity-embed commit `VERSION` names for the Windows one, the workflow checks that commit out on a GitHub Mac with Apple silicon and builds it with `scripts/build-engine-mac.sh`. It checks that `file` and `lipo` say arm64 and that the library exports every `okx_` function `OkEngine.cs` imports. Then it runs `scripts/publish-engine.sh` with the Mac library alone and pushes the result to the `mac-engine` branch, one commit on main that touches only `okengine-api<N>.dylib` and `VERSION`. The library is also kept as the run's artifact `okengine-macos-arm64-<commit>` for 90 days.
+
+Main is protected, so the commit lands through a pull request:
+
+```
+gh pr create -R OpenKingdoms/Stars-of-Darien --base main --head mac-engine --fill
+```
+
+It merges once model-check passes and a code owner approves, or with `gh pr merge <N> --squash --admin` from a maintainer. The merge changes `VERSION` again, and the workflow sees the Mac library already matches and builds nothing.
+
+To build on demand, for example after a failed run, run `gh workflow run mac-engine.yml -R OpenKingdoms/Stars-of-Darien`. Add `-f embed=<commit>` to build another unity-embed commit, which goes to the artifact only, or `-f force=true` to rebuild the one main already has.
+
+## A Mac catching up
+
+`bash scripts/mac-catch-up.sh` brings a Mac's checkout up to date. It fast-forwards the checkout from GitHub when no tracked file has changes, and leaves a checkout with changes, a merge or a rebase completely alone. Then it makes sure `unity/Assets/Plugins/macOS/libokengine.dylib` is the library from the unity-embed commit `VERSION` names. It takes the committed library when that one matches. While GitHub's build still waits on the `mac-engine` branch, it takes the library from that branch with plain git, and failing that from the run's artifact with `gh`. It installs the library the way `EngineInstaller` does, as a new file with its import settings and without the quarantine flag. A library the installer did not put there is kept under `unity/Library/OkEngine` first. A library taken from the branch or the artifact stays out of the installer's record, so the editor doesn't swap it back for the older committed one. It prints what it did and appends the same to `~/Library/Logs/stars-of-darien-catch-up.log`.
+
+`bash scripts/mac-catch-up.sh install-auto` installs a launchd agent, `~/Library/LaunchAgents/net.openkingdoms.stars-of-darien.catch-up.plist`, that runs the same catch-up at login, on the hour, on waking and whenever a network comes up. When it pulls or installs something it posts a notification. `bash scripts/mac-catch-up.sh remove-auto` removes the agent. `scripts/test-mac-catch-up.sh` tests the script against throwaway repositories, and the Mac engine workflow runs it on a GitHub Mac.

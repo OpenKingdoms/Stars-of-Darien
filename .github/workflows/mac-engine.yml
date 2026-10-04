@@ -1,0 +1,193 @@
+# Builds the engine for Macs with Apple silicon on a GitHub Mac whenever a
+# new engine reaches main, from the unity-embed commit engine/VERSION names
+# for the Windows library, so no Mac has to build it. The checked library
+# goes to the mac-engine branch as one commit that touches only the Mac
+# library and VERSION, ready for a pull request into main, and stays an
+# artifact for 90 days. scripts/mac-catch-up.sh on a Mac takes it from
+# either while main waits for it.
+name: Mac engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - engine/VERSION
+      - scripts/build-engine-mac.sh
+      - scripts/mac-catch-up.sh
+      - scripts/test-mac-catch-up.sh
+      - .github/workflows/mac-engine.yml
+  workflow_dispatch:
+    inputs:
+      embed:
+        description: The unity-embed commit to build, the one engine/VERSION names by default
+        required: false
+        default: ""
+      force:
+        description: Build even when main already has a Mac library of that commit
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-engine-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      embed: ${{ steps.plan.outputs.embed }}
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Decide what to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EMBED: ${{ inputs.embed }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          api=$(grep -o 'ApiVersion = [0-9]*' unity/Assets/Engine/OkEngine.cs | grep -o '[0-9]*$')
+          embed_of() { sed -n "s/^$1 .*unity-embed \([0-9a-f]\{7,40\}\).*/\1/p" engine/VERSION | head -1; }
+          full() { [ -z "$1" ] || gh api "repos/OpenKingdoms/OpenKingdoms/commits/$1" --jq .sha; }
+          named=$(embed_of "okengine-api$api\.dll")
+          mac=$(embed_of "okengine-api$api\.dylib")
+          want="${EMBED:-$named}"
+          [ -n "$want" ] || { echo "::error::engine/VERSION names no unity-embed commit for okengine-api$api.dll"; exit 1; }
+          embed=$(full "$want") || { echo "::error::unity-embed $want is not on GitHub"; exit 1; }
+          named_full=$(full "$named" || true)
+          mac_full=$(full "$mac" || true)
+          # Only a build of what main names goes to the mac-engine branch.
+          publish=false
+          [ "$embed" != "$named_full" ] || publish=true
+          build=true
+          if [ "$publish" = true ] && [ "$mac_full" = "$embed" ] && [ -f "engine/okengine-api$api.dylib" ] && [ "$FORCE" != true ]; then
+              build=false
+          fi
+          echo "binding API $api, Windows library from unity-embed ${named:-none}, Mac library from ${mac:-none}"
+          echo "build $embed: $build, publish to mac-engine: $publish"
+          { echo "embed=$embed"; echo "build=$build"; echo "publish=$publish"; } >> "$GITHUB_OUTPUT"
+          if [ "$build" = false ]; then
+              echo "Main's Mac library already comes from unity-embed ${embed:0:10}, so nothing was built." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      EMBED: ${{ needs.plan.outputs.embed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: sod
+
+      - uses: actions/checkout@v7
+        with:
+          repository: OpenKingdoms/OpenKingdoms
+          ref: ${{ needs.plan.outputs.embed }}
+          path: okengine
+          persist-credentials: false
+
+      - name: Build okengine for macOS arm64
+        env:
+          OK_ENGINE_SRC: ${{ github.workspace }}/okengine
+          OK_ENGINE_BUILD: ${{ runner.temp }}/embed-mac
+          OK_GAME_DIR: ${{ runner.temp }}/no-game
+          OK_MAC_ARCH: arm64
+        run: |
+          echo "runner: $(uname -m), $(sw_vers -productVersion), $(xcodebuild -version | head -1), $(cmake --version | head -1)"
+          bash sod/scripts/build-engine-mac.sh
+
+      - name: Check the library
+        run: |
+          lib="$RUNNER_TEMP/embed-mac/publish/libokengine.dylib"
+          cat "$RUNNER_TEMP/embed-mac/publish/VERSION-macos.txt"
+          info=$(file "$lib")
+          echo "$info"
+          case "$info" in *"Mach-O 64-bit dynamically linked shared library arm64"*) ;; *) echo "::error::not an arm64 library"; exit 1 ;; esac
+          archs=$(lipo -archs "$lib")
+          echo "lipo -archs: $archs"
+          [ "$archs" = arm64 ] || { echo "::error::lipo says $archs, not arm64 alone"; exit 1; }
+          otool -L "$lib"
+          echo "okx_api_version:"
+          otool -tvV -p _okx_api_version "$lib" | sed -n 2,4p
+          grep -oE 'extern [^(]* okx_[A-Za-z0-9_]+\(' sod/unity/Assets/Engine/OkEngine.cs | grep -oE 'okx_[A-Za-z0-9_]+' | sort -u > "$RUNNER_TEMP/imports.txt"
+          nm -gU "$lib" | awk '{ print $NF }' | sed -n 's/^_\(okx_.*\)/\1/p' | sort -u > "$RUNNER_TEMP/exports.txt"
+          echo "nm -gU, the okx_ exports:"
+          nm -gU "$lib" | grep ' _okx_'
+          missing=$(comm -23 "$RUNNER_TEMP/imports.txt" "$RUNNER_TEMP/exports.txt")
+          echo "The binding imports $(wc -l < "$RUNNER_TEMP/imports.txt" | tr -d ' ') okx_ functions and the library exports $(wc -l < "$RUNNER_TEMP/exports.txt" | tr -d ' ')."
+          if [ -n "$missing" ]; then
+              echo "::error::the library lacks functions the binding imports: $(echo $missing)"
+              exit 1
+          fi
+          shasum -a 256 "$lib"
+
+      - name: Keep the build logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: okengine-macos-logs
+          path: ${{ runner.temp }}/embed-mac/*.log
+          retention-days: 14
+
+      - name: Attach the library
+        id: artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: okengine-macos-arm64-${{ needs.plan.outputs.embed }}
+          path: |
+            ${{ runner.temp }}/embed-mac/publish/libokengine.dylib
+            ${{ runner.temp }}/embed-mac/publish/VERSION-macos.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Put it on the mac-engine branch
+        if: needs.plan.outputs.publish == 'true'
+        working-directory: sod
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          bash scripts/publish-engine.sh "$RUNNER_TEMP/embed-mac/publish"
+          other=$(git status --porcelain | grep -v -E '^.. engine/(okengine-api[0-9]+\.dylib|VERSION)$' || true)
+          [ -z "$other" ] || { echo "::error::publishing touched more than the Mac library: $other"; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A engine
+          git commit -q -m "Macs run the engine built from unity-embed ${EMBED:0:10}" \
+              -m "GitHub built okengine for macOS arm64 from OpenKingdoms unity-embed $EMBED, the commit engine/VERSION names for the Windows library, and checked it in $RUN_URL. Merging this brings every Mac the same engine with a git pull."
+          git push --force origin HEAD:refs/heads/mac-engine
+          base=$(git rev-parse --short HEAD~1)
+          {
+              echo "The Mac library from unity-embed ${EMBED:0:10} is on the [mac-engine branch](${{ github.server_url }}/${{ github.repository }}/tree/mac-engine), one commit on main $base that touches only engine/VERSION and the library."
+              echo ""
+              echo "Land it on main:"
+              echo ""
+              echo '```'
+              echo "gh pr create -R ${{ github.repository }} --base main --head mac-engine --fill"
+              echo '```'
+              echo ""
+              echo "Until it lands, scripts/mac-catch-up.sh on a Mac installs it from the branch."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  catch-up:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Test scripts/mac-catch-up.sh
+        run: bash scripts/test-mac-catch-up.sh
