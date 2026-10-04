@@ -2,7 +2,8 @@
 // Shift queues orders and shows their lines, a click beside a factory
 // sets its rally, the move pointer shows where the selection would walk,
 // build cards count by one and five and repeat, a frame takes only a
-// queue, and the menu and HUD buttons play the original's sounds.
+// queue, the menu and HUD buttons play the original's sounds, and a
+// summons is placed over a unit in both schemes.
 using System.Collections;
 using System.Linq;
 using NUnit.Framework;
@@ -326,6 +327,35 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsNotNull(move);
             move.onClick.Invoke();
             Assert.Contains("move.wav", mock.SoundsPlayed);
+        }
+
+        // The ghost of a unit to summon is green over a knight, and the
+        // placing click sends the order there, in either scheme.
+        [UnityTest]
+        public IEnumerator ASummonsIsPlacedOverAUnitInBothSchemes()
+        {
+            yield return Begin();
+            var monarch = Own(MockBackend.Role.Monarch);
+            var knight = Own(MockBackend.Role.Knight);
+            foreach (bool classic in new[] { true, false })
+            {
+                root.Orders.Classic = classic;
+                root.Orders.Selected.Clear();
+                if (!classic) root.Orders.Selected.Add(monarch.Handle);
+                mock.Select(new[] { monarch.Handle }, false);
+                yield return Look(knight.Position);
+                root.Orders.Arm(CommandKind.Build, knight.Def);
+                frame.Screen = Cam.WorldToScreenPoint(knight.Position);
+                yield return null;
+                yield return null;
+                Assert.IsTrue(root.Orders.GhostOk, "the ghost is green over the knight, classic " + classic);
+                yield return Click(knight.Position);
+                Assert.AreEqual(OrderKind.Build, mock.ReadOrder(monarch.Handle).Kind, "the monarch took the summons, classic " + classic);
+                Assert.IsTrue(mock.Command(GameCommand.To(CommandKind.Stop, monarch.Handle, Vector3.zero)));
+                mock.Advance(1);
+            }
+            root.Orders.Selected.Clear();
+            root.Orders.Classic = true;
         }
     }
 }

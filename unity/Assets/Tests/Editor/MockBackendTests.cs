@@ -32,6 +32,26 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(26, n, "each side starts with a lodge, a monarch, seven soldiers, a mage, a healer, a wagon and a flyer");
         }
 
+        // A unit a builder summons is placed over a unit standing there,
+        // as the engine's cursor lets it, where a lodge is not.
+        [Test]
+        public void ASummonsIsPlacedOverAUnitAndALodgeIsNot()
+        {
+            var b = Loaded();
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units);
+            UnitState knight = default, monarch = default;
+            for (int i = 0; i < n; i++)
+            {
+                if (units[i].Player != b.LocalPlayer) continue;
+                if (b.RoleOf(units[i].Def) == MockBackend.Role.Knight) knight = units[i];
+                if (b.RoleOf(units[i].Def) == MockBackend.Role.Monarch) monarch = units[i];
+            }
+            int lodge = System.Array.Find(b.UnitDefs[monarch.Def].BuildOptions, d => b.UnitDefs[d].IsBuilding);
+            Assert.IsTrue(b.CanBuildAt(knight.Def, knight.Position, 0, out _), "a knight is summoned where a knight stands");
+            Assert.IsFalse(b.CanBuildAt(lodge, knight.Position, 0, out _), "a lodge is not built on it");
+        }
+
         // Headings agree with the engine's: a building stands facing south,
         // 180, and so does a sprite feature, a picture facing the camera.
         [Test]
