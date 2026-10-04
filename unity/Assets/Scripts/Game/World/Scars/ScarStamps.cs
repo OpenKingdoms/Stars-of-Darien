@@ -169,7 +169,7 @@ namespace OpenKingdomsUnity.Game.World
                     s.Reach = Mathf.Max(r, 1f) * 1.1f; s.Frost = FrostSeconds; s.Crack = 0.6f;
                     break;
                 case ScarKind.Dark:
-                    s.Reach = Mathf.Max(r, 1.2f) * 1.2f; s.Blight = 0.9f;
+                    s.Reach = Mathf.Max(r, 2f) * 1.5f; s.Blight = 0.9f;
                     break;
                 case ScarKind.Water:
                     s.Reach = Mathf.Max(r, 1f) * 1.3f; s.Wet = WetSeconds;

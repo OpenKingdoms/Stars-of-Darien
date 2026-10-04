@@ -161,7 +161,7 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
 
     // Blight withers what grows, grey and faintly violet.
     half3 withered = lerp(half3(lum, lum, lum), c, 0.15) * half3(0.78, 0.72, 0.84);
-    c = lerp(c, withered, s.marks.b * lerp(0.55, 1, green));
+    c = lerp(c, withered, OkuScarCrisp(s.marks.b, grain, 0.35, 0.6) * lerp(0.6, 1, green));
 
     // Char, black soot while it is fresh, settling to dark burnt soil, with
     // embers glowing in spots while it is hot.
@@ -188,7 +188,7 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     gloss = lerp(gloss, 0.55, frost);
 
     // Wet ground, darker and glossy until it dries.
-    half wet = saturate(s.left.y / 20);
+    half wet = smoothstep(0, 30, s.left.y) * (0.8 + 0.4 * grain);
     c *= lerp(1, 0.5, wet);
     gloss = lerp(gloss, 0.75, wet);
 
