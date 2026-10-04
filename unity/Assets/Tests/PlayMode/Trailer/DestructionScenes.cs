@@ -24,6 +24,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             ("census", d => d.Census()),
             ("forest-fire", d => d.ForestFire(ForestMap, WeatherChoice.Off, "fire")),
             ("siege", d => d.Siege()),
+            ("siege-ruins", d => d.SiegeRuins()),
             ("creon-ruins", d => d.CreonRuins()),
             ("spells", d => d.Spells()),
             ("dragon-breath", d => d.DragonBreath()),
@@ -31,17 +32,12 @@ namespace OpenKingdomsUnity.Tests.Trailer
             ("rain", d => d.ForestFire(RainMap, WeatherChoice.Rain, "rain")),
             ("snow", d => d.Snow()),
             ("perf-ulasem", d => d.Perf("ulasem arena")),
-            ("perf-forest", d => d.Perf(BigForestMap)),
+            ("perf-forest", d => d.Perf(ForestMap)),
         };
 
-        // The maps, chosen from the census and the maps' own feature layers:
-        // the densest grass forest, a swamp forest for the rain, the most
-        // walled town, a dark volcanic forest for dragon fire, trees and
-        // walls together for the spells and the snow, and open fields.
-        // No skirmish map holds Creon scenery, so the Creon town is placed.
-        public const string ForestMap = "brandon's woods", RainMap = "thorn boscage", SiegeMap = "alchemist glen",
-            CreonMap = "edmont's field", SpellMap = "neegam's pass", CraterMap = "edmont's field", SnowMap = "neegam's pass",
-            DragonMap = "black forest", BigForestMap = "into the woods";
+        // The maps, chosen from the census.
+        public const string ForestMap = "into the woods", RainMap = "evergreen ridge", SiegeMap = "walls of carin vel",
+            CreonMap = "lieber's project", SpellMap = "evergreen ridge", CraterMap = "edmont's field", SnowMap = "icy peaks";
 
         public EffectsQuality Quality = EffectsQuality.High;
 
@@ -297,8 +293,11 @@ namespace OpenKingdomsUnity.Tests.Trailer
         IEnumerator ForestFire(string map, WeatherChoice weather, string name)
         {
             Patch forest = default;
-            yield return BattleNear(map, weather, "TAROS", "ARAMON", d => IsTree(d) && d.Flammable, 20f, p => forest = p);
+            yield return BattleNear(map, weather, "TAROS", "ARAMON", d => IsTree(d) && d.Flammable, 32f, p => forest = p);
             StartWatch(name);
+            // The wood at peace before anyone comes.
+            var calm = Sunny(forest.At, 46f, 16f, name + " calm", forest.At);
+            yield return Shot($"{name}-calm", 6f, TrailerKit.Move(calm, Toward(calm, 0.9f, 3f)));
             int me = PlayerOf(0);
             var army = Army(me, ("TARMAGE", 4), ("TARFIRE", 2), ("TARARCH", 6));
             yield return FastForward(30);
@@ -313,7 +312,10 @@ namespace OpenKingdomsUnity.Tests.Trailer
             // The shot opens on the first volley.
             for (int t = 0; t < B.TicksPerSecond * 30 && Seen(FeatureEventKind.Burning) == 0; t += 5) yield return FastForward(5, 5);
             yield return Shot($"{name}-catch", 8f, TrailerKit.Move(catchPose, Toward(catchPose, 0.85f, 4f)));
-            Halt(army);
+            // More of the wood lit at once, so it burns wide even where fire does not spread on its own.
+            var stand = forest.Members.OrderBy(f => (f.Position - stood).sqrMagnitude).ToList();
+            for (int i = 0; i < army.Count && stand.Count > 0; i++)
+                B.Command(GameCommand.To(CommandKind.AttackGround, army[i], stand[(i * 3) % stand.Count].Position));
             Note($"{name}: {Seen(FeatureEventKind.Burning)} caught after the first shot, {Root.World.Fire.Burning} burning");
             // It spreads on its own.
             yield return FastForward(B.TicksPerSecond * 18);
@@ -323,6 +325,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             var across = Across(wind);
             var widePose = BestPose(front, 62f, 34f, across, 6f, true, name + " spread", front);
             yield return Shot($"{name}-spread", 10f, TrailerKit.Move(widePose, Toward(widePose, 0.9f, 3f)));
+            Halt(army);
             Note($"{name}: {Seen(FeatureEventKind.Burning)} caught, {Root.World.Fire.Burning} burning in {Root.World.Fire.Patches} patches");
             // What fire leaves: char and the burnt stages.
             yield return Until(FeatureEventKind.Burnt, 6, B.TicksPerSecond * 90, 30);
@@ -342,7 +345,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
         IEnumerator Siege()
         {
             Patch walls = default;
-            yield return BattleNear(SiegeMap, WeatherChoice.Off, "ARAMON", "TAROS", IsWall, 24f, p => walls = p);
+            yield return BattleNear(SiegeMap, WeatherChoice.Off, "ARAMON", "TAROS", d => IsWall(d) || IsHouse(d), 40f, p => walls = p);
             StartWatch("siege");
             if (walls.Count == 0) { Note("siege: no walls"); EndWatch(); yield break; }
             int me = PlayerOf(0);
@@ -353,6 +356,9 @@ namespace OpenKingdomsUnity.Tests.Trailer
             var target = walls.Members.OrderBy(f => (f.Position - home).sqrMagnitude).First();
             var wall = target.Position;
             Note($"siege: {walls.Count} walls, first {FDef(target.Def).Name} at {wall}");
+            // The walls standing, before the guns come up.
+            var calm = Sunny(walls.At, 48f, 18f, "siege calm", walls.At);
+            yield return Shot("siege-calm", 6f, TrailerKit.Move(calm, Toward(calm, 0.9f, 3f)));
             Vector3 stood = default;
             yield return StageBefore(army, wall, 26f, s => stood = s);
             var side = Vector3.Cross(Vector3.up, (wall - stood).normalized);
@@ -376,64 +382,61 @@ namespace OpenKingdomsUnity.Tests.Trailer
             EndWatch();
         }
 
+        // The whole village under the guns at once, then its ruins from above
+        // and the smoke drifting off them.
+        IEnumerator SiegeRuins()
+        {
+            Patch village = default;
+            yield return BattleNear(SiegeMap, WeatherChoice.Off, "ARAMON", "TAROS", d => IsWall(d) || IsHouse(d), 40f, p => village = p);
+            StartWatch("siege-ruins");
+            if (village.Count == 0) { Note("siege-ruins: no village"); EndWatch(); yield break; }
+            int me = PlayerOf(0);
+            var army = Army(me, ("ARAPULT", 3), ("ARATRE", 2), ("ARACAN", 6), ("VERMORT", 2), ("VERBAL", 2));
+            yield return FastForward(30);
+            Vector3 stood = default;
+            yield return StageBefore(army, village.At, 30f, s => stood = s);
+            var homes = Densest(IsHouse, 48f, village.At, 90f).Members.Select(f => f.Position).ToList();
+            if (homes.Count == 0) homes.Add(village.At);
+            Note($"siege-ruins: {homes.Count} houses under the guns");
+            for (int i = 0; i < army.Count; i++)
+                B.Command(GameCommand.To(CommandKind.AttackGround, army[i], homes[i % homes.Count]));
+            var bpose = Sunny(village.At, 34f, 22f, "siege barrage", village.At);
+            yield return Shot("siege-barrage", 10f, TrailerKit.Move(bpose, Toward(bpose, 0.88f, 3f)));
+            yield return FastForward(B.TicksPerSecond * 20);
+            var rpose = Sunny(village.At, 56f, 32f, "siege ruins", village.At);
+            yield return Shot("siege-ruins", 9f, TrailerKit.Move(rpose, Toward(rpose, 0.9f, 3f)));
+            Halt(army);
+            yield return FastForward(B.TicksPerSecond * 6);
+            var apose = Sunny(village.At, 40f, 24f, "siege smoke", village.At);
+            yield return Shot("siege-smoke", 7f, TrailerKit.Move(apose, Toward(apose, 0.92f, -3f)));
+            EndWatch();
+        }
+
         // ---- Creon's town ----
 
-        // A Creon town set down on open ground, as no skirmish map has one,
-        // then shelled and burnt: most of its stages have no model of their
-        // own yet and are drawn from what stood before them.
+        // A Creon town falls, most of its stages drawn from what stood before
+        // them until their own models are made.
         IEnumerator CreonRuins()
         {
-            Root.Options.EffectsQuality = Quality;
-            yield return Battle(CreonMap, WeatherChoice.Off, 60000, Seat.You("CREON", 0), Seat.Ai("TAROS", 1, FarStart(CreonMap, 0)));
+            Patch town = default;
+            yield return BattleNear(CreonMap, WeatherChoice.Off, "CREON", "TAROS", IsCreon, 28f, p => town = p);
             StartWatch("creon-ruins");
+            if (town.Count == 0) { Note("creon-ruins: no Creon scenery"); EndWatch(); yield break; }
             int me = PlayerOf(0);
-            var defs = B.FeatureDefs;
-            var stage = new bool[defs.Count];
-            foreach (var d in defs)
-            {
-                if (d.DeadDef >= 0 && d.DeadDef < stage.Length) stage[d.DeadDef] = true;
-                if (d.BurntDef >= 0 && d.BurntDef < stage.Length) stage[d.BurntDef] = true;
-            }
-            var kinds = defs.Where(d => IsCreon(d) && !stage[d.Id] && (d.DeadDef >= 0 || d.BurntDef >= 0)).OrderBy(d => d.Name).ToList();
-            var site = FlatGround(Vector3.Lerp(Start(0), MapCentre, 0.4f), 24f, 16f);
-            float cell = B.Terrain != null ? B.Terrain.CellSize : 1f;
-            var town = new List<Vector3>();
-            const int perRow = 7;
-            for (int k = 0; k < kinds.Count; k++)
-            {
-                var d = kinds[k];
-                float step = 5.5f;
-                var at = site + new Vector3((k % perRow - (perRow - 1) * 0.5f) * step, 0f, (k / perRow - 1.5f) * step);
-                int idx = B.PlaceFeature(d.Id, Mathf.RoundToInt(at.x / cell), Mathf.RoundToInt(-at.z / cell));
-                if (idx >= 0) town.Add(Ground(at.x, at.z));
-                else Note($"creon-ruins: {d.Name} would not stand at {at}");
-            }
-            Note($"creon-ruins: {town.Count} of {kinds.Count} Creon kinds set down round {site}: {string.Join(" ", kinds.Select(d => d.Name))}");
-            if (town.Count == 0) { EndWatch(); yield break; }
-            // Their splits are made in the background before the guns open.
-            yield return FastForward(B.TicksPerSecond * 4, 20);
-            var centre = Ground(town.Average(p => p.x), town.Average(p => p.z));
             var army = Army(me, ("CRETORT", 3), ("ARACAN", 8), ("ARAPULT", 2), ("CREFIRE", 2));
             yield return FastForward(30);
             Vector3 stood = default;
-            yield return StageBefore(army, centre, 28f, s2 => stood = s2);
-            var pose = Sunny(centre, 40f, 26f, "creon town", centre);
+            yield return StageBefore(army, town.At, 26f, s => stood = s);
+            var pose = Sunny(town.At, 36f, 24f, "creon town", town.At);
             // Each gun on its own building, house, tree or fence.
-            var targets = town.OrderBy(p => (p - stood).sqrMagnitude).ToList();
-            for (int i = 0; i < army.Count; i++)
-                B.Command(GameCommand.To(CommandKind.AttackGround, army[i], targets[i % targets.Count]));
+            var targets = town.Members.OrderBy(f => (f.Position - stood).sqrMagnitude).Take(army.Count).ToList();
+            for (int i = 0; i < army.Count && targets.Count > 0; i++)
+                B.Command(GameCommand.To(CommandKind.AttackGround, army[i], targets[i % targets.Count].Position));
             yield return Shot("creon-ruins", 12f, TrailerKit.Move(pose, Toward(pose, 0.88f, 4f)));
-            // On to the rest, until most have fallen.
-            for (int round = 0; round < 4; round++)
-            {
-                for (int i = 0; i < army.Count; i++)
-                    B.Command(GameCommand.To(CommandKind.AttackGround, army[i], targets[(i + round * army.Count) % targets.Count]));
-                yield return FastForward(B.TicksPerSecond * 8);
-            }
-            Halt(army);
-            yield return FastForward(B.TicksPerSecond * 6);
-            var after = Sunny(centre, 30f, 32f, "creon after", centre);
+            yield return FastForward(B.TicksPerSecond * 20);
+            var after = Sunny(town.At, 26f, 30f, "creon after", town.At);
             yield return Shot("creon-after", 6f, TrailerKit.Move(after, Toward(after, 0.9f, -3f)));
+            Halt(army);
             EndWatch();
         }
 
@@ -444,10 +447,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             (BlastKind.Frost, "frost", new[] { "ARAPRIES", "TARWITCH", "CREGOD" }),
             (BlastKind.Dark, "dark", new[] { "TARGOD", "TARLICH" }),
             (BlastKind.Lightning, "lightning", new[] { "ZONSHAM", "TARWITCH", "ARAKING", "CREPRIS" }),
-            (BlastKind.Holy, "holy", new[] { "VERLIHR", "ARAPRIES", "ARAGOD", "VERGOD" }),
             (BlastKind.Earth, "earth", new[] { "ARAGOD", "ARAPRIES", "CREGOD" }),
-            (BlastKind.Water, "water", new[] { "VERMAGE", "VERDRAG", "VERGOD" }),
-            (BlastKind.Wind, "wind", new[] { "TARWITCH" }),
         };
 
         // Each side's magic on a wood, one kind at a time, each on its own trees.
@@ -499,7 +499,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
         IEnumerator DragonBreath()
         {
             Patch wood = default;
-            yield return BattleNear(DragonMap, WeatherChoice.Off, "TAROS", "VERUNA", d => IsTree(d) && d.Flammable, 20f, p => wood = p);
+            yield return BattleNear(ForestMap, WeatherChoice.Off, "TAROS", "VERUNA", d => IsTree(d) && d.Flammable, 20f, p => wood = p);
             StartWatch("dragon-breath");
             int me = PlayerOf(0);
             var dragons = Army(me, ("TARDRAG", 2), ("ARADRAG", 1), ("ZONDRAG", 1), ("CREDRAG", 1), ("VERDRAG", 1));
