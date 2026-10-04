@@ -199,9 +199,12 @@ namespace OpenKingdomsUnity.Game.World
         // Regions the scar map dents, rebuilt near with factor times their
         // samples on a worker and drawn with a material that dips by it.
         readonly Dictionary<(int, int), int> refined = new Dictionary<(int, int), int>();
-        readonly List<(int rx, int ry, int factor, System.Threading.Tasks.Task<TerrainMeshData> job)> refining =
-            new List<(int, int, int, System.Threading.Tasks.Task<TerrainMeshData>)>();
+        readonly List<(int rx, int ry, int factor, System.Threading.Tasks.Task<GroundBuffers> job)> refining =
+            new List<(int, int, int, System.Threading.Tasks.Task<GroundBuffers>)>();
+        readonly Queue<(int rx, int ry, int factor)> toRefine = new Queue<(int, int, int)>();
         readonly HashSet<(int, int)> dented = new HashSet<(int, int)>();
+        // Regions built at once, so the workers leave the game its cores.
+        const int RefiningAtOnce = 2;
         public int RefinedRegions => dented.Count;
 
         public int RefinedFactor(int rx, int ry) => refined.TryGetValue((rx, ry), out int f) ? f : 1;
@@ -211,14 +214,20 @@ namespace OpenKingdomsUnity.Game.World
             if (regions == null || factor <= 1 || rx < 0 || ry < 0 || rx >= regions.GetLength(0) || ry >= regions.GetLength(1)) return;
             if (refined.TryGetValue((rx, ry), out int f) && f >= factor) return;
             refined[(rx, ry)] = factor;
-            var t = backend.Terrain;
-            refining.Add((rx, ry, factor, System.Threading.Tasks.Task.Run(() => TerrainBuilder.Refined(t, rx, ry, factor))));
+            toRefine.Enqueue((rx, ry, factor));
         }
 
         // Puts at most one finished region in place. Returns how many are
         // still being built.
         public int StepRefine()
         {
+            var t = backend.Terrain;
+            while (refining.Count < RefiningAtOnce && toRefine.Count > 0)
+            {
+                var (rx, ry, factor) = toRefine.Dequeue();
+                // Room in its bounds for the deepest dip and the highest rim.
+                refining.Add((rx, ry, factor, System.Threading.Tasks.Task.Run(() => GroundBuffers.From(TerrainBuilder.Refined(t, rx, ry, factor), 1f, 1f))));
+            }
             for (int i = 0; i < refining.Count; i++)
             {
                 var (rx, ry, factor, job) = refining[i];
@@ -228,21 +237,17 @@ namespace OpenKingdomsUnity.Game.World
                     PutRefined(rx, ry, job.Result);
                 break;
             }
-            return refining.Count;
+            return refining.Count + toRefine.Count;
         }
 
-        void PutRefined(int rx, int ry, TerrainMeshData data)
+        void PutRefined(int rx, int ry, GroundBuffers data)
         {
             var region = regions[rx, ry];
             var near = region != null ? region.transform.Find("LOD0") : null;
             if (near == null || !regionOwned.TryGetValue(region, out var mine)) return;
             var filter = near.GetComponent<MeshFilter>();
             var renderer = near.GetComponent<MeshRenderer>();
-            var mesh = TerrainBuilder.ToMesh(data, $"terrain dented {rx},{ry}", new List<int> { -1 }, false);
-            // Room for the deepest dip and the highest rim.
-            var b = mesh.bounds;
-            b.Expand(new Vector3(0f, 2f, 0f));
-            mesh.bounds = b;
+            var mesh = data.ToMesh($"terrain dented {rx},{ry}");
             mine.Add(mesh);
             var old = filter.sharedMesh;
             filter.sharedMesh = mesh;
@@ -409,6 +414,7 @@ namespace OpenKingdomsUnity.Game.World
             Regions = 0;
             refined.Clear();
             refining.Clear();
+            toRefine.Clear();
             dented.Clear();
         }
     }

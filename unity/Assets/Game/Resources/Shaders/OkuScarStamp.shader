@@ -121,7 +121,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
         // How far p lies across a swath, 0 on its line and 1 at its edge.
         float Across(float2 p, float halfWidth, float len)
         {
-            float2 q = float2(p.x, clamp(p.y, -len, 0));
+            float2 q = float2(0, clamp(p.y, -len, 0));
             return distance(p, q) / max(halfWidth, 1e-3);
         }
 
@@ -140,7 +140,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
                 if (i.a.z <= 0) return 1 - smoothstep(0.4, 1.0, r / reach + ragged * 0.6);
                 float x = r / dent;
                 float spread = kind == K_IMPACT ? 1.45 : 1.2;
-                float core = 1 - smoothstep(0.7, spread, x + ragged * 0.6);
+                float core = 1 - smoothstep(0.45, spread - 0.15, x + ragged * 0.6);
                 float streaks = smoothstep(0.5, 0.8, Rays(atan2(p.y, p.x), seed, 1.6)) * (1 - smoothstep(1.0, 2.0, x + ragged));
                 return max(core, streaks * 0.45);
             }
@@ -152,10 +152,9 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
             }
             if (kind == K_LIGHTNING)
             {
-                float fork = Fork(p, reach, seed, max(0.09, _TexelUnits * 0.9));
-                float star = 1 - smoothstep(0.12, 0.5, r);
-                float halo = 0.35 * (1 - smoothstep(0.2, 0.8, r / reach + ragged * 0.3));
-                return max(max(fork, star), halo);
+                float fork = Fork(p, reach, seed, max(0.09, _TexelUnits * 0.7));
+                float star = 1 - smoothstep(0.1, 0.4, r + ragged * 0.2);
+                return max(fork, star);
             }
             return 0;
         }
@@ -173,15 +172,16 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
                 float dent = max(i.a.z, 1e-3);
                 float x = r / dent, outer = reach / dent;
                 float inner = i.a.z > 0 ? 1 - smoothstep(1.1, 1.55, x + ragged * 0.5) : 1 - smoothstep(0.4, 1.0, r / reach + ragged * 0.5);
-                float rays = smoothstep(0.45, 0.8, Rays(atan2(p.y, p.x), seed + 4.1, kind == K_SIEGE ? 1.1 : 1.8));
-                float clods = smoothstep(0.35, 0.6, Noise(p * 3.1 + seed * 2.3));
-                float thrown = i.a.z > 0 ? rays * clods * (1 - smoothstep(1.2, outer, x + ragged)) : 0;
-                soil = i.c.y * max(inner, thrown * 0.85);
+                // Earth flung out in rays past the rim, in clods.
+                float rays = smoothstep(0.38, 0.72, Rays(atan2(p.y, p.x), seed + 4.1, kind == K_SIEGE ? 1.1 : 1.8));
+                float clods = 0.55 + 0.45 * smoothstep(0.3, 0.65, Noise(p * 3.1 + seed * 2.3));
+                float thrown = i.a.z > 0 ? rays * clods * (1 - smoothstep(1.3, outer, x + ragged * 0.6)) : 0;
+                soil = i.c.y * max(inner, thrown);
                 if (kind == K_SIEGE) stone = i.b.w * (1 - smoothstep(0.5, outer, x + ragged)) * smoothstep(0.3, 0.55, Noise(p * 1.9 + seed));
             }
             else if (kind == K_EARTH)
             {
-                soil = i.c.y * Fissures(p, reach, seed, 0.45);
+                soil = i.c.y * Fissures(p, reach, seed, 0.6);
             }
             else if (kind == K_DUST)
             {
@@ -209,7 +209,7 @@ Shader "Hidden/OpenKingdoms/ScarStamp"
                 rim = i.b.y * RimAt(x, atan2(p.y, p.x), seed);
             }
             if (kind == K_FROST) crack = i.b.z * (1 - smoothstep(0.35, 0.75, r / reach + (Fbm(p * 1.3 + seed) - 0.47) * 0.4));
-            if (kind == K_EARTH) crack = i.b.z * Fissures(p, reach, seed, 0.3);
+            if (kind == K_EARTH) crack = i.b.z * Fissures(p, reach, seed, 0.5);
             return saturate(float4(depth, rim, crack * Outer(i, p), 0));
         }
 

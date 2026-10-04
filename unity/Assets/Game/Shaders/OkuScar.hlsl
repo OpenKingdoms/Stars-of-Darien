@@ -53,6 +53,15 @@ float OkuScarNoise(float2 p)
     return lerp(lerp(OkuScarHash(i), OkuScarHash(i + float2(1, 0)), f.x), lerp(OkuScarHash(i + float2(0, 1)), OkuScarHash(i + 1), f.x), f.y);
 }
 
+// A smooth mark made crisp: its middle value becomes an edge broken by
+// noise, so marks read sharp up close though the map's texels are not.
+half OkuScarCrisp(half v, half n, half middle, half breakup)
+{
+    return saturate((v - middle + (n - 0.5) * breakup) * 2.6 + 0.5) * step(0.02, v);
+}
+
+half OkuScarCrisp(half v, half n) { return OkuScarCrisp(v, n, 0.45, 0.5); }
+
 struct OkuScarHere
 {
     float4 marks;   // char, soil, blight, stone
@@ -118,13 +127,23 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     half snowy = max(_OkuScarSnow.w * 0.5, smoothstep(0.3, 0.55, lum) * (1 - smoothstep(0.1, 0.28, sat)));
     half green = saturate((c.g - max(c.r, c.b)) / max(mx, 0.001) * 4);
     half grain = lerp(0.5, OkuScarNoise(p.xz * 3.1) * 0.6 + OkuScarNoise(p.xz * 9.7) * 0.4, near);
+    half fine = lerp(0.5, OkuScarNoise(p.xz * 17.3 + 4.1), near);
 
     // Earth dug and thrown: the climate's soil tinted by the ground, slush on snow.
     half3 soil = lerp(_OkuScarSoil.rgb, c * 0.55, 0.25);
     soil = lerp(soil, _OkuScarSnow.rgb, snowy * 0.7);
     half dug = s.shape.r;
-    c = lerp(c, soil * (0.75 + 0.5 * grain), s.marks.g * 0.9);
+    c = lerp(c, soil * (0.7 + 0.6 * fine), OkuScarCrisp(s.marks.g, grain) * 0.92);
     c *= 1 - saturate(dug * 1.5) * 0.3;
+    // Dug earth is rough, its clods catching the light up close.
+    half rough = OkuScarCrisp(s.marks.g, grain) * near;
+    if (rough > 0)
+    {
+        float2 q = p.xz * 9;
+        half gx = OkuScarNoise(q + float2(0.07, 0)) - OkuScarNoise(q - float2(0.07, 0));
+        half gz = OkuScarNoise(q + float2(0, 0.07)) - OkuScarNoise(q - float2(0, 0.07));
+        n = normalize(n - half3(gx, 0, gz) * 3 * rough);
+    }
     half pool = _OkuScarSoil.w * saturate(dug * 4);
     c *= 1 - pool * 0.45;
     gloss = lerp(gloss, 0.8, pool);
@@ -144,13 +163,16 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     half3 withered = lerp(half3(lum, lum, lum), c, 0.15) * half3(0.78, 0.72, 0.84);
     c = lerp(c, withered, s.marks.b * lerp(0.55, 1, green));
 
-    // Char, black soot while it is fresh, settling to dark burnt soil.
-    half3 charred = lerp(soil * 0.35, half3(0.013, 0.010, 0.008), 0.5) * (0.8 + 0.4 * grain);
-    c = lerp(c, charred, s.marks.r * 0.92);
+    // Char, black soot while it is fresh, settling to dark burnt soil, with
+    // embers glowing in spots while it is hot.
+    // Char keeps a lower edge, so a lightning fork's thin lines hold together.
+    half burnt = OkuScarCrisp(s.marks.r, 1 - grain, 0.28, 0.3);
+    half3 charred = lerp(soil * 0.3, half3(0.013, 0.010, 0.008), 0.6) * (0.75 + 0.5 * fine);
+    c = lerp(c, charred, burnt * 0.94);
     half fresh = saturate(s.left.w / 20);
-    c = lerp(c, half3(0.005, 0.0045, 0.004), fresh * s.marks.r * 0.8);
-    half glow = pow(saturate(s.left.w / 25), 3) * 2.5 + saturate(s.left.w / 3) * 0.15;
-    emit += half3(1.0, 0.32, 0.06) * glow * saturate(s.marks.r * 2) * (0.4 + 0.6 * grain);
+    c = lerp(c, half3(0.005, 0.0045, 0.004), fresh * burnt * 0.8);
+    half embers = smoothstep(0.62, 0.9, fine * 0.6 + grain * 0.4) * burnt;
+    emit += half3(1.0, 0.3, 0.05) * fresh * fresh * embers * 1.6;
 
     // Cracks: the edges of a coarse grid of cells, where the cracks reach.
     if (s.shape.b > 0.02 && near > 0)
@@ -161,9 +183,8 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     }
 
     // Rime, bright and icy, melting from its edges as its seconds run out.
-    half frost = saturate(s.left.x / 12);
-    frost *= smoothstep(0.15, 0.45, grain + frost * 0.6);
-    c = lerp(c, half3(0.68, 0.77, 0.87) * (0.85 + 0.3 * grain), frost * 0.9);
+    half frost = OkuScarCrisp(saturate(s.left.x / 12), fine * 0.6 + grain * 0.4);
+    c = lerp(c, half3(0.62, 0.72, 0.84) * (0.7 + 0.6 * fine), frost * (0.75 + 0.2 * grain));
     gloss = lerp(gloss, 0.55, frost);
 
     // Wet ground, darker and glossy until it dries.

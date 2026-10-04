@@ -300,14 +300,14 @@ namespace OpenKingdomsUnity.Game.World
         // then dug snow, and 1 where snow covers the map.
         static (Vector4 soil, Vector4 snow) Palette(string climate)
         {
-            var slush = new Vector4(0.17f, 0.15f, 0.13f, 0f);
+            var slush = new Vector4(0.2f, 0.18f, 0.16f, 0f);
             switch (climate)
             {
-                case "desert": return (new Vector4(0.36f, 0.22f, 0.10f, 0f), slush);
-                case "snow": return (new Vector4(0.06f, 0.042f, 0.03f, 0f), new Vector4(0.17f, 0.15f, 0.13f, 1f));
-                case "swamp": return (new Vector4(0.028f, 0.022f, 0.012f, 0.8f), slush);
-                case "volcanic": return (new Vector4(0.045f, 0.04f, 0.036f, 0f), slush);
-                default: return (new Vector4(0.09f, 0.05f, 0.022f, 0f), slush);
+                case "desert": return (new Vector4(0.42f, 0.28f, 0.14f, 0f), slush);
+                case "snow": return (new Vector4(0.07f, 0.05f, 0.035f, 0f), new Vector4(0.2f, 0.18f, 0.16f, 1f));
+                case "swamp": return (new Vector4(0.035f, 0.028f, 0.016f, 0.8f), slush);
+                case "volcanic": return (new Vector4(0.06f, 0.055f, 0.05f, 0f), slush);
+                default: return (new Vector4(0.15f, 0.09f, 0.045f, 0f), slush);
             }
         }
     }

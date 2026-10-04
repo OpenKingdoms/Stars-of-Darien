@@ -45,7 +45,7 @@ namespace OpenKingdomsUnity.Tests
             File.WriteAllLines(Path.Combine(dir, "log.txt"), log);
         }
 
-        IEnumerator Boot(string map, EffectsQuality level = EffectsQuality.High, int extra = 0)
+        IEnumerator Boot(string map, EffectsQuality level = EffectsQuality.High, int extra = 0, int seats = 0)
         {
             if (root != null) { Object.Destroy(root.gameObject); root = null; yield return null; yield return null; }
             mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f, ExtraSoldiers = extra };
@@ -56,6 +56,8 @@ namespace OpenKingdomsUnity.Tests
             root.Options.EffectsQuality = level;
             root.Flow.Fire(FlowEvent.OpenSkirmish);
             root.Setup.MapId = map;
+            while (root.Setup.Seats.Count < seats)
+                root.Setup.Seats.Add(new SeatSetup { Kind = SeatKind.Computer, Side = "", Colour = root.Setup.Seats.Count, Team = root.Setup.Seats.Count });
             root.Setup.Seed = 7;
             root.Setup.LineOfSight = false;
             root.Setup.MapRevealed = true;
@@ -149,13 +151,13 @@ namespace OpenKingdomsUnity.Tests
             for (int second = 0; second < 180; second++)
             {
                 if (second % 30 == 0) mock.StageFx(rows[second / 30 % rows.Length], 2.5f);
-                for (int v = 0; v < 3; v++)
+                for (int v = 0; v < 2; v++)
                 {
                     float pick = (float)rng.NextDouble(), sum = 0f;
                     var k = kinds[0];
                     foreach (var row in kinds) { sum += row.share; if (pick <= sum) { k = row; break; } }
                     float x = size.x * (0.18f + 0.64f * (float)rng.NextDouble());
-                    float z = mid.z + Gauss(rng) * 7f + (k.kind == ScarKind.Siege || k.kind == ScarKind.Impact ? 4f : 0f);
+                    float z = mid.z + Gauss(rng) * 10f + (k.kind == ScarKind.Siege || k.kind == ScarKind.Impact ? 5f : 0f);
                     var dir2 = new Vector3((float)rng.NextDouble() - 0.5f, 0f, (float)rng.NextDouble() - 0.5f);
                     scars.Mark(k.kind, new Vector3(x, mock.GroundHeight(x, z), z), k.radius, dir2);
                     volleys++;
@@ -224,6 +226,15 @@ namespace OpenKingdomsUnity.Tests
                         $"frost {s.Frost:0} s wet {s.Wet:0} s holy {s.Holy:0} s heat {s.Heat:0} s");
             }
             yield return Shoot(dir, "kinds-all", mid, 80f, 62f);
+            mock.Advance(20 * MockBackend.Tps);
+            yield return Frames(4);
+            for (int i = 0; i < kinds.Length; i++)
+            {
+                var kind = kinds[i].kind;
+                if (kind != ScarKind.Fire && kind != ScarKind.Impact && kind != ScarKind.Frost && kind != ScarKind.Water && kind != ScarKind.Holy) continue;
+                var at = mid + new Vector3((i % 4 - 1.5f) * 22f, 0f, (i / 4 - 1f) * 22f);
+                yield return Shoot(dir, $"kind-{i + 1:00}-{kind.ToString().ToLowerInvariant()}-20s", at, kind == ScarKind.Impact ? 17f : 13f, 48f, 25f);
+            }
         }
 
         // A cannon's crater, a catapult's pit and fire's char on four grounds.
@@ -266,8 +277,8 @@ namespace OpenKingdomsUnity.Tests
                 if (struck >= 3) break;
             }
             Assert.GreaterOrEqual(hit.Unit, 0, "the cannon struck a knight");
-            // The row stops firing, so the picture is still.
-            mock.StageFx("ranged", 100000f);
+            // A second and a half on, the blast's flash and light are gone.
+            mock.Advance(45);
             yield return Frames(20);
             var at = hit.Position;
             log.Add($"units: knight {hit.Unit} sits {ScarMap.GroundOffset(at.x, at.z) * 16f:0.0} px down in its crater");
@@ -284,7 +295,7 @@ namespace OpenKingdomsUnity.Tests
         // and the camera's frame with scars on and off at 2560 by 1440.
         IEnumerator Cost(string dir)
         {
-            yield return Boot("mock_marches", EffectsQuality.High, 6);
+            yield return Boot("mock_marches", EffectsQuality.High, 6, 8);
             var scars = root.World.Scars;
             var mid = Middle();
             var rng = new System.Random(3);
@@ -306,7 +317,7 @@ namespace OpenKingdomsUnity.Tests
                 worst = System.Math.Max(worst, scars.LastMs);
                 frames++;
             }
-            log.Add($"cost: mock_marches, 8 seats, {frames} frames with staged rows and 2 marks a frame over the map: " +
+            log.Add($"cost: mock_marches, {root.Setup.Seats.Count} seats and {root.World.Entities.UnitCount} units, {frames} frames with staged rows and 2 marks a frame over the map: " +
                     $"scar update {sum / frames:0.000} ms a frame on average, {worst:0.00} ms at worst; {scars.Stamped} stamps, " +
                     $"{root.World.Terrain.RefinedRegions} regions dented, {scars.Bytes / 1048576f:0.0} MB");
             // The GPU: the same view drawn with the scar map's globals on and off.

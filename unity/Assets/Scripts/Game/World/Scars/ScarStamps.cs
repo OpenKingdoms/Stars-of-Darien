@@ -163,7 +163,7 @@ namespace OpenKingdomsUnity.Game.World
                     s.Reach = Mathf.Max(r, 0.6f) * 0.9f; s.Length = 3.5f; s.Char = 0.85f; s.Heat = 15f;
                     break;
                 case ScarKind.Lightning:
-                    s.Reach = Mathf.Max(r * 1.2f, 1.6f); s.Char = 0.95f; s.Heat = 3f;
+                    s.Reach = Mathf.Max(r * 1.4f, 3f); s.Char = 0.95f; s.Heat = 3f;
                     break;
                 case ScarKind.Frost:
                     s.Reach = Mathf.Max(r, 1f) * 1.1f; s.Frost = FrostSeconds; s.Crack = 0.6f;

@@ -25,6 +25,61 @@ namespace OpenKingdomsUnity.Game.World
         }
     }
 
+    // A vertex of the ground as the dented regions upload it, interleaved.
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public struct GroundVertex
+    {
+        public Vector3 Position, Normal;
+        public Vector2 Uv;
+    }
+
+    // A dented region's mesh, built whole on a worker so the main thread
+    // only copies its buffers.
+    public sealed class GroundBuffers
+    {
+        public GroundVertex[] Vertices;
+        public int[] Indices;
+        public Bounds Bounds;
+
+        static readonly VertexAttributeDescriptor[] Layout =
+        {
+            new VertexAttributeDescriptor(VertexAttribute.Position, VertexAttributeFormat.Float32, 3),
+            new VertexAttributeDescriptor(VertexAttribute.Normal, VertexAttributeFormat.Float32, 3),
+            new VertexAttributeDescriptor(VertexAttribute.TexCoord0, VertexAttributeFormat.Float32, 2),
+        };
+
+        public static GroundBuffers From(TerrainMeshData d, float roomAbove, float roomBelow)
+        {
+            var g = new GroundBuffers { Vertices = new GroundVertex[d.Vertices.Count], Indices = d.For(-1).ToArray() };
+            Vector3 lo = Vector3.positiveInfinity, hi = Vector3.negativeInfinity;
+            for (int i = 0; i < g.Vertices.Length; i++)
+            {
+                var p = d.Vertices[i];
+                g.Vertices[i] = new GroundVertex { Position = p, Normal = d.Normals[i], Uv = d.Uvs[i] };
+                lo = Vector3.Min(lo, p);
+                hi = Vector3.Max(hi, p);
+            }
+            lo.y -= roomBelow;
+            hi.y += roomAbove;
+            g.Bounds = new Bounds((lo + hi) * 0.5f, hi - lo);
+            return g;
+        }
+
+        public Mesh ToMesh(string name)
+        {
+            const MeshUpdateFlags quiet = MeshUpdateFlags.DontRecalculateBounds | MeshUpdateFlags.DontValidateIndices | MeshUpdateFlags.DontNotifyMeshUsers;
+            var mesh = new Mesh { name = name };
+            mesh.SetVertexBufferParams(Vertices.Length, Layout);
+            mesh.SetVertexBufferData(Vertices, 0, 0, Vertices.Length, 0, quiet);
+            mesh.SetIndexBufferParams(Indices.Length, IndexFormat.UInt32);
+            mesh.SetIndexBufferData(Indices, 0, 0, Indices.Length, quiet);
+            mesh.subMeshCount = 1;
+            mesh.SetSubMesh(0, new SubMeshDescriptor(0, Indices.Length) { bounds = Bounds, vertexCount = Vertices.Length }, quiet);
+            mesh.bounds = Bounds;
+            return mesh;
+        }
+    }
+
     public static class TerrainBuilder
     {
         public const int RegionBlocks = 16;
@@ -210,7 +265,7 @@ namespace OpenKingdomsUnity.Game.World
             return img;
         }
 
-        public static Mesh ToMesh(TerrainMeshData d, string name, IList<int> order, bool tangents = true)
+        public static Mesh ToMesh(TerrainMeshData d, string name, IList<int> order)
         {
             var mesh = new Mesh { name = name, indexFormat = IndexFormat.UInt32 };
             mesh.SetVertices(d.Vertices);
@@ -219,7 +274,7 @@ namespace OpenKingdomsUnity.Game.World
             mesh.subMeshCount = order.Count;
             for (int i = 0; i < order.Count; i++) mesh.SetTriangles(d.Triangles[order[i]], i, false);
             mesh.RecalculateBounds();
-            if (tangents) mesh.RecalculateTangents();
+            mesh.RecalculateTangents();
             return mesh;
         }
     }
