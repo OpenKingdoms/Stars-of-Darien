@@ -4,6 +4,10 @@
 #ifndef OKU_LIT_INCLUDED
 #define OKU_LIT_INCLUDED
 
+// Under Forward+ each pixel is lit from the clustered list of every light in
+// view, so a battle's blasts can light more than four at once. A shader that
+// includes this declares _CLUSTER_LIGHT_LOOP itself, as a pragma in an
+// include does not make variants.
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
 
@@ -29,12 +33,23 @@ half3 OkuLight(half3 albedo, float3 positionWS, half3 normalWS, float4 positionC
     half3 h = SafeNormalize(sun.direction + viewWS);
     half3 spec = sun.color * pow(saturate(dot(normalWS, h)), lerp(8, 128, gloss)) * gloss * 0.5 * ndl * sun.shadowAttenuation;
 #if defined(_ADDITIONAL_LIGHTS)
+    // The light loop reads its clusters from these two.
+    InputData inputData = (InputData)0;
+    inputData.normalizedScreenSpaceUV = screenUV;
+    inputData.positionWS = positionWS;
     uint count = GetAdditionalLightsCount();
-    for (uint li = 0; li < count; li++)
+#if USE_CLUSTER_LIGHT_LOOP
+    // Forward+ keeps directional lights besides the sun ahead of the clusters.
+    for (uint di = 0; di < min(URP_FP_DIRECTIONAL_LIGHTS_COUNT, MAX_VISIBLE_LIGHTS); di++)
     {
-        Light l = GetAdditionalLight(li, positionWS);
-        lit += l.color * saturate(dot(normalWS, l.direction)) * l.distanceAttenuation * l.shadowAttenuation;
+        Light d = GetAdditionalLight(di, positionWS);
+        lit += d.color * saturate(dot(normalWS, d.direction)) * d.distanceAttenuation * d.shadowAttenuation;
     }
+#endif
+    LIGHT_LOOP_BEGIN(count)
+        Light l = GetAdditionalLight(lightIndex, positionWS);
+        lit += l.color * saturate(dot(normalWS, l.direction)) * l.distanceAttenuation * l.shadowAttenuation;
+    LIGHT_LOOP_END
 #endif
     half3 ambient = SampleSH(normalWS) * ao * ambientGain;
     half rimTerm = pow(1 - saturate(dot(normalWS, viewWS)), 3) * rim * 2;

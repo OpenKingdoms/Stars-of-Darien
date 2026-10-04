@@ -1,6 +1,7 @@
 // FxLights.cs - short-lived point lights round a lightmap weapon's shots
-// and blasts: asks close together merge, the strongest take a small pool,
-// each is a soft glow, and a light fades in and out rather than blinking.
+// and blasts, and the flashes of the blasts themselves: asks close together
+// merge, the strongest take a pool sized by the Battle effects setting, a
+// glow fades in and out rather than blinking, and a flash is up at once.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -8,9 +9,12 @@ namespace OpenKingdomsUnity.Game.World
 {
     public sealed class FxLights
     {
-        // No more than the renderer lights each object with, so a patch of
-        // ground under a fight never drops lights at its seams.
-        public const int Budget = 4;
+        // As many as the Battle effects setting allows. Forward+ lights every
+        // pixel by all of them, so a patch of ground under a fight never
+        // drops lights at its seams.
+        public static int Budget => FxQuality.Current.Lights;
+        // How far and how bright a blast's flash may get.
+        public const float FlashRange = 48f, FlashIntensity = 80f;
         // A light lit last frame ranks this much higher, so near ties hold.
         public const float Stay = 1.35f;
         // Seconds a light takes to come up or go out.
@@ -23,8 +27,9 @@ namespace OpenKingdomsUnity.Game.World
         {
             public Vector3 At;
             public Color Colour;
-            public float Range, Intensity, Flicker, Weight;
+            public float Range, Intensity, Flicker, Weight, MaxRange, MaxIntensity;
             public int Key;
+            public bool Snap;
         }
 
         sealed class Slot
@@ -35,6 +40,7 @@ namespace OpenKingdomsUnity.Game.World
             public Vector3 At;
             public Color Colour;
             public float Range, Intensity;
+            public bool Snap;
         }
 
         sealed class ByWeight : IComparer<Request>
@@ -67,7 +73,22 @@ namespace OpenKingdomsUnity.Game.World
             if (scale <= 0.01f) return;
             FxLook.LightSize(size, out float range, out float intensity);
             if (range <= 0f) return;
-            asks.Add(new Request { At = at, Colour = colour, Range = range * Mathf.Lerp(0.6f, 1f, scale), Intensity = intensity * scale, Flicker = flicker, Key = key });
+            asks.Add(new Request
+            {
+                At = at, Colour = colour, Range = range * Mathf.Lerp(0.6f, 1f, scale), Intensity = intensity * scale, Flicker = flicker, Key = key,
+                MaxRange = FxLook.MaxLightRange, MaxIntensity = FxLook.MaxLightIntensity,
+            });
+        }
+
+        // A blast's flash: up at once, lighting the ground out to reach.
+        public void Flash(Vector3 at, Color colour, float reach, float intensity, int key)
+        {
+            if (intensity <= 0.01f || reach <= 0f) return;
+            asks.Add(new Request
+            {
+                At = at, Colour = colour, Range = reach * 1.5f, Intensity = intensity, Flicker = 1f, Key = key,
+                MaxRange = FlashRange, MaxIntensity = FlashIntensity, Snap = true,
+            });
         }
 
         // The pool takes the asks that matter most to the view at focus.
@@ -117,7 +138,7 @@ namespace OpenKingdomsUnity.Game.World
             Palest = 1f;
             foreach (var s in slots)
             {
-                s.Level = Mathf.MoveTowards(s.Level, s.Target, step);
+                s.Level = s.Snap && s.Target > s.Level ? s.Target : Mathf.MoveTowards(s.Level, s.Target, step);
                 bool on = s.Level > 0.005f;
                 if (!on) s.Key = int.MinValue;
                 if (s.Light.enabled != on) { s.Light.enabled = on; Toggles++; }
@@ -141,8 +162,9 @@ namespace OpenKingdomsUnity.Game.World
             s.Target = 1f;
             s.At = c.At;
             s.Colour = c.Colour;
-            s.Range = Mathf.Min(c.Range, FxLook.MaxLightRange);
-            s.Intensity = Mathf.Min(c.Intensity * c.Flicker, FxLook.MaxLightIntensity);
+            s.Range = Mathf.Min(c.Range, c.MaxRange);
+            s.Intensity = Mathf.Min(c.Intensity * c.Flicker, c.MaxIntensity);
+            s.Snap = c.Snap;
         }
 
         bool HasSlot(int key)
@@ -195,6 +217,9 @@ namespace OpenKingdomsUnity.Game.World
                 if (total > 0f) m.Colour = (m.Colour * m.Intensity + a.Colour * a.Intensity) / total;
                 m.Intensity = Mathf.Min(total, m.Intensity * 1.6f + 0.01f);
                 m.Range = Mathf.Max(m.Range, a.Range);
+                m.MaxRange = Mathf.Max(m.MaxRange, a.MaxRange);
+                m.MaxIntensity = Mathf.Max(m.MaxIntensity, a.MaxIntensity);
+                m.Snap |= a.Snap;
                 m.Weight += a.Weight;
                 clusters[into] = m;
             }
