@@ -150,25 +150,24 @@ namespace OpenKingdomsUnity.Game.World
             if (Armed == null) { MoveBlock(CommandKind.Move, at); return; }
             var kind = Armed.Value;
             var spot = at;
+            // A summons is placed once, Shift or not, as on the field.
+            bool repeat = kind == CommandKind.Build && ArmedRepeat;
+            bool once = !Shift || repeat;
             if (kind == CommandKind.Build)
             {
                 if (!backend.CanBuildAt(ArmedDef, at, Facing, out spot)) return;
-                if (Shift) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = spot, Ok = true, Facing = Facing });
+                if (!once) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = spot, Ok = true, Facing = Facing });
             }
             if (Classic)
             {
                 backend.Click(spot, -1, Shift, Keep);
-                if (kind == CommandKind.Build && Shift) backend.Arm(CommandKind.Build, ArmedDef, Facing);
+                if (kind == CommandKind.Build && !once) backend.Arm(CommandKind.Build, ArmedDef, Facing);
                 PullSelection();
             }
-            else if (kind == CommandKind.Build)
-            {
-                foreach (var h in Selected)
-                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = spot, TargetUnit = -1, BuildDef = ArmedDef, Queue = Shift, Keep = Keep, Facing = Facing });
-            }
+            else if (kind == CommandKind.Build) SendBuild(spot, repeat);
             else if (kind == CommandKind.Attack) OrderAll(CommandKind.AttackGround, at, -1);
             else MoveBlock(kind, at);
-            if (!Shift) { DisarmHere(); Queued.Clear(); }
+            if (once) { DisarmHere(); Queued.Clear(); }
         }
 
         // Escape and the original's right click: let go of an armed command,
@@ -516,11 +515,7 @@ namespace OpenKingdomsUnity.Game.World
             if (kind == CommandKind.Build)
             {
                 if (!GhostOk) return;
-                // A summons replaces what the builder holds when Ctrl is down
-                // at the click too, and Shift alone queues it (legacy:39177-39180).
-                bool queue = repeat ? Shift && !Ctrl : Shift;
-                foreach (var h in Selected)
-                    backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = GhostAt, TargetUnit = -1, BuildDef = ArmedDef, Queue = queue, Keep = !repeat && Keep, Facing = Facing, Endless = repeat });
+                SendBuild(GhostAt, repeat);
                 if (Shift && !repeat) Queued.Add(new EntityRenderer.GhostState { Def = ArmedDef, At = GhostAt, Ok = true, Facing = Facing });
             }
             else
@@ -534,6 +529,16 @@ namespace OpenKingdomsUnity.Game.World
                 }
             }
             if (!Shift || repeat) { DisarmHere(); Queued.Clear(); }
+        }
+
+        // The modern scheme's build for everything selected. A summons
+        // replaces what the builder holds when Ctrl is down at the click
+        // too, and Shift alone queues it (legacy:39177-39180).
+        void SendBuild(Vector3 spot, bool repeat)
+        {
+            bool queue = repeat ? Shift && !Ctrl : Shift;
+            foreach (var h in Selected)
+                backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = h, Target = spot, TargetUnit = -1, BuildDef = ArmedDef, Queue = queue, Keep = !repeat && Keep, Facing = Facing, Endless = repeat });
         }
 
         void OrderAll(CommandKind kind, Vector3 at, int target)

@@ -321,6 +321,36 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(OrderKind.Build, legs[0].Kind);
         }
 
+        // A summons given on the minimap is placed once with Shift held and
+        // comes without end, in both schemes, as a click on the field does.
+        [UnityTest]
+        public IEnumerator TheMinimapPlacesASummonsOnce()
+        {
+            yield return Begin();
+            var monarch = Own(MockBackend.Role.Monarch);
+            int def = mock.UnitDefs[monarch.Def].BuildOptions[0];
+            foreach (bool classic in new[] { true, false })
+            {
+                string scheme = classic ? "classic" : "modern";
+                root.Orders.Classic = classic;
+                root.Orders.Selected.Clear();
+                if (classic) mock.Select(new[] { monarch.Handle }, false);
+                else root.Orders.Selected.Add(monarch.Handle);
+                Assert.IsTrue(mock.Command(GameCommand.To(CommandKind.Stop, monarch.Handle, Vector3.zero)));
+                Assert.AreEqual(-1, mock.RepeatOf(monarch.Handle), scheme + ": nothing summoned yet");
+                root.Orders.Arm(CommandKind.Build, def, repeat: true);
+                frame.Shift = true;
+                yield return null;
+                yield return null;
+                root.Orders.OrderAt(OpenGround(monarch.Position, 8f));
+                frame.Shift = false;
+                Assert.IsNull(root.Orders.Armed, scheme + ": placed once, Shift or not");
+                Assert.AreEqual(0, root.Orders.Queued.Count, scheme + ": with no ghost left behind");
+                Assert.AreEqual(def, mock.RepeatOf(monarch.Handle), scheme + ": summoned without end");
+                yield return null;
+            }
+        }
+
         // A frame can be chosen only to queue units in it: no orders, no
         // rally, nothing on the panel but its build, and its queue waits.
         [UnityTest]
