@@ -235,14 +235,15 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(backend.Command(c));
             backend.Advance(5);
             Assert.IsFalse(backend.CanBuildAt(hall, site, 1, out _), "the turned frame holds its site");
-            // A frame is drawn from half built, so build until it shows.
+            // Built to half way, where the tests after this one have always
+            // found the battle they share.
             int facing = -1;
             for (int t = 0; t < 60 * 90 && facing < 0; t += 60)
             {
                 backend.Advance(60);
                 n = backend.ReadUnits(units);
                 for (int i = 0; i < n; i++)
-                    if (units[i].Def == hall && units[i].Player == me) facing = units[i].Facing;
+                    if (units[i].Def == hall && units[i].Player == me && units[i].BuildProgress >= 0.5f) facing = units[i].Facing;
             }
             Assert.AreEqual(1, facing);
         }
@@ -277,7 +278,7 @@ namespace OpenKingdomsUnity.Tests
                 backend.Advance(60);
                 n = backend.ReadUnits(units);
                 for (int i = 0; i < n; i++)
-                    if (units[i].Def == lode && units[i].Player == me) heading = units[i].Heading;
+                    if (units[i].Def == lode && units[i].Player == me && units[i].BuildProgress >= 0.5f) heading = units[i].Heading;
             }
             Assert.AreEqual(0f, Mathf.DeltaAngle(heading, 180f), 0.5f, "a lodestone faces south");
         }
@@ -866,33 +867,41 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(stands, 50);
 
             int pult = OkEngine.okx_place_unit(Unit("ARAPULT"), backend.LocalPlayer);
-            int arch = OkEngine.okx_place_unit(Unit("ARAARCH"), backend.LocalPlayer);
             Assert.GreaterOrEqual(pult, 0);
-            Assert.GreaterOrEqual(arch, 0);
             var us = new UnitState[1024];
-            var p = us.Take(backend.ReadUnits(us)).First(x => x.Handle == pult);
-            // Out of the catapult's way and its least reach, then our own rock on it.
-            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, arch, p.Position + Vector3.right * 20f)));
-            backend.Advance(60 * 8);
             var buf = new PieceEvent[256];
-            int since = 0;
-            for (int k; (k = backend.ReadPieceEvents(since, buf)) > 0;) since = buf[k - 1].Id;
+            int since = 0, arch = -1;
             PieceEvent? thrown = null;
             Vector3 fell = default;
-            for (int shot = 0; shot < 6 && thrown == null; shot++)
+            // How an archer falls depends on how it was struck, so another
+            // stands in for one that fell without throwing a piece.
+            for (int life = 0; life < 5 && thrown == null; life++)
             {
-                var a = us.Take(backend.ReadUnits(us)).FirstOrDefault(x => x.Handle == arch);
-                if (a.Handle != arch) break;
-                fell = a.Position;
-                Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.AttackGround, Unit = pult, Target = a.Position, TargetUnit = -1, BuildDef = -1 }));
-                for (int t = 0; t < 600 && thrown == null; t += 2)
+                arch = OkEngine.okx_place_unit(Unit("ARAARCH"), backend.LocalPlayer);
+                Assert.GreaterOrEqual(arch, 0);
+                var p = us.Take(backend.ReadUnits(us)).First(x => x.Handle == pult);
+                // Out of the catapult's way and its least reach, standing still, then our own rock on it.
+                Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, arch, p.Position + Vector3.right * 20f)));
+                backend.Advance(60 * 8);
+                for (int t = 0; t < 60 * 20 && backend.ReadOrder(arch).Kind != OrderKind.None; t += 30) backend.Advance(30);
+                for (int k; (k = backend.ReadPieceEvents(since, buf)) > 0;) since = buf[k - 1].Id;
+                for (int shot = 0; shot < 6 && thrown == null; shot++)
                 {
-                    backend.Advance(2);
-                    int k = backend.ReadPieceEvents(since, buf);
-                    for (int i = 0; i < k; i++) { if (buf[i].Unit == arch && thrown == null) thrown = buf[i]; since = buf[i].Id; }
+                    var a = us.Take(backend.ReadUnits(us)).FirstOrDefault(x => x.Handle == arch);
+                    if (a.Handle != arch || (a.Flags & UnitFlags.Active) == 0) break;
+                    fell = a.Position;
+                    Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.AttackGround, Unit = pult, Target = a.Position, TargetUnit = -1, BuildDef = -1 }));
+                    for (int t = 0; t < 600 && thrown == null; t += 2)
+                    {
+                        backend.Advance(2);
+                        int k = backend.ReadPieceEvents(since, buf);
+                        for (int i = 0; i < k; i++) { if (buf[i].Unit == arch && thrown == null) thrown = buf[i]; since = buf[i].Id; }
+                    }
                 }
+                // Let a fallen archer's corpse settle before the next one is set down.
+                if (thrown == null) backend.Advance(60 * 3);
             }
-            Assert.IsNotNull(thrown, "the archer threw a piece");
+            Assert.IsNotNull(thrown, "an archer threw a piece");
             var e = thrown.Value;
             Vector3 at = e.Pose.GetColumn(3);
             Debug.Log($"piece: node {e.Piece} {e.How} at {at}, the archer at {fell}");

@@ -78,6 +78,7 @@ namespace OpenKingdomsUnity.Game
             u.Goal = leg.To;
             u.Home = leg.To;
             u.Target = -1;
+            u.Helps = -1;
             u.Ordered = true;
             u.OrderKind = OrderKind.Move;
             if (leg.Pace > 0) paceCap[u.Handle] = leg.Pace; else paceCap.Remove(u.Handle);

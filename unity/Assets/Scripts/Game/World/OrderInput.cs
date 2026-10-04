@@ -3,7 +3,9 @@
 // selection and decides what a left click means (select a friend, attack
 // an enemy, move to the ground, or carry out an armed command), and a
 // right click or Escape cancels. Modern keeps the selection here, selects
-// with the left button and orders with the right, moving in a block.
+// with the left button and orders with the right, moving in a block. Over
+// the player's own frame either scheme's order click sends the builders
+// that can help build it, as the hammer pointer there says.
 // In both, a drag selects the player's units (Shift adds), M, A, P and G
 // arm move, attack, patrol and guard, S stops, a build armed from the
 // menu shows its ghost, green where it can stand, and Ctrl with a digit
@@ -349,19 +351,40 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // The right button's press when it is no drag: the classic scheme
-        // cancels, the modern one attacks the enemy under it or moves there.
-        // True when the frame ends with it.
+        // cancels, the modern one helps build the player's frame under it,
+        // attacks the enemy under it or moves there. True when the frame
+        // ends with it.
         internal bool RightClick(Camera cam, Vector3 m, bool onGround, Vector3 at)
         {
             if (Classic) { backend.Cancel(); DisarmHere(); return true; }
             if (Armed != null) { DisarmHere(); return true; }
             if (Selected.Count > 0)
             {
-                int enemy = Pick(cam, m, world.Entities.Units, world.Entities.UnitCount, false);
+                var units = world.Entities.Units;
+                int count = world.Entities.UnitCount;
+                int hit = Pick(cam, m, units, count, null);
+                if (hit >= 0 && HelpBuild(hit, onGround, at)) return false;
+                int enemy = Pick(cam, m, units, count, false);
                 if (enemy >= 0) OrderAll(CommandKind.Attack, Vector3.zero, enemy);
                 else if (onGround) MoveBlock(CommandKind.Move, at);
             }
             return false;
+        }
+
+        // A frame some of the selection can help build, as the hammer over
+        // it says: each of those goes to work on it, as the original's
+        // right click sends them (legacy:186665-186765), and the rest move
+        // there. False when none can help.
+        bool HelpBuild(int frame, bool onGround, Vector3 at)
+        {
+            var helpers = new List<int>();
+            var rest = new List<int>();
+            foreach (var h in Selected) (backend.CanHelpBuild(h, frame) ? helpers : rest).Add(h);
+            if (helpers.Count == 0) return false;
+            foreach (var h in helpers)
+                backend.Command(new GameCommand { Kind = CommandKind.Repair, Unit = h, Target = at, TargetUnit = frame, BuildDef = -1, Queue = Shift, Keep = Keep });
+            if (rest.Count > 0 && onGround) MoveBlock(CommandKind.Move, at, rest);
+            return true;
         }
 
         // The left button's click when it was no drag.
@@ -548,18 +571,20 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // Moves in a square block around the point, turned with the camera,
-        // its slots as far apart as the widest unit's footprint or hull.
-        public void MoveBlock(CommandKind kind, Vector3 at)
+        // the selection or only some of it, its slots as far apart as the
+        // widest unit's footprint or hull.
+        public void MoveBlock(CommandKind kind, Vector3 at, ICollection<int> who = null)
         {
-            if (Classic && kind == CommandKind.Move)
+            if (Classic && kind == CommandKind.Move && who == null)
             {
                 backend.Arm(CommandKind.Move);
                 backend.Click(at, -1, Shift, Keep);
                 return;
             }
-            int k = 0, side = Mathf.CeilToInt(Mathf.Sqrt(Selected.Count));
-            float pitch = BlockPitch();
-            foreach (var h in Selected)
+            who = who ?? Selected;
+            int k = 0, side = Mathf.CeilToInt(Mathf.Sqrt(who.Count));
+            float pitch = BlockPitch(who);
+            foreach (var h in who)
             {
                 var offset = new Vector3((k % side - (side - 1) * 0.5f) * pitch, 0, (k / side - (side - 1) * 0.5f) * pitch);
                 var c = GameCommand.To(kind, h, at + Quaternion.Euler(0, world.Camera.yaw, 0) * offset);
@@ -570,15 +595,15 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
-        // The room the widest selected unit takes in a formation, and never
+        // The room the widest of the units takes in a formation, and never
         // less than the 1.4 cells a small unit's slot has.
-        float BlockPitch()
+        float BlockPitch(ICollection<int> who)
         {
             int widest = 0;
             var units = world.Entities.Units;
             for (int i = 0; i < world.Entities.UnitCount; i++)
             {
-                if (!Selected.Contains(units[i].Handle)) continue;
+                if (!who.Contains(units[i].Handle)) continue;
                 var m = new FormationMember { Kind = Formation.KindOf(units[i].Def) };
                 widest = Mathf.Max(widest, FormationPlanner.Pitch(m));
             }

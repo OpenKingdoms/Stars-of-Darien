@@ -476,7 +476,12 @@ namespace OpenKingdomsUnity.Game
         // site, a still picture the engine reports with no light of its own.
         void BuildSparkle(Unit u)
         {
-            if (Tick % 5 != 0 || !(u.BuildAt is Vector3 site)) return;
+            if (u.BuildAt is Vector3 site) BuildSparkle(u, site);
+        }
+
+        void BuildSparkle(Unit u, Vector3 site)
+        {
+            if (Tick % 5 != 0) return;
             int pos = PosOf(u.Player);
             int strip = FxStripId(BuildStrip(pos >= 0 ? players[pos].Side : null));
             if (strip < 0) strip = FxStripId(BuildStrip(null));

@@ -1,3 +1,3 @@
-okengine-api23.dll  okengine API 23, unity-embed 32e79bd, main 421ae8b, death blasts, fire that spreads and a computer that sweeps rubble and steps out of fire under the remastered rules, scenery dying and burning in the 3D view, engine build 28, published at openkingdoms-unity 1d471c0
+okengine-api23.dll  okengine API 23, unity-embed 5de111a, main 15e92a1, builders help on a frame by the original's rules, the hammer shows only for one that could build it, and a frame is listed from the start of its build, engine build 30, published at openkingdoms-unity fe9a6e8
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
 okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 32e79bd, published at openkingdoms-unity fead40c

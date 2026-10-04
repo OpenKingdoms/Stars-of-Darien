@@ -142,6 +142,8 @@ namespace OpenKingdomsUnity.Game
             public int Target = -1;
             public bool Dying, Moving, Attacking;
             public int BuildDef = -1;
+            // The frame it helps build, or -1.
+            public int Helps = -1;
             public int Kills;
             public float BuildLeft;
             public int Model;
@@ -394,6 +396,9 @@ namespace OpenKingdomsUnity.Game
 
         // How long a frame takes to build itself, 0 to hold every build.
         public float BuildSeconds = 4f;
+        // How long one helper alone takes to raise a frame from nothing.
+        // Helpers add up, each paying for its own share of the cost.
+        public float HelpSeconds = 4f;
 
         // A frame of the local player's, so far built. For tests.
         public int SpawnFrame(int def, Vector3 at, float built)
@@ -504,6 +509,7 @@ namespace OpenKingdomsUnity.Game
             u.Attacking = false;
             if (d.IsBuilding) { TickBuild(u, dt); return; }
             TickBuild(u, dt);
+            if (u.Helps >= 0 && Help(u, dt)) return;
 
             bool ranged = RoleOf(u.Def) == Role.Archer || RoleOf(u.Def) == Role.Mage;
             float range = ranged ? 8f : 1.4f;
@@ -625,6 +631,53 @@ namespace OpenKingdomsUnity.Game
             u.BuildDef = -1;
             u.BuildAt = null;
             if (unitDefs[u.Def].IsBuilding) StartNext(u);
+        }
+
+        // A helper walks up to its frame, then faces it and adds its own
+        // work. True while it works there.
+        bool Help(Unit u, float dt)
+        {
+            if (!byHandle.TryGetValue(u.Helps, out var f) || f.Dying || f.Built >= 1f || f.Player != u.Player)
+            {
+                u.Helps = -1;
+                u.Goal = null;
+                Next(u);
+                return false;
+            }
+            var to = new Vector2(f.Pos.x - u.Pos.x, f.Pos.z - u.Pos.z);
+            if (to.magnitude > HelpReach(f))
+            {
+                if (u.Goal == null) u.Goal = StandBy(u, f);
+                return false;
+            }
+            u.Goal = null;
+            u.Speed = 0f;
+            Face(u, to, dt);
+            if (HelpSeconds <= 0f) return true;
+            var e = economy[u.Player];
+            float cost = unitDefs[f.Def].ManaCost * dt / HelpSeconds;
+            if (e.Mana < cost) return true;
+            e.Mana -= cost;
+            economy[u.Player] = e;
+            KeptOf(u.Player).Spent += cost;
+            f.Built = Mathf.Min(1f, f.Built + dt / HelpSeconds);
+            f.Health = Mathf.Max(f.Health, (int)(f.MaxHealth * f.Built));
+            BuildSparkle(u, f.Pos);
+            return true;
+        }
+
+        float HelpReach(Unit f)
+        {
+            var fp = unitDefs[f.Def].Footprint;
+            return 0.5f * Mathf.Sqrt(fp.x * fp.x + fp.y * fp.y) + 1.5f;
+        }
+
+        // Where a helper stands to work: on its own side of the frame.
+        Vector2 StandBy(Unit u, Unit f)
+        {
+            var away = new Vector2(u.Pos.x - f.Pos.x, u.Pos.z - f.Pos.z);
+            if (away.sqrMagnitude < 0.01f) away = Vector2.up;
+            return new Vector2(f.Pos.x, f.Pos.z) + away.normalized * HelpReach(f) * 0.8f;
         }
 
         void Face(Unit u, Vector2 dir, float dt)
@@ -1039,6 +1092,7 @@ namespace OpenKingdomsUnity.Game
             {
                 case CommandKind.Move: case CommandKind.Patrol: return true;
                 case CommandKind.Attack: return byHandle.ContainsKey(c.TargetUnit);
+                case CommandKind.Repair: return CanHelpBuild(u.Handle, c.TargetUnit);
                 case CommandKind.Build: case CommandKind.FactoryEnqueue:
                     return Array.IndexOf(def.BuildOptions, c.BuildDef) >= 0
                         && (c.Kind != CommandKind.Build || !unitDefs[c.BuildDef].IsBuilding || CanBuildAt(c.BuildDef, c.Target, c.Facing, out _));
@@ -1058,6 +1112,7 @@ namespace OpenKingdomsUnity.Game
                     u.Goal = new Vector2(c.Target.x, c.Target.z);
                     u.Home = u.Goal.Value;
                     u.Target = -1;
+                    u.Helps = -1;
                     u.Ordered = true;
                     u.OrderKind = c.Kind == CommandKind.Patrol ? OrderKind.Patrol : OrderKind.Move;
                     return true;
@@ -1065,11 +1120,24 @@ namespace OpenKingdomsUnity.Game
                     if (!byHandle.ContainsKey(c.TargetUnit)) return false;
                     u.Target = c.TargetUnit;
                     u.Goal = null;
+                    u.Helps = -1;
                     u.Ordered = true;
+                    return true;
+                case CommandKind.Repair:
+                    // Only a frame takes help here, and only from a unit that could.
+                    if (!CanHelpBuild(u.Handle, c.TargetUnit)) return false;
+                    var frame = byHandle[c.TargetUnit];
+                    u.Helps = frame.Handle;
+                    u.Target = -1;
+                    u.BuildDef = -1;
+                    u.BuildAt = null;
+                    u.Ordered = true;
+                    u.Goal = new Vector2(frame.Pos.x - u.Pos.x, frame.Pos.z - u.Pos.z).magnitude > HelpReach(frame) ? StandBy(u, frame) : (Vector2?)null;
                     return true;
                 case CommandKind.Stop:
                     u.Goal = null;
                     u.Target = -1;
+                    u.Helps = -1;
                     u.BuildDef = -1;
                     u.Ordered = false;
                     u.Home = new Vector2(u.Pos.x, u.Pos.z);
@@ -1095,6 +1163,7 @@ namespace OpenKingdomsUnity.Game
                     else u.BuildAt = null;
                     u.BuildDef = c.BuildDef;
                     u.BuildLeft = 5f;
+                    u.Helps = -1;
                     return true;
                 case CommandKind.FactoryDequeue:
                 case CommandKind.FactoryCancel:
@@ -1156,6 +1225,22 @@ namespace OpenKingdomsUnity.Game
         {
             byHandle.TryGetValue(unit, out var hit);
             bool friend = hit != null && hit.Player == 0;
+            // On a frame the selection can help: the helpers go to work and
+            // the other walkers go to the spot, as the engine's click does.
+            if (friend && !mockIsArmed && SelectionCanHelp(unit))
+            {
+                foreach (int h in mockSelection.ToArray())
+                {
+                    if (unitDefs[byHandle[h].Def].IsBuilding) continue;
+                    var c = CanHelpBuild(h, unit)
+                        ? new GameCommand { Kind = CommandKind.Repair, Unit = h, Target = hit.Pos, TargetUnit = unit, BuildDef = -1 }
+                        : GameCommand.To(CommandKind.Move, h, at);
+                    c.Queue = shift;
+                    c.Keep = keep;
+                    Command(c);
+                }
+                return;
+            }
             if (friend && !Selectable(hit) && !mockIsArmed) return;
             if (mockIsArmed)
             {
@@ -1197,6 +1282,10 @@ namespace OpenKingdomsUnity.Game
                 return GameCursors.For(mockArmed);
             }
             if (unit < 0 || !byHandle.TryGetValue(unit, out var u) || u.Dying) return GameCursor.Normal;
+            // A frame of the player's: the hammer when a selected unit can
+            // help build it, else the select hand only where it takes a queue.
+            if (u.Player == 0 && u.Built < 1f)
+                return SelectionCanHelp(unit) ? GameCursor.Repair : Selectable(u) ? GameCursor.Select : GameCursor.Normal;
             return u.Player != 0 && mockSelection.Count > 0 ? GameCursor.Attack : GameCursor.Select;
         }
 
@@ -1211,6 +1300,13 @@ namespace OpenKingdomsUnity.Game
             var d = unitDefs[u.Def];
             if (d.IsBuilding || d.BuildOptions.Length == 0) return false;
             return RoleOf(u.Def) == Role.Monarch || Array.IndexOf(d.BuildOptions, f.Def) >= 0;
+        }
+
+        bool SelectionCanHelp(int frame)
+        {
+            foreach (int h in mockSelection)
+                if (CanHelpBuild(h, frame)) return true;
+            return false;
         }
 
         public CursorFrame[] CursorArt(GameCursor cursor) => null;
@@ -1381,6 +1477,8 @@ namespace OpenKingdomsUnity.Game
         {
             var none = new UnitOrder { Kind = OrderKind.None, TargetUnit = -1, Building = -1 };
             if (!byHandle.TryGetValue(handle, out var u) || u.Dying) return none;
+            if (u.Helps >= 0 && byHandle.TryGetValue(u.Helps, out var frame))
+                return new UnitOrder { Kind = OrderKind.Build, TargetUnit = -1, Target = frame.Pos, Building = frame.Handle };
             if (u.BuildDef >= 0) return new UnitOrder { Kind = OrderKind.Build, TargetUnit = -1, Target = u.Pos, Building = -1 };
             if (u.Target >= 0 && byHandle.TryGetValue(u.Target, out var t))
                 return new UnitOrder { Kind = OrderKind.Attack, TargetUnit = u.Target, Target = t.Pos, Building = -1 };

@@ -27,14 +27,14 @@ namespace OpenKingdomsUnity.Game
         }
 
         bool Busy(Unit u) =>
-            u.Ordered && (u.Goal != null || u.Target >= 0) || u.BuildDef >= 0
+            u.Ordered && (u.Goal != null || u.Target >= 0) || u.BuildDef >= 0 || u.Helps >= 0
             || pending.TryGetValue(u.Handle, out var q) && q.Count > 0;
 
         // Once the order in hand is done, the next queued one starts.
         void Next(Unit u)
         {
-            if (u.Goal == null && u.Target < 0) u.Ordered = false;
-            if (u.Ordered || u.BuildDef >= 0) return;
+            if (u.Goal == null && u.Target < 0 && u.Helps < 0) u.Ordered = false;
+            if (u.Ordered || u.BuildDef >= 0 || u.Helps >= 0) return;
             if (!pending.TryGetValue(u.Handle, out var q)) return;
             while (q.Count > 0)
             {
@@ -222,6 +222,7 @@ namespace OpenKingdomsUnity.Game
                     if (p.IsLeg) { Put(LegTo(OrderKind.Move, p.Leg.To)); continue; }
                     var c = p.Command;
                     var kind = c.Kind == CommandKind.Attack ? OrderKind.Attack : c.Kind == CommandKind.Patrol ? OrderKind.Patrol
+                        : c.Kind == CommandKind.Repair ? OrderKind.Repair
                         : c.Kind == CommandKind.Build || c.Kind == CommandKind.FactoryEnqueue ? OrderKind.Build : OrderKind.Move;
                     var at = c.Target;
                     if (c.TargetUnit >= 0 && byHandle.TryGetValue(c.TargetUnit, out var t)) at = t.Pos;
