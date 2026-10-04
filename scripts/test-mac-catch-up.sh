@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs scripts/mac-catch-up.sh against throwaway repositories: a checkout
 # behind GitHub, one with changes, one whose committed Mac library lags
-# engine/VERSION while the mac-engine branch has the right one, and one
-# with no Mac build anywhere. Runs on a Mac and in Git Bash.
+# engine/VERSION while the mac-engine branch has the right one, one with no
+# Mac build anywhere, artifacts from the workflow and from a fork, and the
+# notification a changed checkout gets. Runs on a Mac and in Git Bash.
 #   bash scripts/test-mac-catch-up.sh
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -111,6 +112,82 @@ git -C "$seed" push -q origin main
 run || true
 check "it installs the committed library" '[ "$(plugin)" = "build F" ]'
 check "the local build is kept" 'grep -l "a local build" "$mac"/unity/Library/OkEngine/replaced-*-libokengine.dylib > /dev/null 2>&1'
+
+echo "== A newer build on the branch replaces the one the script put there"
+kept() { ls "$mac"/unity/Library/OkEngine/replaced-*-libokengine.dylib 2>/dev/null | wc -l | tr -d ' '; }
+on_branch() {    # on_branch <dll embed> <Mac build bytes>
+    publish "$seed" "$1" fffffff "build F" "Windows build $1"
+    git -C "$seed" push -q origin main
+    git -C "$seed" checkout -q -B mac-engine main
+    publish "$seed" "$1" "$1" "$2" "Mac build $1"
+    git -C "$seed" push -q -f origin mac-engine
+    git -C "$seed" checkout -q main
+}
+on_branch 1111111 "build G"
+run || true
+check "it installs the branch's library" '[ "$(plugin)" = "build G" ]'
+on_branch 2222222 "build H"
+run || true
+check "it installs the newer one" '[ "$(plugin)" = "build H" ]'
+check "it keeps no copy of its own install" '[ "$(kept)" = 1 ]'
+
+echo "== Only the Mac engine workflow's artifacts on main count"
+cat > "$work/gh" << 'EOF'
+#!/usr/bin/env bash
+# Answers the calls mac-catch-up.sh makes, from files beside it.
+here="$(dirname "$0")"
+case "$1 $2" in
+    "api repos/OpenKingdoms/OpenKingdoms/commits/"*) echo "${2##*/}000000000000000000000000000000000" ;;
+    "api repos/"*"/actions/artifacts?"*)
+        # A --jq filter is taken to want the first run's id.
+        if [ "${3:-}" = --jq ]; then sed -n 's/.*"id": *\([0-9]*\).*/\1/p' "$here/artifacts.json" | head -1; else cat "$here/artifacts.json"; fi ;;
+    "api repos/"*"/actions/runs/"*) cat "$here/run-${2##*/}.json" ;;
+    "run download") mkdir -p "$9" && cp "$here/artifact-$3/"* "$9/" ;;
+    *) exit 1 ;;
+esac
+EOF
+chmod +x "$work/gh"
+artifact_entry() {    # artifact_entry <run> <head repository id> <head branch>
+    printf '{"name": "okengine-macos-arm64-3333333000000000000000000000000000000000", "expired": false, "workflow_run": {"id": %s, "repository_id": 1, "head_repository_id": %s, "head_branch": "%s"}}' "$1" "$2" "$3"
+}
+for r in 66 42; do
+    mkdir -p "$work/artifact-$r"
+    echo "okengine API 23 for macOS arm64, unity-embed 3333333" > "$work/artifact-$r/VERSION-macos.txt"
+done
+printf 'from a fork' > "$work/artifact-66/libokengine.dylib"
+printf 'build I' > "$work/artifact-42/libokengine.dylib"
+echo '{"path": ".github/workflows/models.yml", "event": "pull_request"}' > "$work/run-66.json"
+echo '{"path": ".github/workflows/mac-engine.yml", "event": "push"}' > "$work/run-42.json"
+publish "$seed" 3333333 fffffff "build F" "Windows build I"
+git -C "$seed" push -q origin main
+export SOD_GH="$work/gh"
+printf '{"artifacts": [%s]}' "$(artifact_entry 66 99 main)" > "$work/artifacts.json"
+run || true
+check "a fork's pull request artifact is refused" '[ "$(plugin)" != "from a fork" ]'
+printf '{"artifacts": [%s, %s]}' "$(artifact_entry 66 99 main)" "$(artifact_entry 42 1 main)" > "$work/artifacts.json"
+run || true
+check "the workflow's own artifact is taken" '[ "$(plugin)" = "build I" ]'
+export SOD_GH="$work/no-gh"
+
+echo "== A checkout with changes says so once"
+cat > "$work/osascript" << 'EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$(dirname "$0")/notices.txt"
+EOF
+chmod +x "$work/osascript"
+export SOD_OSASCRIPT="$work/osascript"
+notices() { grep -c "${1:-changes}" "$work/notices.txt" 2>/dev/null || true; }
+echo edited >> "$mac/README.md"
+run auto || true
+run auto || true
+check "it tells the owner once" '[ "$(notices)" = 1 ]'
+git -C "$mac" checkout -q -- README.md
+run auto || true
+echo edited again >> "$mac/README.md"
+run auto || true
+check "it tells him again after a clean run" '[ "$(notices)" = 2 ]'
+git -C "$mac" checkout -q -- README.md
+export SOD_OSASCRIPT=false
 
 if [ "$(uname)" = Darwin ]; then
     echo "== The launchd agent"

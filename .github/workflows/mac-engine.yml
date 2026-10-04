@@ -4,7 +4,9 @@
 # goes to the mac-engine branch as one commit that touches only the Mac
 # library and VERSION, ready for a pull request into main, and stays an
 # artifact for 90 days. scripts/mac-catch-up.sh on a Mac takes it from
-# either while main waits for it.
+# either while main waits for it. The schedule retries a build that
+# failed or was missed, such as one whose unity-embed commit reached GitHub
+# after the engine reached main.
 name: Mac engine
 
 on:
@@ -16,6 +18,8 @@ on:
       - scripts/mac-catch-up.sh
       - scripts/test-mac-catch-up.sh
       - .github/workflows/mac-engine.yml
+  schedule:
+    - cron: "23 */6 * * *"
   workflow_dispatch:
     inputs:
       embed:
@@ -23,7 +27,7 @@ on:
         required: false
         default: ""
       force:
-        description: Build even when main already has a Mac library of that commit
+        description: Build even when main or the mac-engine branch already has a Mac library of that commit
         type: boolean
         default: false
 
@@ -32,7 +36,8 @@ permissions:
 
 concurrency:
   group: mac-engine-${{ github.ref }}
-  cancel-in-progress: true
+  # A scheduled run waits for a build under way instead of cancelling it.
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   plan:
@@ -55,7 +60,7 @@ jobs:
           FORCE: ${{ inputs.force }}
         run: |
           api=$(grep -o 'ApiVersion = [0-9]*' unity/Assets/Engine/OkEngine.cs | grep -o '[0-9]*$')
-          embed_of() { sed -n "s/^$1 .*unity-embed \([0-9a-f]\{7,40\}\).*/\1/p" engine/VERSION | head -1; }
+          embed_of() { sed -n "s/^$1 .*unity-embed \([0-9a-f]\{7,40\}\).*/\1/p" "${2:-engine/VERSION}" | head -1; }
           full() { [ -z "$1" ] || gh api "repos/OpenKingdoms/OpenKingdoms/commits/$1" --jq .sha; }
           named=$(embed_of "okengine-api$api\.dll")
           mac=$(embed_of "okengine-api$api\.dylib")
@@ -64,19 +69,22 @@ jobs:
           embed=$(full "$want") || { echo "::error::unity-embed $want is not on GitHub"; exit 1; }
           named_full=$(full "$named" || true)
           mac_full=$(full "$mac" || true)
+          held=$(gh api "repos/$GITHUB_REPOSITORY/contents/engine/VERSION?ref=mac-engine" --jq .content 2> /dev/null | base64 -d 2> /dev/null | embed_of "okengine-api$api\.dylib" - || true)
+          held_full=$(full "$held" || true)
           # Only a build of what main names goes to the mac-engine branch.
           publish=false
           [ "$embed" != "$named_full" ] || publish=true
           build=true
           if [ "$publish" = true ] && [ "$mac_full" = "$embed" ] && [ -f "engine/okengine-api$api.dylib" ] && [ "$FORCE" != true ]; then
               build=false
+              echo "Main's Mac library already comes from unity-embed ${embed:0:10}, so nothing was built." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$publish" = true ] && [ "$held_full" = "$embed" ] && [ "$FORCE" != true ]; then
+              build=false
+              echo "The mac-engine branch already holds the Mac library from unity-embed ${embed:0:10} for its pull request, so nothing was built." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "binding API $api, Windows library from unity-embed ${named:-none}, Mac library from ${mac:-none}"
+          echo "binding API $api, Windows library from unity-embed ${named:-none}, Mac library from ${mac:-none}, mac-engine branch from ${held:-none}"
           echo "build $embed: $build, publish to mac-engine: $publish"
           { echo "embed=$embed"; echo "build=$build"; echo "publish=$publish"; } >> "$GITHUB_OUTPUT"
-          if [ "$build" = false ]; then
-              echo "Main's Mac library already comes from unity-embed ${embed:0:10}, so nothing was built." >> "$GITHUB_STEP_SUMMARY"
-          fi
 
   build:
     needs: plan
@@ -182,6 +190,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   catch-up:
+    if: github.event_name != 'schedule'
     runs-on: macos-15
     timeout-minutes: 10
     steps:

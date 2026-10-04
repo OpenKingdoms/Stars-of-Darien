@@ -21,6 +21,7 @@ repo="${SOD_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 slug="${SOD_REPO:-OpenKingdoms/Stars-of-Darien}"
 gh="${SOD_GH:-gh}"
 launchctl="${SOD_LAUNCHCTL:-launchctl}"
+osascript="${SOD_OSASCRIPT:-osascript}"
 label=net.openkingdoms.stars-of-darien.catch-up
 log="$HOME/Library/Logs/stars-of-darien-catch-up.log"
 agent="$HOME/Library/LaunchAgents/$label.plist"
@@ -80,6 +81,7 @@ catch_up() {
     if [ -n "$changes$busy" ]; then
         echo "Left alone: ${busy:-tracked files have changes}, so nothing was pulled or installed."
         [ -z "$changes" ] || echo "$changes" | head -10 | sed 's/^/   /'
+        tell "$mode" "${busy:-tracked files have changes}"
         return 0
     fi
 
@@ -98,6 +100,7 @@ catch_up() {
         sleep 15
     done
 
+    local stuck=""
     if [ -z "$upstream" ]; then
         echo "${branch:-HEAD} tracks no branch on GitHub, so nothing was pulled."
     else
@@ -107,16 +110,19 @@ catch_up() {
         if [ "$behind" = 0 ]; then
             echo "$branch is up to date with $upstream at $old."
         elif [ "$ahead" != 0 ]; then
-            echo "$branch and $upstream have diverged ($ahead and $behind commits), so nothing was pulled."
+            stuck="$branch and $upstream have diverged"
+            echo "$stuck ($ahead and $behind commits), so nothing was pulled."
         elif git merge --ff-only --quiet "@{u}"; then
             echo "Pulled $behind commits into $branch, $old to $(git rev-parse --short HEAD):"
             git log --format='   %h %s' "$old..HEAD" | head -15
             [ "$behind" -le 15 ] || echo "   and $((behind - 15)) more"
             did="pulled $behind commits"
         else
+            stuck="the fast-forward of $branch failed"
             echo "The fast-forward of $branch failed, so it stays at $old."
         fi
     fi
+    tell "$mode" "$stuck"
 
     if install_engine "$remote" && [ -n "$installed" ]; then did="${did:+$did, }installed the engine from unity-embed $want"; fi
     if [ -n "$did" ]; then
@@ -125,6 +131,17 @@ catch_up() {
     else
         echo "Done: nothing needed doing."
     fi
+}
+
+# What keeps the checkout behind reaches the owner as one notification,
+# not one an hour, and again only after a run that went through.
+tell() {
+    local mode="$1" why="$2" mark
+    mark=$(git rev-parse --git-path sod-catch-up-told)
+    if [ -z "$why" ]; then rm -f "$mark"; return 0; fi
+    [ "$mode" = auto ] && [ "$(cat "$mark" 2> /dev/null)" != "$why" ] || return 0
+    echo "$why" > "$mark"
+    notify "Not caught up: $why. The log in ~/Library/Logs/stars-of-darien-catch-up.log says more."
 }
 
 fetch() {
@@ -170,11 +187,15 @@ install_engine() {
     fi
 
     local dir=unity/Assets/Plugins/macOS keep=unity/Library/OkEngine
-    local plugin="$dir/libokengine.dylib" record="$keep/installed.json"
+    # catch-up.json is this script's own record of what it put there, the
+    # editor's record leaving out what came from the branch or an artifact.
+    local plugin="$dir/libokengine.dylib" record="$keep/installed.json" mine="$keep/catch-up.json" h
     if [ -f "$plugin" ] && cmp -s "$lib" "$plugin"; then
         echo "The engine in Plugins/macOS is already unity-embed $want, from $from."
     else
-        if [ -f "$plugin" ] && [ "$(py record-get "$record" libokengine.dylib)" != "$(py hash "$plugin")" ]; then
+        h=""
+        [ ! -f "$plugin" ] || h=$(py hash "$plugin")
+        if [ -n "$h" ] && [ "$(py record-get "$record" libokengine.dylib)" != "$h" ] && [ "$(py record-get "$mine" libokengine.dylib)" != "$h" ]; then
             mkdir -p "$keep"
             local kept="$keep/replaced-$(date +%Y%m%d-%H%M%S)-libokengine.dylib"
             cp "$plugin" "$kept" && echo "Kept the library that was there, which the editor did not install, as unity/$kept."
@@ -197,11 +218,13 @@ install_engine() {
     fi
     # The editor keeps refreshing a library its record says it installed,
     # so a build that isn't committed yet stays out of the record.
+    h=$(py hash "$plugin")
     if [ "$ours" = 1 ]; then
-        py record-set "$record" libokengine.dylib "$(py hash "$plugin")"
+        py record-set "$record" libokengine.dylib "$h"
     else
         py record-drop "$record" libokengine.dylib
     fi
+    py record-set "$mine" libokengine.dylib "$h"
     return 0
 }
 
@@ -211,11 +234,19 @@ artifact() {
     local full run
     full=$("$gh" api "repos/OpenKingdoms/OpenKingdoms/commits/$want" --jq .sha 2> /dev/null) || return 1
     artifact_name="okengine-macos-arm64-$full"
-    run=$("$gh" api "repos/$slug/actions/artifacts?name=$artifact_name&per_page=1" --jq '.artifacts[0].workflow_run.id // empty' 2> /dev/null)
-    [ -n "$run" ] || return 1
-    "$gh" run download "$run" -R "$slug" -n "$artifact_name" -D "$tmp/artifact" > /dev/null 2>&1 || return 1
-    grep -q "okengine API $1 " "$tmp/artifact/VERSION-macos.txt" 2> /dev/null || return 1
-    mv "$tmp/artifact/libokengine.dylib" "$tmp/libokengine.dylib"
+    # A pull request from a fork runs its own workflows here and can name an
+    # artifact the same way, so only the Mac engine workflow's runs on main
+    # count.
+    "$gh" api "repos/$slug/actions/artifacts?name=$artifact_name&per_page=30" > "$tmp/artifacts.json" 2> /dev/null || return 1
+    for run in $(py artifact-runs "$tmp/artifacts.json"); do
+        "$gh" api "repos/$slug/actions/runs/$run" > "$tmp/run.json" 2> /dev/null || continue
+        [ "$(py mac-engine-run "$tmp/run.json")" = yes ] || continue
+        rm -rf "$tmp/artifact"
+        "$gh" run download "$run" -R "$slug" -n "$artifact_name" -D "$tmp/artifact" > /dev/null 2>&1 || continue
+        grep -q "okengine API $1 " "$tmp/artifact/VERSION-macos.txt" 2> /dev/null || continue
+        mv "$tmp/artifact/libokengine.dylib" "$tmp/libokengine.dylib" && return 0
+    done
+    return 1
 }
 
 python=""
@@ -232,6 +263,8 @@ find_python() {
 py() {
 "$python" - "$@" << 'EOF'
 import hashlib, json, os, re, sys
+# Plain newlines from a Windows Python too, for the test in Git Bash.
+sys.stdout.reconfigure(newline=chr(10))
 cmd = sys.argv[1]
 if cmd == 'hash':
     print(hashlib.sha256(open(sys.argv[2], 'rb').read()).hexdigest())
@@ -255,6 +288,16 @@ elif cmd.startswith('record-'):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w', newline='\n') as f:
         f.write(json.dumps(rec, indent=2) + '\n')
+elif cmd == 'artifact-runs':
+    for a in json.load(open(sys.argv[2])).get('artifacts', []):
+        r = a.get('workflow_run') or {}
+        same = r.get('repository_id') is not None and r.get('head_repository_id') == r.get('repository_id')
+        if same and r.get('head_branch') == 'main' and r.get('id') and not a.get('expired'):
+            print(r['id'])
+elif cmd == 'mac-engine-run':
+    r = json.load(open(sys.argv[2]))
+    ok = r.get('path') == '.github/workflows/mac-engine.yml' and r.get('event') in ('push', 'workflow_dispatch', 'schedule')
+    print('yes' if ok else 'no')
 elif cmd == 'meta':
     src, out = sys.argv[2], sys.argv[3]
     text = open(src, encoding='utf-8').read()
@@ -272,8 +315,8 @@ EOF
 }
 
 notify() {
-    command -v osascript > /dev/null 2>&1 || return 0
-    osascript -e "display notification \"$1\" with title \"Stars of Darien\"" > /dev/null 2>&1 || true
+    command -v "$osascript" > /dev/null 2>&1 || return 0
+    "$osascript" -e "display notification \"$1\" with title \"Stars of Darien\"" > /dev/null 2>&1 || true
 }
 
 install_auto() {
