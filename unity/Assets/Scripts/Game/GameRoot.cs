@@ -111,6 +111,7 @@ namespace OpenKingdomsUnity.Game
             Backend = injected ?? StartBackend();
             GlbLoader.SetPainter(Backend);
             Options = GameOptions.Load();
+            FxQuality.Use(Options.EffectsQuality);
             // The menus have the interface's music and sounds from the start.
             ApplyAudio();
             UiKit.Sound = playSound = wav => Backend != null && Backend.PlaySound(wav, Options.Volume);

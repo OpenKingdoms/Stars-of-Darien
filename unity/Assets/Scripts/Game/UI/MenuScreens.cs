@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using OpenKingdomsUnity.Game.World;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -450,6 +451,11 @@ namespace OpenKingdomsUnity.Game.UI
                 o.PostEffects = i == 0;
                 if (root.World != null) root.World.Atmosphere.SetPostEffects(o.PostEffects, root.World.Camera != null ? root.World.Camera.GetComponent<Camera>() : null);
             }, "Post effects: the remaster's light, colour and smoothed edges, or none to run faster");
+            Row(list, w, "Battle effects", new[] { "Low", "Medium", "High", "Ultra" }, x => (int)x.EffectsQuality, i =>
+            {
+                o.EffectsQuality = (EffectsQuality)i;
+                FxQuality.Use(o.EffectsQuality);
+            }, "Battle effects: how much smoke, debris, light and scarring a battle shows. Low suits slower computers");
             if (GameRoot.ChangeGameFolder != null) GameFolderRow(list, w, o);
         }
 

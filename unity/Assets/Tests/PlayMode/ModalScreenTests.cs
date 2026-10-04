@@ -283,7 +283,7 @@ namespace OpenKingdomsUnity.Tests
                 foreach (var rubric in new[] { "Game", "Interface", "Sound", "Display" })
                     Assert.IsNotNull(Named(options, "Rubric " + rubric), $"the {rubric} section");
                 var spots = options.GetComponentsInChildren<HelpSpot>(true).Where(h => h.name.StartsWith("Row ")).ToList();
-                var rows = new[] { "Weather", "Game speed", "Controls", "Interface size", "Key letters", "Pointer size", "Sound", "Music", "Display", "Shadows", "Post effects" };
+                var rows = new[] { "Weather", "Game speed", "Controls", "Interface size", "Key letters", "Pointer size", "Sound", "Music", "Display", "Shadows", "Post effects", "Battle effects" };
                 CollectionAssert.IsSubsetOf(rows, spots.Select(h => h.name.Substring(4)).ToList());
                 var events = new PointerEventData(EventSystem.current);
                 foreach (var spot in spots)

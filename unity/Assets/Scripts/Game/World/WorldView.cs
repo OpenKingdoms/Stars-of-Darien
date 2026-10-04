@@ -57,6 +57,7 @@ namespace OpenKingdomsUnity.Game.World
         // now false leaves the steps to BuildSome.
         public void Build(MapInfo map, GameOptions options, bool now = true)
         {
+            FxQuality.Use(options.EffectsQuality);
             building.Clear();
             partOrder.Clear();
             partMs.Clear();

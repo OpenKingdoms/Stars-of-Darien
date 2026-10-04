@@ -11,6 +11,9 @@ namespace OpenKingdomsUnity.Game
         public WeatherChoice Weather = WeatherChoice.ByMap;
         public bool Shadows = true;
         public bool PostEffects = true;
+        // How much smoke, debris, light and scarring a battle shows. A new
+        // player starts on what the graphics card suits.
+        public EffectsQuality EffectsQuality = FxQuality.Detect();
         public bool Fullscreen = true;
         public float ScrollSpeed = 1f;
         public int GameSpeed = 1;   // 1 normal, 2 fast
@@ -41,6 +44,7 @@ namespace OpenKingdomsUnity.Game
             o.Weather = (WeatherChoice)PlayerPrefs.GetInt(Prefix + "weather", (int)o.Weather);
             o.Shadows = PlayerPrefs.GetInt(Prefix + "shadows", 1) != 0;
             o.PostEffects = PlayerPrefs.GetInt(Prefix + "post", 1) != 0;
+            o.EffectsQuality = (EffectsQuality)Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "effects", (int)o.EffectsQuality), 0, (int)EffectsQuality.Ultra);
             o.Fullscreen = PlayerPrefs.GetInt(Prefix + "fullscreen", Screen.fullScreen ? 1 : 0) != 0;
             o.ScrollSpeed = PlayerPrefs.GetFloat(Prefix + "scroll", 1f);
             o.GameSpeed = Mathf.Clamp(PlayerPrefs.GetInt(Prefix + "speed", 1), 1, 2);
@@ -62,6 +66,7 @@ namespace OpenKingdomsUnity.Game
             PlayerPrefs.SetInt(Prefix + "weather", (int)Weather);
             PlayerPrefs.SetInt(Prefix + "shadows", Shadows ? 1 : 0);
             PlayerPrefs.SetInt(Prefix + "post", PostEffects ? 1 : 0);
+            PlayerPrefs.SetInt(Prefix + "effects", (int)EffectsQuality);
             PlayerPrefs.SetInt(Prefix + "fullscreen", Fullscreen ? 1 : 0);
             PlayerPrefs.SetFloat(Prefix + "scroll", ScrollSpeed);
             PlayerPrefs.SetInt(Prefix + "speed", GameSpeed);

@@ -441,11 +441,11 @@ namespace OpenKingdomsUnity.Tests
             var sheet = root.Screens.Screen("Options");
             CyclePicker Picker(string label) => sheet.GetComponentsInChildren<CyclePicker>(true).First(c => c.name == "Picker " + label);
             ButtonOn("Options", "Defaults").onClick.Invoke();
-            var rows = new[] { "Weather", "Game speed", "Controls", "Interface size", "Key letters", "Pointer size", "Sound", "Music", "Shadows", "Post effects" };
+            var rows = new[] { "Weather", "Game speed", "Controls", "Interface size", "Key letters", "Pointer size", "Sound", "Music", "Shadows", "Post effects", "Battle effects" };
             foreach (var r in rows) Picker(r).Step(1);
             var shown = rows.Select(r => Picker(r).Index).ToList();
             var chosen = root.Options;
-            string Read(GameOptions o) => $"{o.Weather} {o.GameSpeed} {o.ClassicControls} {o.UiScale} {o.HotkeyLetters} {o.CursorScale} {o.Volume} {o.Music} {o.Shadows} {o.PostEffects}";
+            string Read(GameOptions o) => $"{o.Weather} {o.GameSpeed} {o.ClassicControls} {o.UiScale} {o.HotkeyLetters} {o.CursorScale} {o.Volume} {o.Music} {o.Shadows} {o.PostEffects} {o.EffectsQuality}";
             string want = Read(chosen);
             Assert.AreNotEqual(Read(new GameOptions()), want, "every row moved off its default");
             ButtonOn("Options", "Back").onClick.Invoke();
