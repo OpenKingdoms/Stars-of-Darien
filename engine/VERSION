@@ -1,3 +1,3 @@
-okengine-api23.dll  okengine API 23, unity-embed 20f7aa6, main e66f09e, the battle record for the end screen, published at openkingdoms-unity f8680ed
+okengine-api23.dll  okengine API 23, unity-embed 9b4a910, main 19d3b54, flames and smoke on damaged buildings, engine build 22, published at openkingdoms-unity 62c629f
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
 okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 20f7aa6, published at openkingdoms-unity f8680ed
