@@ -100,20 +100,22 @@ The ground keeps a scar map, textures laid over the whole map at one texel for e
 
 | Kind | Weapons | What it leaves |
 |---|---|---|
-| Gunpowder | damage kind explosion, and other explosion art | a crater with 0.8 of the blast's radius, at most 4 units, 2 to 6 px deep with a flat floor, a lumpy rim 0.4 of its depth, scorch to the rim and earth thrown in rays to 2.4 crater radii. A shot of no area scorches a spot |
-| Siege | explosions with dust, dirt or rock art | a pit 0.45 of the radius, at most 5 px deep with a low rim, churned soil and stones scattered to 2.8 pit radii, and no scorch |
+| Gunpowder | cannon, mortar, musket, bomb and every death blast | a crater with 0.8 of the blast's radius, at most 4 units, 2 to 6 px deep with a flat floor, a lumpy rim 0.4 of its depth, scorch at its heart, walls of dug earth and earth thrown in rays to 2.4 crater radii. A shot of no area scorches a spot |
+| Siege | thrown stone, catapult and trebuchet shot | a pit 0.45 of the radius, at most 5 px deep with a low rim, churned soil and stones scattered to 2.8 pit radii, and no scorch |
 | Impact | volcanic blasts, meteors and fire spells of 3.5 units or more | a crater up to 5 units in radius and 10 px deep, charred, glowing for 25 s |
-| Fire | fire starters, fire damage, fireball and flame art | char over the blast's reach with a ragged edge, black and glowing while fresh, settling to dark soil after 20 s |
+| Fire | fireballs, flame strikes and burning arrows | char over the blast's reach with a ragged edge, black and glowing while fresh, settling to dark soil after 20 s |
 | Breath | dragon breath | a scorched swath 3.5 units back along the breath |
-| Lightning | bolts, ball lightning and blue shock rings | a charred star with a scorched fork of five branches, each with a side branch |
-| Frost | ice art, hail and freezing | rime that lasts 60 s at its heart and melts from its edges, and cracks that stay |
-| Dark | soul stealer, mind control and turn to stone | blight that withers what grows grey and violet, most on green ground |
-| Water | water, splash and tsunami art on land | wet dark ground that dries from its edges over a minute, a long swath for a tsunami |
-| Holy | holy light | a pale ring of light that fades over 25 s, its middle first |
+| Lightning | bolts, ball lightning and shock rings | a charred star with a scorched fork at least 6 units across, five branches each with a side branch |
+| Frost | hail, ice storms and freezing | rime that lasts 60 s at its heart and melts from its edges, and cracks that stay |
+| Dark | death auras, mind control and turning to stone | blight that withers what grows grey and violet, most on green ground |
+| Water | water balls, splashes and tsunamis on land | wet dark ground that dries from its edges over a minute, a long swath for a tsunami |
+| Holy | a divine caster's magic that is no element | a pale ring of light that fades over 25 s, its middle first |
 | Earth | earthquakes | cracks and churned soil along four fissures |
-| Dust | dust puffs and wandering spells | a scuff of churned soil |
+| Dust | dust puffs and whirlwinds | a scuff of churned soil |
 
-Blasts on water leave nothing here, as the sea's churn belongs to the explosions, and so does a shot that struck a unit directly. A crater by the shore fills to just above the water. The soil follows the map's climate, with brown earth on grass, sand in the desert, slush on snow, black mud holding water in swamps and ash on volcanic ground. Dug snow shows wherever the ground itself is snowy. The fog of war darkens scars like the rest of the ground.
+The kinds are the ones `FxKinds` sorts every weapon into for the explosions, so a weapon's scar and its blast agree. Blasts on water leave nothing here, as the sea's churn belongs to the explosions, and so does a shot that struck a unit directly. A crater by the shore fills to just above the water. The soil follows the map's climate, with brown earth on grass, sand in the desert, slush on snow, black mud holding water in swamps and ash on volcanic ground. Dug snow shows wherever the ground itself is snowy. The fog of war darkens scars like the rest of the ground.
+
+Measured on the mock in the editor at High, the scar map's own update took 0.2 ms a frame on average in an eight seat battle on a 512 unit map with two stamps a frame landing all over it, and 3.2 ms in the worst frame, the one putting a dented region in place. Drawing a scarred field at 2560 by 1440 took 0.13 ms more than the same field with the scars switched off. Five thousand blasts landing at once filled the queue to its cap of 1,536, folded 2,950 into waiting stamps, let 514 go and drained in 53 frames of at most 1.8 ms. The textures hold 8 MB on a 192 unit map and 56 MB on a 512 unit one.
 
 ### Fire
 
