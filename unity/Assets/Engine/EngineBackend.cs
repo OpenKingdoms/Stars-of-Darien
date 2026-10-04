@@ -281,14 +281,32 @@ namespace OpenKingdomsUnity.Engine
             for (int i = 0; i < nf; i++)
             {
                 if (OkEngine.okx_feature_def_info(i, out var f) != 0) continue;
-                featureDefs.Add(new FeatureDef
+                var fd = new FeatureDef
                 {
                     Id = i, Name = f.name, ObjectName = f.obj ?? "",
                     SequenceName = string.IsNullOrEmpty(f.obj) ? f.seqname ?? "" : "",
                     Category = f.category, Footprint = new Vector2Int(f.footprintX, f.footprintZ),
                     Height = f.height * S
-                });
+                };
+                ReadFate(fd);
+                featureDefs.Add(fd);
             }
+            weapons.Clear();
+        }
+
+        void ReadFate(FeatureDef fd)
+        {
+            if (noFate) return;
+            try
+            {
+                if (OkEngine.okx_feature_def_fate(fd.Id, out var fate) != 0) return;
+                fd.HitPoints = fate.damage;
+                fd.Indestructible = fate.indestructible != 0;
+                fd.Flammable = fate.flammable != 0;
+                fd.DeadDef = fate.deadDef;
+                fd.BurntDef = fate.burntDef;
+            }
+            catch (EntryPointNotFoundException) { noFate = true; }
         }
 
         int[] Buildables(int def)
@@ -640,6 +658,126 @@ namespace OpenKingdomsUnity.Engine
         {
             int nodes = OkEngine.okx_feature_pose(index, pose, 128);
             return nodes > 0 ? WritePose(nodes, into, false) : 0;
+        }
+
+        // ── Destruction ───────────────────────────────────────────────
+
+        // Each export is tried once. An engine built before it lacks the
+        // entry point, and the game then goes on without what it reports.
+        bool noBlasts, noFeatureEvents, noPieceEvents, noWeaponInfo, noFate, noWind;
+        OkxBlast[] blastBuf = new OkxBlast[64];
+        OkxFeatureEvent[] featureEventBuf = new OkxFeatureEvent[64];
+        OkxPieceEvent[] pieceEventBuf = new OkxPieceEvent[64];
+        readonly float[] pieceMatrix = new float[12];
+        readonly Dictionary<(int def, int slot), WeaponInfo> weapons = new Dictionary<(int def, int slot), WeaponInfo>();
+
+        public int ReadBlasts(int since, BlastEvent[] into)
+        {
+            int cap = into?.Length ?? 0;
+            if (noBlasts || cap == 0) return 0;
+            if (blastBuf.Length < cap) blastBuf = new OkxBlast[Mathf.NextPowerOfTwo(cap)];
+            int n;
+            try { n = OkEngine.okx_blasts(since, blastBuf, cap); }
+            catch (EntryPointNotFoundException) { noBlasts = true; return 0; }
+            n = Mathf.Clamp(n, 0, cap);
+            for (int i = 0; i < n; i++)
+            {
+                var b = blastBuf[i];
+                into[i] = new BlastEvent
+                {
+                    Id = b.id, Tick = b.tick, Cause = (BlastCause)b.cause, Def = b.def, Slot = b.slot,
+                    Weapon = b.cause == OkEngine.BlastFeature ? null : Weapon(b.def, b.slot),
+                    Player = b.player, Shooter = b.shooter,
+                    Position = EngineSettings.ToUnity(b.x, b.y, b.z), Direction = new Vector3(b.dx, b.dy, -b.dz),
+                    Radius = b.radius * S, Damage = b.damage, Flags = (BlastFlags)b.flags, Unit = b.unit, Feature = b.feature,
+                };
+            }
+            return n;
+        }
+
+        public int ReadFeatureEvents(int since, FeatureEvent[] into)
+        {
+            int cap = into?.Length ?? 0;
+            if (noFeatureEvents || cap == 0) return 0;
+            if (featureEventBuf.Length < cap) featureEventBuf = new OkxFeatureEvent[Mathf.NextPowerOfTwo(cap)];
+            int n;
+            try { n = OkEngine.okx_feature_events(since, featureEventBuf, cap); }
+            catch (EntryPointNotFoundException) { noFeatureEvents = true; return 0; }
+            n = Mathf.Clamp(n, 0, cap);
+            for (int i = 0; i < n; i++)
+            {
+                var e = featureEventBuf[i];
+                into[i] = new FeatureEvent
+                {
+                    Id = e.id, Tick = e.tick, Kind = (FeatureEventKind)e.kind, Feature = e.feature, Def = e.def, NewDef = e.newDef,
+                    Position = EngineSettings.ToUnity(e.x, e.y, e.z), Blast = e.blast,
+                    From = e.blast != 0 ? EngineSettings.ToUnity(e.fromX, e.fromY, e.fromZ) : EngineSettings.ToUnity(e.x, e.y, e.z),
+                    Damage = e.damage, Health = e.health, Ticks = e.ticks,
+                };
+            }
+            return n;
+        }
+
+        public int ReadPieceEvents(int since, PieceEvent[] into)
+        {
+            int cap = into?.Length ?? 0;
+            if (noPieceEvents || cap == 0) return 0;
+            if (pieceEventBuf.Length < cap) pieceEventBuf = new OkxPieceEvent[Mathf.NextPowerOfTwo(cap)];
+            int n;
+            try { n = OkEngine.okx_piece_events(since, pieceEventBuf, cap); }
+            catch (EntryPointNotFoundException) { noPieceEvents = true; return 0; }
+            n = Mathf.Clamp(n, 0, cap);
+            for (int i = 0; i < n; i++)
+            {
+                var e = pieceEventBuf[i];
+                var m = pieceMatrix;
+                m[0] = e.m0; m[1] = e.m1; m[2] = e.m2; m[3] = e.m3; m[4] = e.m4; m[5] = e.m5;
+                m[6] = e.m6; m[7] = e.m7; m[8] = e.m8; m[9] = e.m9; m[10] = e.m10; m[11] = e.m11;
+                into[i] = new PieceEvent
+                {
+                    Id = e.id, Tick = e.tick, Unit = e.unit, Def = e.def, Player = e.player, Model = e.model, Piece = e.piece,
+                    How = (PieceExplode)e.how, Pose = EngineSettings.PoseToUnity(m, 0), OutOfSight = e.unseen != 0,
+                };
+            }
+            return n;
+        }
+
+        public WeaponInfo Weapon(int def, int slot)
+        {
+            if (noWeaponInfo || def < 0) return null;
+            if (weapons.TryGetValue((def, slot), out var known)) return known;
+            WeaponInfo w = null;
+            try
+            {
+                if (OkEngine.okx_weapon_info(def, slot, out var x) == 0)
+                    w = new WeaponInfo
+                    {
+                        Def = def, Slot = slot, Name = x.name ?? "", Type = Key(x.type), Subtype = Key(x.subtype),
+                        DamageKind = Key(x.damageType), ExplosionClass = Key(x.explosionClass), WaterExplosionClass = Key(x.waterExplosionClass),
+                        AreaOfEffect = x.areaOfEffect * S, Damage = x.damage, Flags = (WeaponFlags)x.flags,
+                        Light = x.lightmap >= OkEngine.LightmapSmall && x.lightmap <= OkEngine.LightmapLarge ? (FxLight)(x.lightmap + 1) : FxLight.None,
+                        Shake = x.shakeMagnitude, ShakeSeconds = x.shakeDuration,
+                    };
+            }
+            catch (EntryPointNotFoundException) { noWeaponInfo = true; return null; }
+            weapons[(def, slot)] = w;
+            return w;
+        }
+
+        static string Key(string s) => (s ?? "").Trim().ToLowerInvariant();
+
+        public bool ReadWind(out Wind wind)
+        {
+            wind = default;
+            if (noWind) return false;
+            try
+            {
+                if (OkEngine.okx_wind(out float speed, out float max, out float dx, out float dz) != 0) return false;
+                // The engine's z runs south.
+                wind = new Wind { Heading = Mathf.Repeat(Mathf.Atan2(dx, -dz) * Mathf.Rad2Deg, 360f), Speed = speed, MaxSpeed = max };
+                return true;
+            }
+            catch (EntryPointNotFoundException) { noWind = true; return false; }
         }
 
         // ── Art ────────────────────────────────────────────────────────

@@ -82,6 +82,22 @@ namespace OpenKingdomsUnity.Game
         // UnitDef.Animations ("walk", "attack1"), or "" when idle or unknown.
         string UnitAnimation(int handle);
 
+        // Destruction, reported for the look and never fed back. Each
+        // stream keeps what happened in a ring, with ids from 1 rising by
+        // one and never reused while the backend lives. Pass the last id
+        // read: the call fills into with what came after it, oldest first,
+        // and returns how many it wrote. A full buffer may leave more, and
+        // a gap in the ids means the ring dropped some. Read each frame.
+        int ReadBlasts(int since, BlastEvent[] into);
+        int ReadFeatureEvents(int since, FeatureEvent[] into);
+        int ReadPieceEvents(int since, PieceEvent[] into);
+        // A weapon as its data describes it, by unit def and slot (0 to 2,
+        // or WeaponSlot.Death for the unit's death blast). Null for none,
+        // or when the backend cannot say.
+        WeaponInfo Weapon(int def, int slot);
+        // The simulation's wind. False when it has none.
+        bool ReadWind(out Wind wind);
+
         // Art. LoadModel returns a model id (or -1) for an object name in a
         // team colour. Model ids in UnitState and FeatureState are the same ids.
         int LoadModel(string objectName, int colour);
@@ -436,6 +452,14 @@ namespace OpenKingdomsUnity.Game
         public string Category;
         public Vector2Int Footprint;
         public float Height;
+        // What destroying it does, as its data says: hit points (its
+        // damage), and the defs it leaves when destroyed and when burnt
+        // out, -1 for nothing. A backend that cannot say leaves 0 and -1.
+        public int HitPoints;
+        public bool Indestructible, Flammable;
+        public int DeadDef = -1, BurntDef = -1;
+
+        public bool Breakable => !Indestructible && HitPoints > 0;
     }
 
     [Serializable]
@@ -647,6 +671,134 @@ namespace OpenKingdomsUnity.Game
         public Vector2 UvMin, UvMax;
         public int Ticks;           // how long the original shows it, in ticks
         public bool Additive;
+    }
+
+    // ---- Destruction ----
+
+    public static class WeaponSlot
+    {
+        public const int None = -1;     // a blast with no unit weapon behind it
+        public const int Death = -2;    // a unit's own death blast
+    }
+
+    public enum BlastCause : byte { Weapon, Death, Feature }
+
+    [Flags]
+    public enum BlastFlags
+    {
+        None = 0,
+        FireStarter = 1,    // sets flammable scenery in reach burning instead of hurting it
+        UnitsOnly = 2,      // never touches scenery
+        Water = 4,          // burst on water
+        DirectHit = 8,      // a shot of little area that struck a unit, so scenery was left alone
+        OutOfSight = 16,    // where the local player could not see when it burst
+    }
+
+    // One blast, where a shot, a spell or a death burst.
+    public struct BlastEvent
+    {
+        public int Id;
+        public uint Tick;
+        public BlastCause Cause;
+        public int Def;             // the unit def that fired or died, the feature def for Feature, -1 unknown
+        public int Slot;            // its weapon slot 0 to 2, WeaponSlot.Death or WeaponSlot.None
+        public WeaponInfo Weapon;   // the weapon behind it, null when the backend cannot say
+        public int Player;          // whose blast, 0 for none
+        public int Shooter;         // the unit that fired or died while it lives, else -1
+        public Vector3 Position;    // world, where it burst
+        public Vector3 Direction;   // the way the shot travelled, unit length, zero for none
+        // World units: half the weapon's areaofeffect, the reach the
+        // original gives a blast over scenery. 0 for a weapon with no area.
+        public float Radius;
+        public int Damage;          // what each feature in reach takes
+        public BlastFlags Flags;
+        public int Unit;            // the unit it struck, else -1
+        public int Feature;         // the feature it struck, its index in ReadFeatures, else -1
+    }
+
+    [Flags]
+    public enum WeaponFlags { None = 0, FireStarter = 1, UnitsOnly = 2, Spell = 4 }
+
+    // A weapon as its data describes it. The keys are lower case as the
+    // data spells them, "" where it leaves one out.
+    public sealed class WeaponInfo
+    {
+        public int Def, Slot;
+        public string Name = "";                // its own name, "Cannon"
+        public string Type = "";                // "ballistic", "melee", "line of sight", "remote effect", "guided", "wandering"
+        public string Subtype = "";             // "lightning", "fire", "hailstorm", "earthquake" and the rest
+        public string DamageKind = "";          // damagetype: "explosion", "fire", "paralyzer"
+        public string ExplosionClass = "";      // "large explosion", "fireball explosion" and the rest
+        public string WaterExplosionClass = "";
+        public float AreaOfEffect;              // world units, as the data gives it
+        public int Damage;                      // its default damage
+        public WeaponFlags Flags;
+        public FxLight Light;                   // the glow round its blast
+        public float Shake, ShakeSeconds;       // shakemagnitude and shakeduration, 0 for none
+    }
+
+    public enum FeatureEventKind : byte
+    {
+        Hit,        // a blast reached it: Damage taken, 0 for a kind that ignores hits, and Health left
+        Dying,      // out of hit points: its death animation runs for Ticks
+        Dead,       // replaced in place by NewDef, or gone when NewDef is -1
+        Burning,    // caught fire, and burns for Ticks
+        Burnt,      // burnt out: replaced in place by NewDef, or gone when NewDef is -1
+        Swept,      // swept by a builder, gone with no remains
+        Placed,     // set down during the battle: a wreck, a body, or by the map editor
+        Removed,    // gone some other way: rotted, raised, or by the map editor
+    }
+
+    // What happened to one feature. A feature that goes leaves a gap that
+    // ReadFeatures closes, so later indices move down by one.
+    public struct FeatureEvent
+    {
+        public int Id;
+        public uint Tick;
+        public FeatureEventKind Kind;
+        public int Feature;         // its index in ReadFeatures when it happened
+        public int Def;             // what it was
+        public int NewDef;          // what it became, for Dead and Burnt, else -1
+        public Vector3 Position;    // world, where it stands
+        public int Blast;           // the blast behind it, 0 for none
+        public Vector3 From;        // world, where that blast burst, else Position
+        public int Damage, Health;  // for Hit
+        public int Ticks;           // for Dying and Burning
+    }
+
+    // The original's EXPLODE types (exptype.h), how a unit script throws a piece.
+    [Flags]
+    public enum PieceExplode
+    {
+        None = 0, Shatter = 1, ExplodeOnHit = 2, Fall = 4, Smoke = 8, Fire = 16, BitmapOnly = 32,
+        Bitmap1 = 256, Bitmap2 = 512, Bitmap3 = 1024, Bitmap4 = 2048, Bitmap5 = 4096, BitmapNuke = 8192,
+    }
+
+    // A piece a unit's script exploded. The unit's own pose keeps the
+    // piece as the script leaves it, so a look that throws it hides it there.
+    public struct PieceEvent
+    {
+        public int Id;
+        public uint Tick;
+        public int Unit;            // the unit's handle, valid while it lives
+        public int Def, Player;
+        public int Model;           // the unit's model, as UnitState.Model
+        public int Piece;           // an index into that model's Pieces
+        public PieceExplode How;
+        public Matrix4x4 Pose;      // piece space to world at that moment, as ReadUnitPose gives it
+        public bool OutOfSight;     // the local player could not see the unit
+    }
+
+    public struct Wind
+    {
+        public float Heading;       // degrees, the way it blows, 0 north and clockwise seen from above
+        public float Speed;         // the simulation's own measure, from the map's minwindspeed up
+        public float MaxSpeed;      // the map's maxwindspeed
+
+        // 0 for calm to 1 for the map's strongest.
+        public float Strength => MaxSpeed > 0f ? Mathf.Clamp01(Speed / MaxSpeed) : 0f;
+        // Along the ground, unit length.
+        public Vector3 Toward => new Vector3(Mathf.Sin(Heading * Mathf.Deg2Rad), 0f, Mathf.Cos(Heading * Mathf.Deg2Rad));
     }
 
     public struct PiecePose

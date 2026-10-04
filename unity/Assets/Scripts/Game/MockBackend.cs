@@ -165,11 +165,16 @@ namespace OpenKingdomsUnity.Game
             public Vector3 Pos;
             public float Heading;
             public float Sink;      // units a second, for a corpse
+            // With SceneryBreaks: damage taken, ticks left dying and
+            // burning, ticks to its sparks, and the blast behind it.
+            public int Damage, DyingLeft, BurnLeft, SparkIn, Blast;
+            public Vector3 From;
         }
 
         sealed class Arrow
         {
             public int Id, Player, Target, Damage, From;
+            public int Def = -1;        // the shooter's, for the blast it makes
             public Vector3 Pos, Vel;
             public FxWeapon Look;       // how it is drawn, and what it leaves where it lands
             public uint Born;
@@ -193,9 +198,7 @@ namespace OpenKingdomsUnity.Game
                 unitDefs[i + 3].BuildOptions = new[] { i + 1, i + 2 };
             }
             AddSpecialists();
-            featureDefs.Add(new FeatureDef { Id = 0, Name = "mock_tree", ObjectName = "mocktree", SequenceName = "", Category = "trees", Footprint = new Vector2Int(1, 1), Height = 3f });
-            featureDefs.Add(new FeatureDef { Id = 1, Name = "mock_rock", ObjectName = "", SequenceName = "mockrock", Category = "rocks", Footprint = new Vector2Int(2, 2), Height = 1.5f });
-            featureDefs.Add(new FeatureDef { Id = 2, Name = "mock_bush", ObjectName = "", SequenceName = "mockbush", Category = "plants", Footprint = new Vector2Int(1, 1), Height = 1f });
+            AddFeatureDefs();
             textures.Add(StoneTexture());
             sprites.Add(BlobSprite(new Color32(130, 125, 118, 255), 0.9f, 11));
             sprites.Add(BlobSprite(new Color32(50, 120, 45, 255), 0.7f, 23));
@@ -301,6 +304,7 @@ namespace OpenKingdomsUnity.Game
             features.Clear();
             arrows.Clear();
             ClearFx();
+            ForgetDestruction();
             players.Clear();
             economy.Clear();
             chunks.Clear();
@@ -476,14 +480,17 @@ namespace OpenKingdomsUnity.Game
                     Hurt(t, a.Damage, a.From);
                     arrows.RemoveAt(i);
                     if (a.Look?.Impact != null) SpawnBlast(FxStripId(a.Look.Impact), GroundAt(a.Pos), struck: t.Handle);
+                    Burst(a, a.Pos, t.Handle);
                 }
                 else if (a.Pos.y < GroundHeight(a.Pos.x, a.Pos.z) - 0.2f)
                 {
                     arrows.RemoveAt(i);
                     if (a.Look?.Impact != null) SpawnBlast(FxStripId(a.Look.Impact), GroundAt(a.Pos));
+                    Burst(a, GroundAt(a.Pos), -1);
                 }
             }
             StepFx(dt);
+            StepScenery();
 
             if (Tick % Tps == 0) { CheckOutcome(); NoteStanding(); }
             NoteSample();
@@ -637,7 +644,7 @@ namespace OpenKingdomsUnity.Game
             float time = Mathf.Max(0.3f, (to - from).magnitude / 18f);
             var vel = (to - from) / time + Vector3.up * 0.5f * 9.8f * time;
             var look = FxWeaponNamed(RoleOf(u.Def) == Role.Mage ? "MOCK FIREBALL" : "MOCK ARROW");
-            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel, From = u.Handle, Look = look, Born = Tick });
+            arrows.Add(new Arrow { Id = nextArrow++, Player = u.Player, Target = t.Handle, Damage = (int)(14 * DamageScale), Pos = from, Vel = vel, From = u.Handle, Look = look, Born = Tick, Def = u.Def });
         }
 
         void Hurt(Unit t, int dmg, int by = -1)
@@ -652,6 +659,7 @@ namespace OpenKingdomsUnity.Game
             t.Dying = true;
             if (killer != null && killer.Player != t.Player) killer.Kills++;
             NoteDeath(killer, t);
+            Died(t);
         }
 
         // Kills as the mock counts them, and a rank at three and at ten.
@@ -778,12 +786,7 @@ namespace OpenKingdomsUnity.Game
         {
             if (Terrain == null || def < 0 || def >= featureDefs.Count) return -1;
             float x = cx * Terrain.CellSize, z = -cz * Terrain.CellSize;
-            features.Add(new Feature
-            {
-                Def = def, Pos = new Vector3(x, Terrain.Sample(x, z), z), Heading = 0,
-                Model = def == 0 ? LoadModel("mocktree", 0) : -1, Sprite = def == 0 ? -1 : def - 1,
-            });
-            return features.Count - 1;
+            return PutFeature(new Feature { Def = def, Pos = new Vector3(x, Terrain.Sample(x, z), z), Heading = 0 });
         }
 
         // A feature at a point that sinks so many units a second, as a corpse
@@ -791,11 +794,14 @@ namespace OpenKingdomsUnity.Game
         public int AddFeature(int def, Vector3 pos, float sinkPerSecond)
         {
             if (def < 0 || def >= featureDefs.Count) return -1;
-            features.Add(new Feature
-            {
-                Def = def, Pos = pos, Heading = 0, Sink = sinkPerSecond,
-                Model = def == 0 ? LoadModel("mocktree", 0) : -1, Sprite = def == 0 ? -1 : def - 1,
-            });
+            return PutFeature(new Feature { Def = def, Pos = pos, Heading = 0, Sink = sinkPerSecond });
+        }
+
+        int PutFeature(Feature f)
+        {
+            LookOf(f.Def, out f.Model, out f.Sprite);
+            features.Add(f);
+            NoteFeature(FeatureEventKind.Placed, features.Count - 1, f, -1, 0, f.Pos);
             return features.Count - 1;
         }
 
@@ -806,15 +812,21 @@ namespace OpenKingdomsUnity.Game
                 var f = features[i];
                 if (f.Sink <= 0) continue;
                 f.Pos.y -= f.Sink * dt;
-                if (Terrain != null && f.Pos.y < Terrain.Sample(f.Pos.x, f.Pos.z) - 3f) features.RemoveAt(i);
+                if (Terrain != null && f.Pos.y < Terrain.Sample(f.Pos.x, f.Pos.z) - 3f) TakeFeature(i);
             }
         }
 
         public bool RemoveFeature(int index)
         {
             if (index < 0 || index >= features.Count) return false;
-            features.RemoveAt(index);
+            TakeFeature(index);
             return true;
+        }
+
+        void TakeFeature(int index)
+        {
+            NoteFeature(FeatureEventKind.Removed, index, features[index], -1, 0, features[index].Pos);
+            features.RemoveAt(index);
         }
 
         // The mock keeps a saved map for the session: its ground, features

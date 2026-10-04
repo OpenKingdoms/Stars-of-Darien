@@ -264,6 +264,7 @@ namespace OpenKingdomsUnity.Game
                 b.Box(top, new Vector3(0, 0.8f, 0), new Vector3(1f, 0.8f, 1f), Leaf);
                 return b.Finish(obj);
             }
+            if (Scenery(b, obj)) return b.Finish(obj);
             if (obj == "mockflyer")
             {
                 // A body with two wing chains, left at +x and right at -x.
@@ -347,6 +348,61 @@ namespace OpenKingdomsUnity.Game
             b.Box(legL, new Vector3(0, -0.35f * s, 0), new Vector3(0.16f, 0.7f, 0.16f) * s, Leather);
             b.Box(legR, new Vector3(0, -0.35f * s, 0), new Vector3(0.16f, 0.7f, 0.16f) * s, Leather);
             return b.Finish(obj);
+        }
+
+        static readonly Color32 Char = new Color32(38, 30, 26, 255), Stone = new Color32(150, 145, 135, 255),
+            Thatch = new Color32(170, 140, 70, 255), Grey = new Color32(120, 120, 125, 255);
+
+        // The stages scenery passes through as it breaks: a tree, its dead
+        // and burnt trunks and its stump, a wall, half a wall and its
+        // rubble, a hut and its wreck, and a body turned to stone.
+        static bool Scenery(Builder b, string obj)
+        {
+            int root;
+            switch (obj)
+            {
+                case "mocktreedead":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.9f, 0), new Vector3(0.35f, 1.8f, 0.35f), Wood);
+                    b.Box(root, new Vector3(0.15f, 1.9f, 0), new Vector3(0.18f, 0.5f, 0.18f), Wood);
+                    return true;
+                case "mocktreeburnt":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.75f, 0), new Vector3(0.32f, 1.5f, 0.32f), Char);
+                    return true;
+                case "mockstump":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.15f, 0), new Vector3(0.42f, 0.3f, 0.42f), Wood);
+                    return true;
+                case "mockwall":
+                case "mockwalla":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    float h = obj == "mockwall" ? 2f : 1f;
+                    b.Box(root, new Vector3(0, h * 0.5f, 0), new Vector3(4f, h, 0.6f), Stone, true);
+                    return true;
+                case "mockrubble":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(-1.1f, 0.18f, 0.1f), new Vector3(1.2f, 0.36f, 0.8f), Stone, true);
+                    b.Box(root, new Vector3(0.4f, 0.12f, -0.1f), new Vector3(1.4f, 0.24f, 0.9f), Stone, true);
+                    b.Box(root, new Vector3(1.4f, 0.2f, 0.15f), new Vector3(0.8f, 0.4f, 0.7f), Stone, true);
+                    return true;
+                case "mockhut":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.6f, 0), new Vector3(1.8f, 1.2f, 1.8f), Wood);
+                    int roof = b.AddPiece("roof", root, new Vector3(0, 1.2f, 0));
+                    b.Box(roof, new Vector3(0, 0.3f, 0), new Vector3(2.1f, 0.6f, 2.1f), Thatch);
+                    return true;
+                case "mockhutwreck":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.25f, 0), new Vector3(1.8f, 0.5f, 1.8f), Char);
+                    return true;
+                case "mockstonebody":
+                    root = b.AddPiece("base", -1, Vector3.zero);
+                    b.Box(root, new Vector3(0, 0.2f, 0), new Vector3(0.5f, 0.4f, 1.6f), Grey);
+                    b.Box(root, new Vector3(0, 0.25f, 0.95f), new Vector3(0.3f, 0.3f, 0.3f), Grey);
+                    return true;
+            }
+            return false;
         }
 
         // A piece rotation for a named animation at a time in seconds.

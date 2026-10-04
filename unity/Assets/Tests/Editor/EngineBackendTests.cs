@@ -415,6 +415,33 @@ namespace OpenKingdomsUnity.Tests
             System.IO.File.Delete(path);
         }
 
+        // The destruction reads came after API 23 without a bump. An engine
+        // built before them gives nothing and the battle goes on, and one
+        // with them gives events in id order and weapons by slot.
+        [Test, Order(3)]
+        public void TheDestructionReadsWorkWithOrWithoutTheEnginesExports()
+        {
+            Assert.AreEqual(GameStatus.Running, backend.Status);
+            var blasts = new BlastEvent[64];
+            int n = backend.ReadBlasts(0, blasts);
+            Assert.That(n, Is.InRange(0, blasts.Length));
+            for (int i = 1; i < n; i++) Assert.Greater(blasts[i].Id, blasts[i - 1].Id);
+            Assert.That(backend.ReadFeatureEvents(0, new FeatureEvent[64]), Is.InRange(0, 64));
+            Assert.That(backend.ReadPieceEvents(0, new PieceEvent[64]), Is.InRange(0, 64));
+            if (backend.ReadWind(out var wind)) Assert.That(wind.Heading, Is.InRange(0f, 360f));
+            foreach (var d in backend.UnitDefs.Take(40))
+                for (int slot = 0; slot < 3; slot++)
+                {
+                    var w = backend.Weapon(d.Id, slot);
+                    if (w != null) Assert.AreEqual(slot, w.Slot);
+                }
+            foreach (var f in backend.FeatureDefs)
+            {
+                Assert.That(f.DeadDef, Is.InRange(-1, backend.FeatureDefs.Count - 1), f.Name);
+                Assert.That(f.BurntDef, Is.InRange(-1, backend.FeatureDefs.Count - 1), f.Name);
+            }
+        }
+
         [Test, Order(3)]
         public void TheBattleReadsAndTakesOrders()
         {

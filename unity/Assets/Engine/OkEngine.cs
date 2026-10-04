@@ -191,6 +191,67 @@ namespace OpenKingdomsUnity.Engine
         public int follow;
     }
 
+    // The destruction exports report and change nothing. They came after
+    // API 23 without a bump, so an engine built before them lacks them.
+
+    // A blast: cause OkEngine.Blast*, flags OkEngine.BlastFlag*, the
+    // direction of travel unit length or 0, radius half the areaofeffect.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxBlast
+    {
+        public int id;
+        public uint tick;
+        public int cause, def, slot, player, shooter;
+        public float x, y, z, dx, dy, dz, radius;
+        public int damage, flags, unit, feature;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+    public struct OkxWeaponInfo
+    {
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string name;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string type;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string subtype;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string damageType;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string explosionClass;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string waterExplosionClass;
+        // areaOfEffect in pixels as the data gives it, flags OkEngine.WeaponFlag*,
+        // shakeDuration in seconds.
+        public int areaOfEffect, damage, flags, lightmap;
+        public float shakeMagnitude, shakeDuration;
+    }
+
+    // kind is OkEngine.FeatureEvent*, blast an okx_blasts id or 0.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxFeatureEvent
+    {
+        public int id;
+        public uint tick;
+        public int kind, feature, def, newDef;
+        public float x, y, z;
+        public int blast;
+        public float fromX, fromY, fromZ;
+        public int damage, health, ticks;
+    }
+
+    // how is the script's EXPLODE type, m0 to m11 the piece's pose as
+    // okx_unit_pose gives a node.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxPieceEvent
+    {
+        public int id;
+        public uint tick;
+        public int unit, def, player, model, piece, how, unseen;
+        public float m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11;
+    }
+
+    // A feature def's hit points and the defs it turns into, -1 for none.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct OkxFeatureFate
+    {
+        public int damage, indestructible, flammable, deadDef, burntDef;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
     public struct OkxNetRoom
     {
@@ -281,6 +342,14 @@ namespace OpenKingdomsUnity.Engine
         public const int EditStart = 8, EditMoveStart = 42;
         public const int ProjDot = 0, ProjModel = 1, ProjSprite = 2, ProjBeam = 3;
         public const int UnitActive = 1, UnitDying = 2;
+        public const int BlastWeapon = 0, BlastDeath = 1, BlastFeature = 2;
+        public const int BlastFlagFireStarter = 1, BlastFlagUnitsOnly = 2, BlastFlagWater = 4,
+            BlastFlagDirectHit = 8, BlastFlagUnseen = 16;
+        public const int WeaponFlagFireStarter = 1, WeaponFlagUnitsOnly = 2, WeaponFlagSpell = 4;
+        // okx_weapon_info's slot for a unit's death blast.
+        public const int SlotDeath = -2;
+        public const int FeatureEventHit = 0, FeatureEventDying = 1, FeatureEventDead = 2, FeatureEventBurning = 3,
+            FeatureEventBurnt = 4, FeatureEventSwept = 5, FeatureEventPlaced = 6, FeatureEventRemoved = 7;
 
         [DllImport(Lib)] public static extern int okx_api_version();
         [DllImport(Lib, CharSet = CharSet.Ansi)] public static extern int okx_init(string gameDir, string dataDir);
@@ -433,6 +502,17 @@ namespace OpenKingdomsUnity.Engine
             [Out] byte[] rgba, int cap, out int w, out int h);
         [DllImport(Lib)] public static extern int okx_feature_def_count();
         [DllImport(Lib)] public static extern int okx_feature_def_info(int def, out OkxFeatureDefInfo info);
+
+        // Destruction, each a ring since an id: returns how many there are
+        // after since and fills up to cap of them, oldest first. Missing
+        // from engines built before them, so callers catch EntryPointNotFoundException.
+        [DllImport(Lib)] public static extern int okx_blasts(int since, [Out] OkxBlast[] blasts, int cap);
+        [DllImport(Lib)] public static extern int okx_feature_events(int since, [Out] OkxFeatureEvent[] events, int cap);
+        [DllImport(Lib)] public static extern int okx_piece_events(int since, [Out] OkxPieceEvent[] events, int cap);
+        [DllImport(Lib)] public static extern int okx_weapon_info(int def, int slot, out OkxWeaponInfo info);
+        [DllImport(Lib)] public static extern int okx_feature_def_fate(int def, out OkxFeatureFate fate);
+        // The wind blows toward (dx, dz), engine axes, unit length. -1 while the simulation has none.
+        [DllImport(Lib)] public static extern int okx_wind(out float speed, out float maxSpeed, out float dx, out float dz);
 
         public static string LastError => Marshal.PtrToStringAnsi(okx_last_error()) ?? "";
 

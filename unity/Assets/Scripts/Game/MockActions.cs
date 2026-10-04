@@ -251,7 +251,8 @@ namespace OpenKingdomsUnity.Game
             caster.Heading = Mathf.Atan2(point.x - caster.Pos.x, point.z - caster.Pos.z) * Mathf.Rad2Deg;
             // The spell's look: the damage above is already done.
             var aim = unit >= 0 && byHandle.TryGetValue(unit, out var tu) ? tu.Pos + Vector3.up * 0.8f : point;
-            FireFx(FxWeaponNamed(id == "PrimaryWeapon" ? "MOCK FIREBALL SPELL" : "MOCK FROST SPELL"), caster.Pos + Vector3.up * 1.2f, aim, caster.Handle, unit, -1);
+            FireFx(FxWeaponNamed(id == "PrimaryWeapon" ? "MOCK FIREBALL SPELL" : "MOCK FROST SPELL"), caster.Pos + Vector3.up * 1.2f, aim, caster.Handle, unit, -1,
+                id == "PrimaryWeapon" ? 1 : 2);
         }
 
         bool Load(Unit wagon, int unit, Rect? area)

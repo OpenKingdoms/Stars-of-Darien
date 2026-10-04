@@ -26,6 +26,10 @@ namespace OpenKingdomsUnity.Game
             public int Rings = 3, RingSprites = 16;
             public float Radius = 5f;
             public float RainPerSecond, RainSeconds;
+
+            // What its blasts report, from the mock's weapon table.
+            public WeaponInfo Info => info ??= Describe(this);
+            WeaponInfo info;
         }
 
         static FxWeapon W(string name, FxDraw draw, string art, string impact = null, FxMotion motion = FxMotion.Arc, float speed = 16f,
@@ -112,6 +116,7 @@ namespace OpenKingdomsUnity.Game
         sealed class FxShot
         {
             public int Id, Player, Colour, Shooter, Target, Damage = -1;
+            public int Def = -1, Slot = WeaponSlot.None;
             public FxWeapon W;
             public Vector3 Pos, Vel, Aim, Source;
             public int Age, Seed;
@@ -127,6 +132,7 @@ namespace OpenKingdomsUnity.Game
             public float StopY = float.NegativeInfinity;
             public string OnLand;
             public Vector3 Circle;      // a wanderer's centre, and its radius in y
+            public FxShot Owner;        // whose rain drop or wanderer it is, for the blasts it makes
         }
 
         sealed class FxStrip
@@ -170,11 +176,14 @@ namespace OpenKingdomsUnity.Game
         public void FireFx(string weapon, Vector3 from, Vector3 to, int shooter = -1, int target = -1) =>
             FireFx(FxWeaponNamed(weapon), from, to, shooter, target, -1);
 
-        void FireFx(FxWeapon w, Vector3 from, Vector3 to, int shooter, int target, int damage)
+        void FireFx(FxWeapon w, Vector3 from, Vector3 to, int shooter, int target, int damage, int slot = WeaponSlot.None)
         {
             if (w == null || Terrain == null) return;
             int player = shooter >= 0 && byHandle.TryGetValue(shooter, out var su) ? su.Player : 0;
             int colour = player < players.Count ? players[player].Colour : 0;
+            // Who fired it, for the blasts it makes.
+            int def = shooter >= 0 && byHandle.TryGetValue(shooter, out var firer) ? firer.Def : -1;
+            var owner = new FxShot { W = w, Player = IdOf(player), Shooter = shooter, Target = target, Def = def, Slot = slot };
             if (w.Nimbus && shooter >= 0 && byHandle.TryGetValue(shooter, out var caster))
             {
                 string side = player < players.Count ? (players[player].Side ?? "aramon").ToLowerInvariant() : "aramon";
@@ -199,6 +208,7 @@ namespace OpenKingdomsUnity.Game
                             b.Delay = 6 + k * 8;
                             b.Life = dur;
                         }
+                    Burst(owner, GroundAt(to), Vector3.zero, -1);
                     return;
                 }
                 case FxDraw.Rain:
@@ -215,6 +225,7 @@ namespace OpenKingdomsUnity.Game
                         b.StopY = g;
                         b.OnLand = w.Impact;
                         b.Delay = 6 + Mathf.RoundToInt(j * w.RainSeconds * Tps / n);
+                        b.Owner = owner;
                     }
                     return;
                 }
@@ -223,13 +234,14 @@ namespace OpenKingdomsUnity.Game
                     var b = SpawnBlast(FxStripId(w.Art), GroundAt(to), loops: true);
                     b.Life = w.Emit;
                     b.Circle = new Vector3(to.x, 2.5f, to.z);
+                    b.Owner = owner;
                     return;
                 }
             }
             var shot = new FxShot
             {
                 Id = nextArrow++, W = w, Player = IdOf(player), Colour = colour, Shooter = shooter, Target = target, Damage = damage,
-                Pos = from, Aim = to, Source = from, Seed = nextArrow * 7919,
+                Pos = from, Aim = to, Source = from, Seed = nextArrow * 7919, Def = owner.Def, Slot = slot,
             };
             var d = to - from;
             float time = Mathf.Max(0.2f, d.magnitude / Mathf.Max(1f, w.Speed));
@@ -241,6 +253,8 @@ namespace OpenKingdomsUnity.Game
             }
             fxShots.Add(shot);
             if (w.Draw == FxDraw.Beam && w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(to), struck: target, light: w.Light);
+            // A beam or a breath lands as it fires.
+            if (w.Draw == FxDraw.Beam || w.Draw == FxDraw.Flame) Burst(owner, target >= 0 ? to : GroundAt(to), to - from, target);
         }
 
         // A row of shooters and targets at the map's middle, as the engine's
@@ -350,6 +364,7 @@ namespace OpenKingdomsUnity.Game
                 var at = hit ? s.Aim : new Vector3(s.Pos.x, ground, s.Pos.z);
                 if (s.Damage > 0 && s.Target >= 0 && byHandle.TryGetValue(s.Target, out var victim) && hit) Hurt(victim, s.Damage, s.Shooter);
                 if (w.Impact != null) SpawnBlast(FxStripId(w.Impact), GroundAt(at), struck: hit ? s.Target : -1, light: w.Light);
+                Burst(s, hit && s.Target >= 0 ? at : GroundAt(at), s.Vel, hit ? s.Target : -1);
                 fxShots.RemoveAt(i);
             }
 
@@ -363,12 +378,15 @@ namespace OpenKingdomsUnity.Game
                     float a = b.Age * 0.035f;
                     b.Pos = new Vector3(b.Circle.x + Mathf.Cos(a) * b.Circle.y, 0f, b.Circle.z + Mathf.Sin(a * 1.3f) * b.Circle.y);
                     b.Pos.y = GroundHeight(b.Pos.x, b.Pos.z);
+                    // A wanderer bursts where it is once a second.
+                    if (b.Owner != null && b.Age % Tps == 0) Burst(b.Owner, b.Pos, Vector3.zero, -1);
                 }
                 else b.Pos += b.Vel;
                 if (b.Hug) b.Pos.y = GroundHeight(b.Pos.x, b.Pos.z);
                 if (b.Pos.y <= b.StopY)
                 {
                     if (b.OnLand != null) SpawnBlast(FxStripId(b.OnLand), new Vector3(b.Pos.x, b.StopY, b.Pos.z));
+                    if (b.Owner != null) Burst(b.Owner, new Vector3(b.Pos.x, b.StopY, b.Pos.z), Vector3.down, -1);
                     fxBlasts.RemoveAt(i);
                     continue;
                 }
