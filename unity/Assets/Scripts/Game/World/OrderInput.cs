@@ -547,7 +547,8 @@ namespace OpenKingdomsUnity.Game.World
                 backend.Command(new GameCommand { Kind = kind, Unit = h, Target = at, TargetUnit = target, BuildDef = -1, Queue = Shift, Keep = Keep });
         }
 
-        // Moves in a square block around the point, turned with the camera.
+        // Moves in a square block around the point, turned with the camera,
+        // its slots as far apart as the widest unit's footprint or hull.
         public void MoveBlock(CommandKind kind, Vector3 at)
         {
             if (Classic && kind == CommandKind.Move)
@@ -557,15 +558,31 @@ namespace OpenKingdomsUnity.Game.World
                 return;
             }
             int k = 0, side = Mathf.CeilToInt(Mathf.Sqrt(Selected.Count));
+            float pitch = BlockPitch();
             foreach (var h in Selected)
             {
-                var offset = new Vector3((k % side - (side - 1) * 0.5f) * 1.4f, 0, (k / side - (side - 1) * 0.5f) * 1.4f);
+                var offset = new Vector3((k % side - (side - 1) * 0.5f) * pitch, 0, (k / side - (side - 1) * 0.5f) * pitch);
                 var c = GameCommand.To(kind, h, at + Quaternion.Euler(0, world.Camera.yaw, 0) * offset);
                 c.Queue = Shift;
                 c.Keep = Keep;
                 backend.Command(c);
                 k++;
             }
+        }
+
+        // The room the widest selected unit takes in a formation, and never
+        // less than the 1.4 cells a small unit's slot has.
+        float BlockPitch()
+        {
+            int widest = 0;
+            var units = world.Entities.Units;
+            for (int i = 0; i < world.Entities.UnitCount; i++)
+            {
+                if (!Selected.Contains(units[i].Handle)) continue;
+                var m = new FormationMember { Kind = Formation.KindOf(units[i].Def) };
+                widest = Mathf.Max(widest, FormationPlanner.Pitch(m));
+            }
+            return Mathf.Max(1.4f, widest);
         }
 
         // The unit nearest the pointer: the player's own, anyone else's, or
