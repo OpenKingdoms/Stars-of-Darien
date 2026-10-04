@@ -173,6 +173,8 @@ Each milestone ends with captures for the owner, frame strips and contact sheets
 
 ## Decisions for the owner
 
+The owner said yes to all seven on 2026-10-03, with one change to the third: Stars of Darien always plays the remastered battlefield rules. The rules stay a room option, off by default, on openkingdoms.net and the classic desktop game. A room that Stars of Darien hosts has them on, and Stars of Darien only joins rooms that have them on.
+
 1. Bring the original's scenery destruction and fire into the shared engine for everyone. Recommended, as it is the original's game. Battles change from today's: forests burn, walls and fences open, ruins keep blocking.
 2. Fix the splash radius to half of `areaofeffect` with the original's falloff, as its own issue in the same release. Recommended. It changes every splash weapon against today.
 3. Offer remastered battlefield rules as a room option, off by default, which openkingdoms.net runs too. Recommended.
