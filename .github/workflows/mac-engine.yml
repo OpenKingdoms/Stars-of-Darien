@@ -71,9 +71,10 @@ jobs:
           mac_full=$(full "$mac" || true)
           held=$(gh api "repos/$GITHUB_REPOSITORY/contents/engine/VERSION?ref=mac-engine" --jq .content 2> /dev/null | base64 -d 2> /dev/null | embed_of "okengine-api$api\.dylib" - || true)
           held_full=$(full "$held" || true)
-          # Only a build of what main names goes to the mac-engine branch.
+          # Only a build of what main names goes to the mac-engine branch. A
+          # run on another branch would put that branch's commits under it.
           publish=false
-          [ "$embed" != "$named_full" ] || publish=true
+          [ "$embed" != "$named_full" ] || [ "$GITHUB_REF" != refs/heads/main ] || publish=true
           build=true
           if [ "$publish" = true ] && [ "$mac_full" = "$embed" ] && [ -f "engine/okengine-api$api.dylib" ] && [ "$FORCE" != true ]; then
               build=false

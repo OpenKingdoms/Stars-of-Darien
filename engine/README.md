@@ -51,7 +51,7 @@ It merges once model-check passes and a code owner approves, or with `gh pr merg
 
 Every six hours a scheduled run looks again, so a build that failed, or one whose unity-embed commit reached GitHub after the engine reached main, still gets made. It builds nothing when main or the `mac-engine` branch already has that library.
 
-To build on demand, for example after a failed run, run `gh workflow run mac-engine.yml -R OpenKingdoms/Stars-of-Darien`. Add `-f embed=<commit>` to build another unity-embed commit, which goes to the artifact only, or `-f force=true` to rebuild the one main already has.
+To build on demand, for example after a failed run, run `gh workflow run mac-engine.yml -R OpenKingdoms/Stars-of-Darien`. Add `-f embed=<commit>` to build another unity-embed commit, which goes to the artifact only, or `-f force=true` to rebuild the one main already has. A run on any other branch, with `--ref`, also goes to the artifact only, so the `mac-engine` branch only ever holds a commit on main.
 
 ## A Mac catching up
 
