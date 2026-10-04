@@ -1324,6 +1324,9 @@ namespace OpenKingdomsUnity.Game
             foreach (var u in units)
             {
                 if (u.Dying) continue;
+                // A unit a builder summons goes over units and waits for
+                // them, as the engine's cursor lets it.
+                if (!d.IsBuilding && !unitDefs[u.Def].IsBuilding) continue;
                 if (unitDefs[u.Def].IsBuilding)
                 {
                     if (FootprintAt(unitDefs[u.Def].Footprint, u.Facing, u.Pos).Overlaps(rect)) return false;
