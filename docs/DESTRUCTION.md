@@ -94,6 +94,27 @@ A FALL piece drops off a dying unit from its pose, bounces and lies on the groun
 
 The ground keeps a scar map, textures laid over the whole map at one texel for every 4 pixels: scorch, churned earth, frost, blight and wet, plus a height change. `OkuTerrain` draws the colours, lights the change through its normals and moves the ground mesh by it, so a crater is a real dip. Craters are shallow, up to 6 pixels for a cannon and 10 for the largest spells, and overlapping ones take the deeper rather than adding up. Anything standing on the ground is drawn lowered by the same change, so units sit in craters instead of floating. The engine's heights do not change, so movement and sight are as before. Scars last the whole battle. Scorch fades to dark soil, and frost and wet dry away. Stamping is capped per frame, and the scar map costs a fixed amount of memory however many blasts land.
 
+#### As built
+
+`Scars/ScarMap.cs` keeps three textures over the map, a byte a channel at the setting's texel size. Marks hold char, thrown soil, blight and stone. Shape holds the dip, the rim and cracks. Fade holds the seconds left of frost, wet, holy light and heat, and loses a step every half second of the battle, so a paused game holds them. Each blast the backend reports becomes a stamp, and `ScarMap.Mark` lets a look leave one of its own, such as char under a burning tree. Stamps wait in a queue of 16 frames' worth and are drawn on the GPU, 24 a frame on Low, 48 on Medium, 96 on High and 160 on Ultra. Past the cap a stamp folds into a waiting one of its kind that it overlaps, or the oldest gives way. The dips are also kept on the CPU, texel for texel as the GPU filters them, so `ScarMap.GroundOffset(x, z)` and `ScarMap.Sink(position)` answer what the ground shows, and units, features and corpses are drawn on the dented ground. On High and Ultra a region the first crater reaches is rebuilt on a worker with a vertex every half unit, a quarter on Ultra, and `OkuTerrain` moves those vertices by the dip in its lit, shadow and depth passes alike. Medium lights the scars through their normals without moving the ground, and Low draws their colour only and lets them fade over about two minutes.
+
+| Kind | Weapons | What it leaves |
+|---|---|---|
+| Gunpowder | damage kind explosion, and other explosion art | a crater with 0.8 of the blast's radius, at most 4 units, 2 to 6 px deep with a flat floor, a lumpy rim 0.4 of its depth, scorch to the rim and earth thrown in rays to 2.4 crater radii. A shot of no area scorches a spot |
+| Siege | explosions with dust, dirt or rock art | a pit 0.45 of the radius, at most 5 px deep with a low rim, churned soil and stones scattered to 2.8 pit radii, and no scorch |
+| Impact | volcanic blasts, meteors and fire spells of 3.5 units or more | a crater up to 5 units in radius and 10 px deep, charred, glowing for 25 s |
+| Fire | fire starters, fire damage, fireball and flame art | char over the blast's reach with a ragged edge, black and glowing while fresh, settling to dark soil after 20 s |
+| Breath | dragon breath | a scorched swath 3.5 units back along the breath |
+| Lightning | bolts, ball lightning and blue shock rings | a charred star with a scorched fork of five branches, each with a side branch |
+| Frost | ice art, hail and freezing | rime that lasts 60 s at its heart and melts from its edges, and cracks that stay |
+| Dark | soul stealer, mind control and turn to stone | blight that withers what grows grey and violet, most on green ground |
+| Water | water, splash and tsunami art on land | wet dark ground that dries from its edges over a minute, a long swath for a tsunami |
+| Holy | holy light | a pale ring of light that fades over 25 s, its middle first |
+| Earth | earthquakes | cracks and churned soil along four fissures |
+| Dust | dust puffs and wandering spells | a scuff of churned soil |
+
+Blasts on water leave nothing here, as the sea's churn belongs to the explosions, and so does a shot that struck a unit directly. A crater by the shore fills to just above the water. The soil follows the map's climate, with brown earth on grass, sand in the desert, slush on snow, black mud holding water in swamps and ash on volcanic ground. Dug snow shows wherever the ground itself is snowy. The fog of war darkens scars like the rest of the ground.
+
 ### Fire
 
 A burning feature gets flames, embers, a smoke column drifting downwind and a flickering light from the shared pool. Char spreads under it while it burns, and its burnt stage is drawn darker. The wind comes from the engine once Layer 0 simulates it, and the rain, snow and smoke all follow it.
