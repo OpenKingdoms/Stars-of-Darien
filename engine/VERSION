@@ -1,3 +1,3 @@
 okengine-api23.dll  okengine API 23, unity-embed a5f1d53, main 534336d, death blasts, fire that spreads under the remastered rules, scenery dying and burning in the 3D view, engine build 27, published at openkingdoms-unity c426aa6
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
-okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 20f7aa6, published at openkingdoms-unity f8680ed
+okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed a5f1d53, published at openkingdoms-unity 28c28f5
