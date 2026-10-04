@@ -96,20 +96,9 @@ Chunks are a pool, simulated with gravity, spin, bounce and friction against the
 
 Measured in the editor, splitting all 611 breakable shapes among the 793 feature models, 5.1 million triangles as drawn, took 13.4 s, about 22 ms a kind, in 20 ms slices with no step over 16 ms. A thousand chunks step and draw in 0.63 ms a frame with nothing allocated. In a stress battle on the mock at High, 170 pieces of scenery under cannon fire all the while and two armies routed, breaking took 1.65 ms of main thread a frame on average and 2.6 ms at the 95th percentile, with up to 1,481 chunks flying and 3,982 in play, and drawing them added 3.6 ms to a frame at 2560 by 1440. Taking a feature away no longer rebuilds the ones after it. On Ulasem Arena's 1,452 features in the engine that frame costs what a still one does, where building them all again took 5.6 ms against 3.5.
 
-### Stages with no model yet
+### Stages with models of their own
 
-51 of the stages scenery breaks into have no 3D model in Stars of Darien yet, all of them Creon. Until each is made, the game draws a standing one from the nearest earlier stage that has a model: what stands of it below the stage's height, a tree's trunk for a dead tree, charred when fire made it. A stage under a third of its earlier stage's height lies on the ground as that stage's chunks. These are the models still to make.
-
-| Stages | What breaks into them |
-|---|---|
-| CreBuild01a to CreBuild09a, CreBuild01b to CreBuild09b | the nine Creon buildings, as a ruin and then a shell |
-| CreHouse01a to CreHouse07a | the seven houses |
-| CreTree01a, CreTree03a, CreTree04a, CreTree05a, CreTree06a | five trees, when they die or burn |
-| CreTreesmudge01 to CreTreesmudge07 | the dead trees |
-| CreInvent01a to CreInvent04a | the four inventions |
-| CreFence01a to CreFence04a | the fences |
-| CrePlant01a to CrePlant03a | the plants |
-| CreCart01a, CreShed01a, CreWell01a | the cart, the shed and the well |
+Every stage scenery breaks or burns into now has a model of its own. The last 51, all Creon, were built by hand in Blender with the kits in `tools/sprite-replace/hand/creon_stages`, a file for each group: the palace, great hall and senate (`g1.py`), the institute, coliseum and observatory (`g2.py`), the embassy and the two slate-roofed buildings (`g3.py`), the houses (`g4.py`), the dead trees and the smudges they leave (`g5.py`), and the inventions, fences, plants, cart, shed and well (`g6.py`). A ruin is its intact building broken in the intact's frame, so the walls that still stand sit where the intact's do, and a shell is the ruin taken further. What a stage's picture shows gone is cut away along the classic camera's line of sight, and rubble is heaped where the picture draws it and no steeper than it could lie. Every texture is made from noise and numbers, so the models ship as geometry. `coverage.py` names any stage still without a model, and the game draws such a stage from the nearest earlier stage's chunks.
 
 ### Deaths
 

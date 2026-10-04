@@ -12,6 +12,10 @@ draw:
   not scenery      waves (the game draws its own foam) and noise emitters
   flat             still the original's sprite on a card
 
+It also walks every stage scenery breaks or burns into (featuredead and
+featureburnt), placed or not, and lists those with no model, which the
+game draws from an earlier stage's chunks.
+
     python tools/sprite-replace/coverage.py [--game <install>] [--models <folder>] [--out <flat list>]
 
 --models is a built player's folder or a folder of <feature>.glb files,
@@ -66,7 +70,8 @@ def feature_defs(tdfs):
                 return mm.group(1).strip() if mm else ""
             name = m.group(1).strip()
             defs[name.lower()] = {"name": name, "object": g("object"), "seq": g("seqname"),
-                                  "category": g("category"), "world": g("world"), "description": g("description")}
+                                  "category": g("category"), "world": g("world"), "description": g("description"),
+                                  "dead": g("featuredead"), "burnt": g("featureburnt")}
     return defs
 
 
@@ -104,6 +109,31 @@ def glb_kind(path):
     return "painted at load" if any("okCarved" in n.get("extras", {}) for n in j.get("nodes", [])) else "hand-built"
 
 
+def draw_kind(d, glbs):
+    """How a def draws, and its model when it has one."""
+    for n in (d["name"], d["seq"], d["object"]):
+        if n and n.lower() in glbs:
+            return glb_kind(glbs[n.lower()]), glbs[n.lower()]
+    if d["object"]:
+        return "engine 3DO", None
+    if d["category"].lower() in ("waves", "noise") or not d["seq"]:
+        return "not scenery", None
+    return "flat", None
+
+
+def stage_rows(defs, glbs):
+    """Every stage another def breaks or burns into, with how it draws."""
+    keys = {d[k].lower() for d in defs.values() for k in ("dead", "burnt") if d[k]}
+    rows = []
+    for key in sorted(keys):
+        d = defs.get(key)
+        if d:
+            kind, _ = draw_kind(d, glbs)
+            rows.append(dict(name=d["name"], kind=kind, world=d["world"], category=d["category"],
+                             description=d["description"]))
+    return rows
+
+
 def survey(game, models):
     tdfs, maps = [], {}
     for path in archives(game):
@@ -133,23 +163,10 @@ def survey(game, models):
     rows = []
     for key, u in used.items():
         d = defs.get(key)
-        kind, model = "unknown", None
-        if d:
-            for n in (d["name"], d["seq"], d["object"]):
-                if n and n.lower() in glbs:
-                    model = glbs[n.lower()]
-                    break
-            if model:
-                kind = glb_kind(model)
-            elif d["object"]:
-                kind = "engine 3DO"
-            elif d["category"].lower() in ("waves", "noise") or not d["seq"]:
-                kind = "not scenery"
-            else:
-                kind = "flat"
+        kind = draw_kind(d, glbs)[0] if d else "unknown"
         rows.append(dict(u, kind=kind, world=d["world"] if d else "", category=d["category"] if d else "",
                          description=d["description"] if d else ""))
-    return len(maps), folder, rows
+    return len(maps), folder, rows, stage_rows(defs, glbs)
 
 
 def main(argv=None):
@@ -162,13 +179,17 @@ def main(argv=None):
     if not os.path.isdir(a.game):
         print("COVERAGE no game install at %s" % a.game)
         return 1
-    nmaps, folder, rows = survey(a.game, a.models)
+    nmaps, folder, rows, stages = survey(a.game, a.models)
     print("COVERAGE %d maps in %s use %d feature types; models from %s" % (nmaps, a.game, len(rows), folder))
     for k in KINDS:
         sel = [r for r in rows if r["kind"] == k]
         print("COVERAGE %-16s %4d types, %6d placements" % (k, len(sel), sum(r["placements"] for r in sel)))
     flat = sorted((r for r in rows if r["kind"] == "flat"), key=lambda r: (-r["placements"], r["name"].lower()))
     print("COVERAGE FLAT %d feature types still draw flat" % len(flat))
+    bare = sorted((r for r in stages if r["kind"] == "flat"), key=lambda r: r["name"].lower())
+    print("COVERAGE STAGES %d stages scenery breaks or burns into, %s" % (len(stages), ", ".join(
+        "%d %s" % (sum(r["kind"] == k for r in stages), k) for k in KINDS if any(r["kind"] == k for r in stages))))
+    print("COVERAGE NO MODEL %d stages have no model%s" % (len(bare), ": " + " ".join(r["name"] for r in bare) if bare else ""))
     if a.out:
         os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
         with open(a.out, "w", encoding="utf-8", newline="\n") as f:
@@ -178,6 +199,9 @@ def main(argv=None):
             for r in flat:
                 f.write("%6d %4d  %s  %s  %s  %s\n" % (r["placements"], r["maps"], r["name"], r["world"],
                                                         r["category"], r["description"]))
+            f.write("# %d stages with no model, drawn from an earlier stage's chunks\n" % len(bare))
+            for r in bare:
+                f.write("stage  %s  %s  %s  %s\n" % (r["name"], r["world"], r["category"], r["description"]))
         print("COVERAGE flat list in %s" % a.out)
     return 0
 
