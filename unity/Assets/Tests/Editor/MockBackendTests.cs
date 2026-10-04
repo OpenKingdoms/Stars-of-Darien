@@ -181,6 +181,82 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(landed, "it landed once there");
         }
 
+        // The open water farthest from any dry ground or the map's edge, and
+        // that distance in world units.
+        internal static Vector3 FarthestFromShore(MapTerrain t, out float clear)
+        {
+            int w = t.HeightsW, h = t.HeightsH;
+            var d = new int[w * h];
+            var q = new System.Collections.Generic.Queue<int>();
+            for (int z = 0; z < h; z++)
+                for (int x = 0; x < w; x++)
+                {
+                    int i = z * w + x;
+                    d[i] = int.MaxValue;
+                    if (t.Sample(x * t.CellSize, -z * t.CellSize) >= t.SeaLevel) { d[i] = 0; q.Enqueue(i); }
+                }
+            while (q.Count > 0)
+            {
+                int i = q.Dequeue(), x = i % w, z = i / w;
+                for (int dz = -1; dz <= 1; dz++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nx = x + dx, nz = z + dz;
+                        if (nx < 0 || nz < 0 || nx >= w || nz >= h) continue;
+                        int n = nz * w + nx;
+                        if (d[n] > d[i] + 1) { d[n] = d[i] + 1; q.Enqueue(n); }
+                    }
+            }
+            int best = -1, bestD = 0;
+            for (int z = 0; z < h; z++)
+                for (int x = 0; x < w; x++)
+                {
+                    int e = Mathf.Min(Mathf.Min(x, w - 1 - x), Mathf.Min(z, h - 1 - z));
+                    int c = Mathf.Min(d[z * w + x], e);
+                    if (c > bestD) { bestD = c; best = z * w + x; }
+                }
+            Assert.Greater(best, -1, "the map has open water");
+            clear = bestD * t.CellSize;
+            float bx = best % w * t.CellSize, bz = -(best / w) * t.CellSize;
+            return new Vector3(bx, t.Sample(bx, bz), bz);
+        }
+
+        // Stopped over open water the flyer stays up at its cruise height,
+        // above the sea, since a flyer lands only on dry ground.
+        [Test]
+        public void TheMockFlyerStoppedOverWaterStaysUp()
+        {
+            var b = Loaded();
+            var units = new UnitState[256];
+            int n = b.ReadUnits(units);
+            UnitState flyer = default;
+            for (int i = 0; i < n; i++)
+                if (units[i].Player == b.LocalPlayer && b.UnitDefs[units[i].Def].CanFly) flyer = units[i];
+            var def = b.UnitDefs[flyer.Def];
+            var sea = FarthestFromShore(b.Terrain, out _);
+            Assert.IsTrue(b.Command(GameCommand.To(CommandKind.Move, flyer.Handle, sea)));
+            UnitState u = default;
+            bool there = false;
+            for (int tick = 0; tick < 120 * MockBackend.Tps && !there; tick++)
+            {
+                b.Advance(1);
+                n = b.ReadUnits(units);
+                for (int i = 0; i < n; i++) if (units[i].Handle == flyer.Handle) u = units[i];
+                there = new Vector2(u.Position.x - sea.x, u.Position.z - sea.z).magnitude < 1f;
+            }
+            Assert.IsTrue(there, "it flew out over the water");
+            Assert.IsTrue(b.Command(GameCommand.To(CommandKind.Stop, flyer.Handle, u.Position)));
+            for (int tick = 0; tick < 10 * MockBackend.Tps; tick++)
+            {
+                b.Advance(1);
+                n = b.ReadUnits(units);
+                for (int i = 0; i < n; i++) if (units[i].Handle == flyer.Handle) u = units[i];
+                Assert.Greater(u.Position.y, b.Terrain.SeaLevel, "never under the sea");
+            }
+            Assert.AreNotEqual(0, (int)(u.Flags & UnitFlags.Airborne), "still in the air");
+            Assert.AreEqual(def.CruiseAltitude, u.Altitude, 1e-4f, "at its cruise height");
+        }
+
         [Test]
         public void ModelsPoseEveryPiece()
         {

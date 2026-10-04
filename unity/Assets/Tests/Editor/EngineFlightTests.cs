@@ -5,8 +5,9 @@
 // fly and soar functions bake into clips that replay the script's frames,
 // its glide coming from its soar, cut to a cycle or held, or from its flap
 // slowed when it has no soar, a clip carries a piece's turn about y only
-// where it beats it, and neither reading flight nor baking moves the
-// battle. Needs okengine and the game files, and is ignored without them.
+// where it beats it, neither reading flight nor baking moves the battle,
+// and a flyer stopped over open sea stays up over the water. Needs
+// okengine and the game files, and is ignored without them.
 using System;
 using System.Collections.Generic;
 using NUnit.Framework;
@@ -321,6 +322,59 @@ namespace OpenKingdomsUnity.Tests
             }
             uint quiet = Play(false), watched = Play(true);
             Assert.AreEqual(quiet, watched);
+        }
+
+        // Stopped over the open water farthest from shore, the monarch stays
+        // up through the original's whole first search, circles out over
+        // the water at the cruise height a hop over land shows, and is never
+        // under the sea nor down anywhere but on dry ground.
+        [Test, Order(6)]
+        public void AFlyerStoppedOverOpenSeaStaysUp()
+        {
+            Start();
+            var m = Monarch();
+            float sea = backend.Terrain.SeaLevel;
+            Assert.Greater(sea, 0f, "two castles has a sea");
+            int tps = backend.TicksPerSecond;
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, m.Handle, m.Position + new Vector3(30f, 0f, 0f))));
+            var u = m;
+            float cruise = 0f;
+            bool landed = false;
+            for (int t = 0; t < 30 * tps && !landed; t++)
+            {
+                backend.Advance(1);
+                u = Read(m.Handle);
+                cruise = Mathf.Max(cruise, u.Altitude);
+                landed = cruise > 1f && (u.Flags & UnitFlags.Airborne) == 0 && u.Altitude == 0f;
+            }
+            Assert.IsTrue(landed, "the hop over land ends on the ground");
+
+            // On past the open water, stopped as it flies over it.
+            var at = MockBackendTests.FarthestFromShore(backend.Terrain, out float clear);
+            Assert.Greater(clear, 20f, "two castles has open sea");
+            var way = new Vector3(at.x - u.Position.x, 0f, at.z - u.Position.z).normalized;
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, m.Handle, at + way * 20f)));
+            bool stopped = false;
+            for (int t = 0; t < 120 * tps && !stopped; t++)
+            {
+                backend.Advance(1);
+                u = Read(m.Handle);
+                bool air = (u.Flags & UnitFlags.Airborne) != 0;
+                if (air && new Vector2(u.Position.x - at.x, u.Position.z - at.z).magnitude < 3f)
+                    stopped = backend.Command(GameCommand.To(CommandKind.Stop, m.Handle, u.Position));
+            }
+            Assert.IsTrue(stopped, "it flew out over the sea and took the stop");
+            for (int t = 1; t <= 20 * tps; t++)
+            {
+                backend.Advance(1);
+                u = Read(m.Handle);
+                bool air = (u.Flags & UnitFlags.Airborne) != 0;
+                float ground = backend.GroundHeight(u.Position.x, u.Position.z);
+                Assert.Greater(u.Position.y, sea, "never under the sea");
+                if (t <= 3 * tps) Assert.IsTrue(air, "still in the air " + t + " ticks after the stop");
+                if (!air) Assert.GreaterOrEqual(ground, sea, "down only on dry ground");
+                else if (ground < sea) Assert.AreEqual(cruise, u.Altitude, 0.05f, "at the cruise height it flew over land");
+            }
         }
     }
 }
