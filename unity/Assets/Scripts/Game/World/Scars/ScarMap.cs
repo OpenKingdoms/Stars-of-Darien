@@ -157,7 +157,9 @@ namespace OpenKingdomsUnity.Game.World
             BlastsSeen++;
             var t = backend.Terrain;
             float g = t != null ? t.Sample(b.Position.x, b.Position.z) : b.Position.y;
-            if (ScarStamps.Make(b, g, out var s)) Enqueue(s);
+            var defs = backend.UnitDefs;
+            string caster = b.Cause == BlastCause.Weapon && defs != null && b.Def >= 0 && b.Def < defs.Count ? defs[b.Def].Name : null;
+            if (ScarStamps.Make(b, g, out var s, caster)) Enqueue(s);
         }
 
         // A mark of a kind at a world point, for looks that leave their own:

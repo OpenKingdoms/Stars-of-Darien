@@ -54,48 +54,40 @@ namespace OpenKingdomsUnity.Game.World
 
         // ── Kinds ─────────────────────────────────────────────────────
 
-        // The kind of mark a blast leaves, from its weapon's data. A blast
-        // on water or one that struck a unit directly leaves none.
-        public static ScarKind KindOf(in BlastEvent b)
+        // The kind of mark a blast leaves, by the kinds the explosions sort
+        // weapons into. A blast on water or one that struck a unit directly
+        // leaves none. caster is the firing unit's internal name, if known.
+        public static ScarKind KindOf(in BlastEvent b, string caster = null)
         {
             if ((b.Flags & (BlastFlags.Water | BlastFlags.DirectHit)) != 0) return ScarKind.None;
-            var w = b.Weapon;
-            if (w == null) return b.Radius > 0.4f ? (b.Cause == BlastCause.Death ? ScarKind.Gunpowder : ScarKind.Dust) : ScarKind.None;
-            return KindOf(w, b.Radius);
+            return KindOf(FxKinds.Of(b, caster), b.Weapon, b.Radius);
         }
 
-        public static ScarKind KindOf(WeaponInfo w, float radius)
+        // Fire digs a crater when it is a meteor, a volcanic blast or a spell
+        // of 3.5 units or more. A burning arrow chars a spot, and a dust puff
+        // or a whirlwind scuffs the soil.
+        public static ScarKind KindOf(BlastKind kind, WeaponInfo w, float radius)
         {
-            string cls = Lower(w.ExplosionClass), sub = Lower(w.Subtype), dmg = Lower(w.DamageKind), type = Lower(w.Type), name = Lower(w.Name);
-            if (type == "melee") return ScarKind.None;
-            bool starter = (w.Flags & WeaponFlags.FireStarter) != 0;
-            bool fiery = starter || dmg == "fire" || sub == "fire" || Has(cls, "fire") || Has(cls, "flame") || Has(cls, "volc") ||
-                         cls == "explodeb" || Has(name, "fire") || Has(name, "flame") || Has(name, "meteor");
-            if (Has(cls, "water") || Has(cls, "tsunami") || Has(cls, "splash") || Has(name, "water") || Has(name, "tsunami")) return ScarKind.Water;
-            if (!fiery && (Has(cls, "ice") || Has(sub, "hail") || Has(sub, "frozen") || Has(sub, "freez") ||
-                           Has(name, "frost") || Has(name, "freez") || Has(name, "hail") || Has(name, "ice "))) return ScarKind.Frost;
-            if (Has(sub, "earthquake") || Has(name, "quake") || Has(name, "earthen")) return ScarKind.Earth;
-            if (dmg == "explosion")
-                return Has(cls, "dust") || Has(cls, "dirt") || Has(cls, "rock") || Has(cls, "stone") || Has(cls, "boulder") ? ScarKind.Siege : ScarKind.Gunpowder;
-            bool spell = (w.Flags & WeaponFlags.Spell) != 0;
-            if (Has(sub, "turntostone") || Has(sub, "mindcontrol") || Has(cls, "soul") || Has(cls, "mind") ||
-                spell && (Has(name, "death") || Has(name, "dark") || Has(name, "soul") || Has(name, "curse") || Has(name, "plague") || Has(name, "blight")))
-                return ScarKind.Dark;
-            if (Has(sub, "lightning") || Has(cls, "lightning") || Has(cls, "blue_shockring") || Has(name, "lightning") || !fiery && Has(name, "storm"))
-                return ScarKind.Lightning;
-            if (fiery)
+            switch (kind)
             {
-                if (sub == "fire" || Has(name, "breath")) return ScarKind.Breath;
-                if (Has(cls, "volc") || Has(name, "meteor") || spell && radius >= 3.5f) return ScarKind.Impact;
-                return ScarKind.Fire;
+                case BlastKind.Gunpowder: return ScarKind.Gunpowder;
+                case BlastKind.Siege: return ScarKind.Siege;
+                case BlastKind.Arrow:
+                    if (w != null && (w.Flags & WeaponFlags.FireStarter) != 0) return ScarKind.Fire;
+                    return radius > 0.4f ? ScarKind.Dust : ScarKind.None;
+                case BlastKind.Fire:
+                    bool spell = w != null && (w.Flags & WeaponFlags.Spell) != 0;
+                    return Has(Lower(w?.ExplosionClass), "volc") || Has(Lower(w?.Name), "meteor") || spell && radius >= 3.5f ? ScarKind.Impact : ScarKind.Fire;
+                case BlastKind.Breath: return ScarKind.Breath;
+                case BlastKind.Lightning: return ScarKind.Lightning;
+                case BlastKind.Water: return ScarKind.Water;
+                case BlastKind.Frost: return ScarKind.Frost;
+                case BlastKind.Earth: return ScarKind.Earth;
+                case BlastKind.Wind: return radius > 0.4f ? ScarKind.Dust : ScarKind.None;
+                case BlastKind.Dark: return ScarKind.Dark;
+                case BlastKind.Holy: return ScarKind.Holy;
+                default: return ScarKind.None;
             }
-            if (Has(cls, "holy") || Has(cls, "gold") || Has(cls, "yellow_shockring") || Has(cls, "white_shockring") ||
-                spell && (Has(name, "holy") || Has(name, "divine") || Has(name, "heal") || Has(name, "bless") || Has(name, "sacred") ||
-                          Has(name, "smite") || Has(name, "light"))) return ScarKind.Holy;
-            if (Has(cls, "dust") || Has(cls, "dirt")) return ScarKind.Dust;
-            if (Has(cls, "explosion")) return ScarKind.Gunpowder;
-            // A sweeping spell that only reaches units leaves no mark of its own.
-            return radius > 0.4f && (w.Flags & WeaponFlags.UnitsOnly) == 0 ? ScarKind.Dust : ScarKind.None;
         }
 
         static string Lower(string s) => string.IsNullOrEmpty(s) ? "" : s.ToLowerInvariant();
@@ -105,10 +97,10 @@ namespace OpenKingdomsUnity.Game.World
 
         // The stamp a blast leaves, or false for none. A blast well above the
         // ground leaves less, and one high in the air nothing.
-        public static bool Make(in BlastEvent b, float ground, out ScarStamp s)
+        public static bool Make(in BlastEvent b, float ground, out ScarStamp s, string caster = null)
         {
             s = default;
-            var kind = KindOf(b);
+            var kind = KindOf(b, caster);
             if (kind == ScarKind.None) return false;
             float above = b.Position.y - ground;
             float strength = Mathf.Clamp01(1f - (above - 0.4f) / (b.Radius + 0.6f));
