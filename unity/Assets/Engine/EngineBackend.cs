@@ -1231,6 +1231,25 @@ namespace OpenKingdomsUnity.Engine
             return (GameCursor)c;
         }
 
+        bool noCanHelp;
+
+        // The engine's own test. An engine built before okx_can_help gets a
+        // builder that walks, on a frame of its own player's.
+        public bool CanHelpBuild(int unit, int frame)
+        {
+            if (status == GameStatus.Idle) return false;
+            if (!noCanHelp)
+            {
+                try { return OkEngine.okx_can_help(unit, frame) == 1; }
+                catch (EntryPointNotFoundException) { noCanHelp = true; }
+            }
+            if (unit == frame || OkEngine.okx_unit(unit, out var u) != 0 || OkEngine.okx_unit(frame, out var f) != 0) return false;
+            if (u.state != OkEngine.UnitActive || f.state != OkEngine.UnitActive || u.building != 0 || f.building == 0) return false;
+            if (u.player != f.player || u.def < 0 || u.def >= unitDefs.Count) return false;
+            var d = unitDefs[u.def];
+            return !d.IsBuilding && d.BuildOptions.Length > 0;
+        }
+
         // The engine's cursor numbers are GameCursor's.
         public CursorFrame[] CursorArt(GameCursor cursor)
         {

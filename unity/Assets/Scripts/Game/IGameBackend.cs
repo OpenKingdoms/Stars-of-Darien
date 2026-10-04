@@ -150,6 +150,12 @@ namespace OpenKingdomsUnity.Game
         // game decides it. For Place, siteClear says whether the armed
         // building can stand there.
         GameCursor CursorAt(Vector3 at, int unit, out bool siteClear);
+        // Whether a unit could join the work on a frame, as the hammer over
+        // it says: the frame is the unit's own player's and still being
+        // built, the unit is a builder that walks, and one held to its build
+        // list has the frame's type on it. A Repair order on the frame sends
+        // it to help.
+        bool CanHelpBuild(int unit, int frame);
         // A cursor's frames from the game's own art, or null when the
         // backend has none and the system pointer stays.
         CursorFrame[] CursorArt(GameCursor cursor);

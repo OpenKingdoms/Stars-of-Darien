@@ -408,6 +408,9 @@ namespace OpenKingdomsUnity.Engine
         [DllImport(Lib)] public static extern int okx_selection([Out] int[] handles, int cap);
         [DllImport(Lib)] public static extern void okx_click(float x, float z, int unit, int shift);
         [DllImport(Lib)] public static extern int okx_cursor_at(float x, float z, int unit, out int clear);
+        // 1 when the unit could join the work on that frame. Missing from
+        // engines built before it, so callers catch EntryPointNotFoundException.
+        [DllImport(Lib)] public static extern int okx_can_help(int handle, int frame);
         [DllImport(Lib)] public static extern int okx_cursor_frame(int cursor, int frame, [Out] byte[] rgba, int cap,
             out int w, out int h, out int hotX, out int hotY, out int ms);
         [DllImport(Lib)] public static extern void okx_cancel();

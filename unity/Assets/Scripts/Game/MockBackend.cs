@@ -1200,6 +1200,19 @@ namespace OpenKingdomsUnity.Game
             return u.Player != 0 && mockSelection.Count > 0 ? GameCursor.Attack : GameCursor.Select;
         }
 
+        // The original's test for joining the work on a frame: the unit's
+        // own player's frame, and a builder that walks. Only a monarch helps
+        // with a type off its own build list.
+        public bool CanHelpBuild(int unit, int frame)
+        {
+            if (Status != GameStatus.Running || unit == frame) return false;
+            if (!byHandle.TryGetValue(unit, out var u) || !byHandle.TryGetValue(frame, out var f)) return false;
+            if (u.Dying || f.Dying || u.Built < 1f || f.Built >= 1f || u.Player != f.Player) return false;
+            var d = unitDefs[u.Def];
+            if (d.IsBuilding || d.BuildOptions.Length == 0) return false;
+            return RoleOf(u.Def) == Role.Monarch || Array.IndexOf(d.BuildOptions, f.Def) >= 0;
+        }
+
         public CursorFrame[] CursorArt(GameCursor cursor) => null;
 
         public void Cancel()

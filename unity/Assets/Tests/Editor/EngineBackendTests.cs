@@ -1032,6 +1032,92 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(backend.ReadUnitPose(u.Handle, pose), 0);
             Assert.AreEqual(u.Position.y, pose[0].Matrix.m13, 0.3f, "and its pose stands there, not on the floor");
         }
+
+        // A frame of a building only the monarch raises: with him selected
+        // the hammer shows over it and the game's click sets him to work
+        // there, or after his walk with Shift. A Mage Builder is held to its
+        // own build list, so it gets no hammer and the click does not put it
+        // to work (legacy:233556-233574).
+        [Test, Order(12)]
+        public void TheHammerOverAFrameIsForABuilderThatCouldBuildIt()
+        {
+            backend.StartSkirmish(TwoCastles());
+            LoadProgress p = default;
+            for (int pumps = 0; pumps < 5000 && !p.Done && !p.Failed; pumps++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            int Find(string name) { for (int i = 0; i < backend.UnitDefs.Count; i++) if (string.Equals(backend.UnitDefs[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i; return -1; }
+            int kingDef = Find("araking"), mageDef = Find("arabuild");
+            Assert.IsTrue(kingDef >= 0 && mageDef >= 0);
+            int me = backend.LocalPlayer;
+            var units = new UnitState[1024];
+            int n = backend.ReadUnits(units);
+            var king = units.Take(n).First(u => u.Player == me && u.Def == kingDef);
+            int mage = OkEngine.okx_place_unit(mageDef, me);
+            Assert.GreaterOrEqual(mage, 0, "a Mage Builder set down");
+            backend.Advance(2);
+
+            var mageList = backend.UnitDefs[mageDef].BuildOptions;
+            int only = -1;
+            Vector3 site = default;
+            foreach (int opt in backend.UnitDefs[kingDef].BuildOptions)
+            {
+                if (!backend.UnitDefs[opt].IsBuilding || Array.IndexOf(mageList, opt) >= 0) continue;
+                bool found = false;
+                for (int r = 8; r <= 60 && !found; r += 2)
+                    for (int k = 0; k < 16 && !found; k++)
+                        found = backend.CanBuildAt(opt, king.Position + Quaternion.Euler(0, k * 22.5f, 0) * new Vector3(r, 0, 0), 0, out site);
+                if (found) { only = opt; break; }
+            }
+            Assert.GreaterOrEqual(only, 0, "a building only the monarch raises, and ground for it");
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = king.Handle, Target = site, TargetUnit = -1, BuildDef = only }));
+            int frame = -1;
+            for (int t = 0; t < 60 * 60 && frame < 0; t += 10)
+            {
+                backend.Advance(10);
+                frame = backend.ReadOrder(king.Handle).Building;
+            }
+            Assert.GreaterOrEqual(frame, 0, "the monarch began the frame");
+            backend.Advance(60);
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Stop, king.Handle, Vector3.zero)));
+            backend.Advance(3);
+            Assert.AreNotEqual(frame, backend.ReadOrder(king.Handle).Building, "stopped, the monarch leaves the frame standing");
+            n = backend.ReadUnits(units);
+            var at = units.Take(n).First(u => u.Handle == frame).Position;
+
+            backend.Cancel();
+            backend.Cancel();
+            Assert.AreNotEqual(GameCursor.Repair, backend.CursorAt(at, frame, out _), "no hammer with nothing selected");
+            backend.Select(new[] { mage }, false);
+            Assert.IsFalse(backend.CanHelpBuild(mage, frame), "the Mage Builder could not build it");
+            Assert.AreNotEqual(GameCursor.Repair, backend.CursorAt(at, frame, out _), "so it gets no hammer");
+            backend.Click(at, frame, false);
+            backend.Advance(2);
+            Assert.AreNotEqual(frame, backend.ReadOrder(mage).Building, "and the click does not set it to work there");
+
+            backend.Select(new[] { king.Handle }, false);
+            Assert.IsTrue(backend.CanHelpBuild(king.Handle, frame));
+            Assert.AreEqual(GameCursor.Repair, backend.CursorAt(at, frame, out _), "the hammer, for the monarch");
+            backend.Click(at, frame, false);
+            backend.Advance(2);
+            var order = backend.ReadOrder(king.Handle);
+            Assert.AreEqual(OrderKind.Build, order.Kind);
+            Assert.AreEqual(frame, order.Building, "the click set him back to work on it");
+
+            // Shift puts the help behind the order in hand, a walk away from it.
+            n = backend.ReadUnits(units);
+            var kp = units.Take(n).First(u => u.Handle == king.Handle).Position;
+            var away = kp + (kp - at).normalized * 12f;
+            Assert.IsTrue(backend.Command(GameCommand.To(CommandKind.Move, king.Handle, away)), "a walk away");
+            backend.Advance(2);
+            backend.Click(at, frame, true);
+            backend.Advance(2);
+            var legs = new OrderLeg[8];
+            Assert.AreEqual(2, backend.ReadOrderQueue(king.Handle, legs), "Shift queues the help behind the walk");
+            Assert.AreEqual(OrderKind.Move, legs[0].Kind);
+            Assert.AreEqual(frame, legs[1].TargetUnit, "and then the frame");
+            backend.Cancel();
+            backend.Cancel();
+        }
     }
 
     // How Ctrl reaches the engine, which needs no engine to check.
