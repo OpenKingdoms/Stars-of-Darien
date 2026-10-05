@@ -1,3 +1,3 @@
 okengine-api23.dll  okengine API 23, unity-embed 60417f8, main 19cd2b4, a flyer in the air standing on no build site, so a Beast Tamer's Harpies come without end, the minimap's left button giving the order a field click would there, and what engine build 35 brought, engine build 36, published at openkingdoms-unity 7f8c632
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
-okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed aedf840, published at openkingdoms-unity 79674f2
+okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 60417f8, published at openkingdoms-unity da418fa
