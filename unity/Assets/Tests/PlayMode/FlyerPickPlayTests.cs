@@ -175,5 +175,50 @@ namespace OpenKingdomsUnity.Tests
             Debug.Log($"{flyerDefs.Count} flyers, {up} up");
             Assert.Greater(up, 0, "flyers went up to their height");
         }
+
+        // The cells a footprint of fp cells covers from its corner, as the
+        // engine stamps a unit at world x and z.
+        static Vector2Int Corner(Vector3 p, int fp) =>
+            new Vector2Int(Mathf.FloorToInt(p.x - fp * 0.5f), Mathf.FloorToInt(-p.z - fp * 0.5f));
+
+        [UnityTest, Timeout(900000)]
+        public IEnumerator HarpiesSentToOnePlaceEndApart()
+        {
+            // Ten Harpies ordered onto one point step out of each other's
+            // cells in the air and land on clear ground, so none ends on another.
+            yield return Begin();
+            int me = engine.LocalPlayer;
+            var defs = engine.UnitDefs;
+            int harpy = Enumerable.Range(0, defs.Count).Where(d => string.Equals(defs[d].Name, "ZONHARP", System.StringComparison.OrdinalIgnoreCase)).DefaultIfEmpty(-1).First();
+            if (harpy < 0 || !defs[harpy].CanFly) Assert.Ignore("no Harpy in these game files");
+            int fp = Mathf.Max(1, defs[harpy].Footprint.x);
+            var flock = new int[10];
+            for (int i = 0; i < flock.Length; i++)
+            {
+                flock[i] = OkEngine.okx_place_unit(harpy, me);
+                Assert.GreaterOrEqual(flock[i], 0, "a Harpy was placed");
+            }
+            var at = Read(flock[0]).Position + new Vector3(0f, 0f, 16f);
+            foreach (var h in flock) engine.Command(GameCommand.To(CommandKind.Move, h, at));
+            engine.Advance(3600);
+            int shared = 0;
+            float far = 0f;
+            for (int i = 0; i < flock.Length; i++)
+            {
+                var a = Read(flock[i]);
+                far = Mathf.Max(far, new Vector2(a.Position.x - at.x, a.Position.z - at.z).magnitude);
+                Assert.Less(a.Altitude, 0.5f, "Harpy " + i + " landed");
+                for (int j = i + 1; j < flock.Length; j++)
+                {
+                    var b = Read(flock[j]);
+                    var ca = Corner(a.Position, fp);
+                    var cb = Corner(b.Position, fp);
+                    if (Mathf.Abs(ca.x - cb.x) < fp && Mathf.Abs(ca.y - cb.y) < fp) shared++;
+                }
+            }
+            Debug.Log($"{shared} of 45 pairs share cells, farthest {far:0.0} from the point");
+            Assert.AreEqual(0, shared, "no Harpy ends on another");
+            Assert.Less(far, 32f, "they still gather at the point");
+        }
     }
 }

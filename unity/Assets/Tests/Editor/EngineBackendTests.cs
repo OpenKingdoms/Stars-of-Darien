@@ -1127,6 +1127,49 @@ namespace OpenKingdomsUnity.Tests
             backend.Cancel();
             backend.Cancel();
         }
+
+        // A Beast Lord summons an orc onto the spot an orc of its own stands
+        // on: the ghost's test lets it go there, and the lord takes the
+        // order and waits for the first to leave.
+        [Test, Order(13)]
+        public void AZhonSummonsIsPlacedOverAUnitOfItsOwn()
+        {
+            backend.StartSkirmish(TwoCastles("ZHON"));
+            LoadProgress p = default;
+            for (int pumps = 0; pumps < 5000 && !p.Done && !p.Failed; pumps++) p = backend.PumpLoading();
+            Assert.IsTrue(p.Done, p.Error);
+            int Find(string name) { for (int i = 0; i < backend.UnitDefs.Count; i++) if (string.Equals(backend.UnitDefs[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i; return -1; }
+            int orc = Find("zonorc"), lordDef = Find("zonlord");
+            Assert.IsTrue(orc >= 0 && lordDef >= 0);
+            Assert.GreaterOrEqual(Array.IndexOf(backend.UnitDefs[lordDef].BuildOptions, orc), 0, "the Beast Lord summons the orc");
+            // A Zhon game starts with Thirsha alone, so the lord is set down.
+            int lord = OkEngine.okx_place_unit(lordDef, backend.LocalPlayer);
+            Assert.GreaterOrEqual(lord, 0, "a Beast Lord set down");
+            backend.Advance(2);
+            var units = new UnitState[1024];
+            int n = backend.ReadUnits(units);
+            Vector3 from = units.Take(n).First(u => u.Handle == lord).Position;
+            Vector3 site = from;
+            bool open = false;
+            for (float r = 6; r <= 40 && !open; r += 2)
+                for (int k = 0; k < 8 && !open; k++)
+                    open = backend.CanBuildAt(orc, from + Quaternion.Euler(0, k * 45f, 0) * new Vector3(r, 0, 0), 0, out site);
+            Assert.IsTrue(open, "open ground for the orc");
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = lord, Target = site, TargetUnit = -1, BuildDef = orc }));
+            int first = -1;
+            for (int step = 0; step < 600 && first < 0; step++)
+            {
+                backend.Advance(20);
+                n = backend.ReadUnits(units);
+                for (int i = 0; i < n; i++)
+                    if (units[i].Player == backend.LocalPlayer && units[i].Def == orc && units[i].BuildProgress >= 1f) first = units[i].Handle;
+            }
+            Assert.GreaterOrEqual(first, 0, "the first orc is summoned");
+            Assert.IsTrue(backend.CanBuildAt(orc, site, 0, out var again), "a second orc may be placed where the first stands");
+            Assert.IsTrue(backend.Command(new GameCommand { Kind = CommandKind.Build, Unit = lord, Target = again, TargetUnit = -1, BuildDef = orc }));
+            backend.Advance(2);
+            Assert.AreEqual(OrderKind.Build, backend.ReadOrder(lord).Kind, "the lord takes it and waits");
+        }
     }
 
     // How Ctrl reaches the engine, which needs no engine to check.
