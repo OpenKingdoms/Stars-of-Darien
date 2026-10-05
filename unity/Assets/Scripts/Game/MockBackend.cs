@@ -587,11 +587,15 @@ namespace OpenKingdomsUnity.Game
 
         // A flyer is in the air while it has somewhere to go or someone to
         // fight, as the engine's flyers are, and climbs and lands at top speed.
+        // It lands only on dry ground, staying up over water, and flies over
+        // the sea rather than the sea floor.
         void TickFlight(Unit u, UnitDef d, float dt)
         {
-            u.Flying = u.Goal != null || u.Target >= 0;
+            float ground = Terrain.Sample(u.Pos.x, u.Pos.z);
+            bool wet = Terrain.SeaLevel > 0f && ground < Terrain.SeaLevel;
+            u.Flying = u.Goal != null || u.Target >= 0 || (wet && u.Alt > 0f);
             u.Alt = Mathf.MoveTowards(u.Alt, u.Flying ? d.CruiseAltitude : 0f, d.MaxSpeed * dt);
-            u.Pos.y = Terrain.Sample(u.Pos.x, u.Pos.z) + u.Alt;
+            u.Pos.y = (wet ? Terrain.SeaLevel : ground) + u.Alt;
             if (u.Alt > 0f) u.FlyTime += dt;
         }
 

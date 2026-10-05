@@ -459,7 +459,10 @@ namespace OpenKingdomsUnity.Engine
 
         void TrackFlight(in OkxUnit u, ref UnitState s, UnitDef def, uint tick, int tps)
         {
-            float alt = Mathf.Max(0f, u.y - OkEngine.okx_ground_height(u.x, u.z));
+            // Over water the engine holds a flyer over the sea, not the sea floor.
+            float ground = OkEngine.okx_ground_height(u.x, u.z);
+            if (terrain != null && terrain.SeaLevel > 0f) ground = Mathf.Max(ground, terrain.SeaLevel / S);
+            float alt = Mathf.Max(0f, u.y - ground);
             if (flights.TryGetValue(u.stableId, out var f))
             {
                 if (tick != f.Tick)
