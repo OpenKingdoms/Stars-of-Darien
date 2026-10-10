@@ -50,6 +50,16 @@ namespace OpenKingdomsUnity.Game
         bool loadRefused;
         IGameBackend injected;
 
+#if UNITY_EDITOR
+        // The editor compiles changed shaders in the background and draws
+        // cyan until they are done, so a battle waits for them behind the
+        // loading screen, at most ShaderWaitCap seconds. A player has them all.
+        public static Func<bool> ShadersCompiling = () => UnityEditor.ShaderUtil.anythingCompiling;
+        public static float ShaderWaitCap = 120f;
+        public const string ShaderStage = "Readying the shaders";
+        float shadersFrom = -1;
+#endif
+
         public static GameRoot Boot(IGameBackend backend = null)
         {
             var go = new GameObject("GameRoot");
@@ -227,6 +237,9 @@ namespace OpenKingdomsUnity.Game
                     loadingFrom = Time.realtimeSinceStartup;
                     LoadWorstFrameMs = 0;
                     loadFrameAt = System.Diagnostics.Stopwatch.GetTimestamp();
+#if UNITY_EDITOR
+                    shadersFrom = -1;
+#endif
                     ApplyAudio();
                     if (pendingLoad != null)
                     {
@@ -360,6 +373,9 @@ namespace OpenKingdomsUnity.Game
                         };
                         break;
                     }
+#if UNITY_EDITOR
+                    if (WaitsForShaders()) break;
+#endif
                     Loading = new LoadProgress { Fraction = 1f, Stage = "ready", Done = true };
                     Debug.Log($"{CurrentMap()?.Id}: the engine loaded it in {builtFrom - loadingFrom:0.0} s and the world was built in {Time.realtimeSinceStartup - builtFrom:0.0} s ({World.BuildTimes}; {World.ModelCount} models)");
                     input = new OrderInput(Backend, World, Options.ClassicControls);
@@ -429,7 +445,12 @@ namespace OpenKingdomsUnity.Game
                 // A batch run without graphics (the smoke test) has nothing to draw with.
                 long renderFrom = System.Diagnostics.Stopwatch.GetTimestamp();
                 // While the models build, the world waits behind the loading screen.
-                if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null && Flow.State != FlowState.Loading)
+                bool draws = Flow.State != FlowState.Loading;
+#if UNITY_EDITOR
+                // Built, it draws there so the editor compiles its shaders.
+                draws |= shadersFrom >= 0;
+#endif
+                if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null && draws)
                     using (RenderMarker.Auto()) World.Render();
                 RenderMs = Ms(renderFrom);
                 // The frame that ends the loading draws the battle's first.
@@ -440,6 +461,25 @@ namespace OpenKingdomsUnity.Game
             using (PointerMarker.Auto()) Pointer.Show(PointerCursor(), Time.unscaledTime);
         }
 
+#if UNITY_EDITOR
+        // The first frame after the build draws the world behind the screen,
+        // which asks the editor for its shaders, and later ones wait for them.
+        bool WaitsForShaders()
+        {
+            float now = Time.realtimeSinceStartup;
+            if (shadersFrom < 0)
+            {
+                shadersFrom = now;
+                Loading = new LoadProgress { Fraction = 1f, Stage = ShaderStage };
+                return true;
+            }
+            if (!(ShadersCompiling?.Invoke() ?? false)) return false;
+            if (now - shadersFrom < ShaderWaitCap) return true;
+            Debug.LogWarning($"The battle opens with the editor still compiling shaders after {ShaderWaitCap:0.#} s.");
+            return false;
+        }
+
+#endif
         // This frame's milliseconds in the simulation and in building the
         // world's draws, for the soak run in a player without the profiler.
         public double SimMs { get; private set; }
