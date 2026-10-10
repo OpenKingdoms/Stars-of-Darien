@@ -41,7 +41,7 @@ namespace OpenKingdomsUnity.Tests
         {
             var b = root.Backend;
             Assert.IsTrue(b.CanBuildAt(def, site, facing, out var snapped), $"{b.UnitDefs[def].Name} can stand at {site}");
-            var ghost = root.World.Entities.GhostBounds(new EntityRenderer.GhostState { Def = def, At = snapped, Facing = facing, Ok = true });
+            var preview = new EntityRenderer.GhostState { Def = def, At = snapped, Facing = facing, Ok = true };
             Assert.IsTrue(b.Command(new GameCommand { Kind = CommandKind.Build, Unit = monarch, Target = snapped, TargetUnit = -1, BuildDef = def, Facing = facing }),
                 $"the monarch takes the order to build {b.UnitDefs[def].Name}");
             var units = new UnitState[4096];
@@ -57,8 +57,12 @@ namespace OpenKingdomsUnity.Tests
             Assert.GreaterOrEqual(built, 0, $"{b.UnitDefs[def].Name} was finished at the site");
             yield return null;
             yield return null;
-            var real = root.World.Entities.UnitBounds(built);
-            report.Add($"{b.UnitDefs[def].Name} facing {facing}: ghost {ghost.center} {ghost.size}, built {real.center} {real.size}");
+            // The preview stands at rest: pieces the building's script turns, as the
+            // wind turns a gate's flags, are left out of both.
+            var turned = PreviewPieces.Turned(b, built);
+            var ghost = root.World.Entities.GhostBounds(preview, turned);
+            var real = root.World.Entities.UnitBounds(built, turned);
+            report.Add($"{b.UnitDefs[def].Name} facing {facing}: ghost {ghost.center} {ghost.size}, built {real.center} {real.size}, turned pieces left out: {string.Join(" ", turned)}");
             Assert.Less(Vector3.Distance(ghost.center, real.center), 0.35f, $"{b.UnitDefs[def].Name}: the preview stands where it is built. " + string.Join(" | ", report));
             for (int k = 0; k < 3; k++)
                 Assert.AreEqual(real.size[k], ghost.size[k], Mathf.Max(0.3f, real.size[k] * 0.2f), $"{b.UnitDefs[def].Name}: same size on axis {k}. " + string.Join(" | ", report));

@@ -252,7 +252,7 @@ namespace OpenKingdomsUnity.Game.World
         // scale and height, turned by its facing: the model's rest pose from
         // its piece offsets, the script's alternate pieces (*_off, *_dead)
         // left out as the engine hides them on a new building.
-        public List<(Mesh mesh, int sub, Material mat, Matrix4x4 m)> GhostParts(GhostState g, float angle)
+        public List<(Mesh mesh, int sub, Material mat, Matrix4x4 m)> GhostParts(GhostState g, float angle, ICollection<string> leaveOut = null)
         {
             var list = new List<(Mesh, int, Material, Matrix4x4)>();
             var def = backend.UnitDefs[g.Def];
@@ -269,6 +269,7 @@ namespace OpenKingdomsUnity.Game.World
                 string name = d.Pieces[p].Name ?? "";
                 if (name.EndsWith("_off") || name.EndsWith("_dead") || model.Pieces[p] == null) continue;
                 if (card != null && card.Hides(name)) continue;
+                if (leaveOut != null && leaveOut.Contains(name)) continue;
                 var r = Matrix4x4.Translate(d.Pieces[p].Offset * d.Scale);
                 for (int q = d.Pieces[p].Parent; q >= 0; q = d.Pieces[q].Parent) r = Matrix4x4.Translate(d.Pieces[q].Offset * d.Scale) * r;
                 for (int s = 0; s < model.Materials[p].Length; s++) list.Add((model.Pieces[p], s, model.Materials[p][s], at * r));
@@ -281,10 +282,11 @@ namespace OpenKingdomsUnity.Game.World
         public static Quaternion ModelTurn(float heading, float pitch = 0f, float roll = 0f) => Quaternion.Euler(pitch, heading - 180f, roll);
 
         // Where the ghost's pieces reach, in world space.
-        public Bounds GhostBounds(GhostState g) => BoundsOf(GhostParts(g, g.Facing * 90f));
+        // Pieces named in leaveOut are left out of these bounds.
+        public Bounds GhostBounds(GhostState g, ICollection<string> leaveOut = null) => BoundsOf(GhostParts(g, g.Facing * 90f, leaveOut));
 
         // Where a unit's drawn pieces reach, in world space.
-        public Bounds UnitBounds(int handle)
+        public Bounds UnitBounds(int handle, ICollection<string> leaveOut = null)
         {
             var list = new List<(Mesh, int, Material, Matrix4x4)>();
             for (int i = 0; i < UnitCount; i++)
@@ -298,7 +300,8 @@ namespace OpenKingdomsUnity.Game.World
                 var sway = swayOf.TryGetValue(handle, out var sm) ? sm : Matrix4x4.identity;
                 var card = CardOverride.For(def.ObjectName);
                 for (int p = 0; p < n; p++)
-                    if (model.Pieces[p] != null && !poses[p].Hidden && (card == null || !card.Hides(model.Data.Pieces[p].Name)))
+                    if (model.Pieces[p] != null && !poses[p].Hidden && (card == null || !card.Hides(model.Data.Pieces[p].Name)) &&
+                        (leaveOut == null || !leaveOut.Contains(model.Data.Pieces[p].Name)))
                         list.Add((model.Pieces[p], 0, null, sway * Matrix4x4.Translate(Vector3.up * lift) * poses[p].Matrix * model.Unscale));
                 if (card != null)
                 {

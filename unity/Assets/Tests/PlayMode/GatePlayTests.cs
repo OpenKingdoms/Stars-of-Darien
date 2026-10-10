@@ -97,7 +97,6 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(1, ghost.Facing, "the preview stands turned");
             Assert.IsTrue(root.Orders.GhostOk, "the turned gate fits there");
             Assert.Less(Vector2.Distance(new Vector2(root.Orders.GhostAt.x, root.Orders.GhostAt.z), new Vector2(site.x, site.z)), 0.01f, "the preview is on the site");
-            var preview = root.World.Entities.GhostBounds(ghost);
 
             // The click places it, and it goes up turned where the preview stood.
             frame.LeftDown = frame.LeftHeld = true;
@@ -123,7 +122,11 @@ namespace OpenKingdomsUnity.Tests
             Assert.AreEqual(1, g0.Facing, "it stands turned");
             Assert.AreEqual(270f, g0.Heading, 0.01f, "a quarter round from south, it faces west");
             Assert.Less(Vector2.Distance(new Vector2(g0.Position.x, g0.Position.z), new Vector2(site.x, site.z)), 0.01f, "where the preview stood");
-            var real = root.World.Entities.UnitBounds(g0.Handle);
+            // The wind turns the gate's flags as the original's does, and the
+            // preview stands at rest, so the two are matched without them.
+            var turned = PreviewPieces.Turned(b, g0.Handle);
+            var preview = root.World.Entities.GhostBounds(ghost, turned);
+            var real = root.World.Entities.UnitBounds(g0.Handle, turned);
             Assert.Less(Vector3.Distance(preview.center, real.center), 0.35f, $"preview {preview} built {real}");
             for (int k = 0; k < 3; k++)
                 Assert.AreEqual(real.size[k], preview.size[k], Mathf.Max(0.3f, real.size[k] * 0.2f), $"axis {k}: preview {preview} built {real}");
