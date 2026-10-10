@@ -369,6 +369,7 @@ namespace OpenKingdomsUnity.Game.World
                 l.SheenAt = now;
                 Move(l);
             }
+            Marked[(int)BlastKind.Holy] += near.Count;
         }
 
         float R(float a, float b)

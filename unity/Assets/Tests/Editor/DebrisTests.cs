@@ -149,6 +149,46 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void ChunksAreDrawnNearestFirstUpToTheCapAndOnlyNearOnesCastShadows()
+        {
+            var budget = BreakBudget.For(EffectsQuality.High);
+            budget.Drawn = 100;
+            var d = Field(0f, budget);
+            // Lying chunks in a row running away from the camera, one a unit.
+            for (int k = 0; k < 300; k++)
+                d.Spawn(draws, Matrix4x4.Translate(new Vector3(0f, 0.5f, 10f + k)), Vector3.zero, Cube, Vector3.zero, Vector3.zero);
+            Run(d, 3f);
+            var shadowed = new InstancedDraws();
+            var plain = new InstancedDraws();
+            var eye = new Vector3(0f, 2f, 0f);
+            const float pixels = 1300f;
+            // The first frame finds the cut, the next draws by it.
+            for (int f = 0; f < 2; f++) { shadowed.Clear(); plain.Clear(); d.Draw(shadowed, plain, null, eye, pixels); }
+            Assert.AreEqual(100, d.Drawn, "no more than the cap");
+            Assert.AreEqual(100, shadowed.Count + plain.Count);
+            Assert.AreEqual(Mathf.FloorToInt(budget.ShadowReach) - 9, shadowed.Count, 1, "only those within the shadow reach cast shadows");
+            Assert.Greater(d.OverCap, 0);
+            // Without the cap, every one in view.
+            Debris.Capped = false;
+            try { shadowed.Clear(); plain.Clear(); d.Draw(shadowed, plain, null, eye, pixels); }
+            finally { Debris.Capped = true; }
+            Assert.AreEqual(300, d.Drawn);
+        }
+
+        [Test]
+        public void AChunkTooSmallToSeeIsNotDrawn()
+        {
+            var d = Field(0f);
+            d.Spawn(draws, Matrix4x4.Translate(new Vector3(0f, 0.5f, 10f)), Vector3.zero, Cube, Vector3.zero, Vector3.zero);
+            d.Spawn(draws, Matrix4x4.Translate(new Vector3(0f, 0.5f, 900f)), Vector3.zero, Cube, Vector3.zero, Vector3.zero);
+            Run(d, 3f);
+            var into = new InstancedDraws();
+            d.Draw(into, null, null, Vector3.zero, 1300f);
+            Assert.AreEqual(1, d.Drawn, "the near one, not the one a pixel across");
+            Assert.AreEqual(1, d.TooSmall);
+        }
+
+        [Test]
         public void SteppingAndDrawingAThousandChunksAllocatesNothing()
         {
             var d = Field(0f);

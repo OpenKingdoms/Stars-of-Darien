@@ -114,9 +114,9 @@ The ground keeps a scar map, textures laid over the whole map at one texel for e
 
 | Kind | Weapons | What it leaves |
 |---|---|---|
-| Gunpowder | cannon, mortar, musket, bomb and every death blast | a crater with 0.8 of the blast's radius, at most 4 units, 2 to 6 px deep with a flat floor, a lumpy rim 0.4 of its depth, scorch at its heart, walls of dug earth and earth thrown in rays to 2.4 crater radii. A shot of no area scorches a spot |
-| Siege | thrown stone, catapult and trebuchet shot | a pit 0.45 of the radius, at most 5 px deep with a low rim, churned soil and stones scattered to 2.8 pit radii, and no scorch |
-| Impact | volcanic blasts, meteors and fire spells of 3.5 units or more | a crater up to 5 units in radius and 10 px deep, charred, glowing for 25 s |
+| Gunpowder | cannon, mortar, musket, bomb and every death blast | a crater with about 0.8 of the blast's radius, at most 4.6 units, up to 6 px deep with a flat floor, a lumpy rim 0.28 to 0.55 of its depth, scorch at its heart, walls of dug earth and earth thrown in clods along rays to 2.4 crater radii. A shot of no area scorches a spot |
+| Siege | thrown stone, catapult and trebuchet shot | a pit about 0.45 of the radius, at most 5 px deep with a low rim, churned soil and stones scattered to 2.8 pit radii, and no scorch |
+| Impact | volcanic blasts, meteors and fire spells of 3.5 units or more | a crater up to 5.5 units in radius and 10 px deep, charred, glowing for 25 s |
 | Fire | fireballs, flame strikes and burning arrows | char over the blast's reach with a ragged edge, black and glowing while fresh, settling to dark soil after 20 s |
 | Breath | dragon breath | a scorched swath 3.5 units back along the breath |
 | Lightning | bolts, ball lightning and shock rings | a charred star with a scorched fork at least 6 units across, five branches each with a side branch |
@@ -126,6 +126,8 @@ The ground keeps a scar map, textures laid over the whole map at one texel for e
 | Holy | a divine caster's magic that is no element | a pale ring of light that fades over 25 s, its middle first |
 | Earth | earthquakes | cracks and churned soil along four fissures |
 | Dust | dust puffs and whirlwinds | a scuff of churned soil |
+
+No two craters are alike. Each takes its own size within about 15 percent, a depth from 0.6 of its kind's to the whole of it, its own flat floor and rim, and its own outline: an ellipse drawn out along the shot's flight by up to 45 percent, or a little either way when the blast had no flight, pushed in and out by two and five lobes. The stamp shader and the CPU copy draw the same outline, so units still sit on what the ground shows. Thrown earth lies in clods at about half the strength of the dug soil, so grass shows between the pits of a crowded field, dug soil varies in broad lighter and darker patches seen from any distance, and the rims show lighter dry earth than the floors. Overlapping craters keep the deeper dip as before, which with the varied depths leaves ridges between pits rather than one flat floor. While it snows, an old scar is buried as the ground round it lies, white on snowy ground and back to the ground's own colour under a light dusting on green ground.
 
 The kinds are the ones `FxKinds` sorts every weapon into for the explosions, so a weapon's scar and its blast agree. Blasts on water leave nothing here, as the sea's churn belongs to the explosions, and so does a shot that struck a unit directly. A crater by the shore fills to just above the water. The soil follows the map's climate, with brown earth on grass, sand in the desert, slush on snow, black mud holding water in swamps and ash on volcanic ground. Dug snow shows wherever the ground itself is snowy. The fog of war darkens scars like the rest of the ground.
 
@@ -197,14 +199,45 @@ On the RTX 3070 at 1440p, in the perf probe's five-kingdom battle, destruction m
 
 A new Battle effects option sets the budgets, picked automatically from the graphics card and the measured frame time the first time the game runs.
 
-| Setting | Flying chunks | Rubble kept | Lights | Scar map | Ground |
-|---|---|---|---|---|---|
-| Low | 150 | 300 | 4 | 1 texel per 16 px | colour only, scars fade |
-| Medium | 600 | 1,500 | 8 | 1 per 8 px | colour and normals |
-| High | 1,500 | 4,000 | 24 | 1 per 4 px | dips in the mesh |
-| Ultra | 3,000 | 8,000 | 48 | 1 per 4 px | dips, longer smoke |
+| Setting | Flying chunks | Rubble kept | Chunks drawn | Chunk shadows | Lights | Scar map | Ground |
+|---|---|---|---|---|---|---|---|
+| Low | 150 | 300 | 300 | none | 4 | 1 texel per 16 px | colour only, scars fade |
+| Medium | 600 | 1,500 | 900 | within 30 units | 8 | 1 per 8 px | colour and normals |
+| High | 1,500 | 4,000 | 1,800 | within 55 units | 24 | 1 per 4 px | dips in the mesh |
+| Ultra | 3,000 | 8,000 | 3,600 | within 90 units | 48 | 1 per 4 px | dips, longer smoke |
 
 More than 4 lights needs URP's Forward+ path. Every Oku shader has to keep its variants for it, and the built player's smoke run with the GPU has to pass, since variants stripped from a player build once left Alpha 1 drawing nothing. Particles stay in the existing batched effect meshes with Burst, and the VFX Graph package waits until counts pass about 20,000.
+
+## On the real engine
+
+The destruction scenes run on the real engine with the player's files, offscreen like the trailer. `bash tools/trailer/destruction.sh <scenes> <out dir> [1080|1440]` runs the PlayMode test `DestructionCaptures` under the heavy lock, films each shot to an MP4 with stills and a contact sheet of them, and `tools/trailer/deliver.sh` copies small versions somewhere to watch. The scenes live in `Tests/PlayMode/Trailer/DestructionScenes.cs` beside the trailer's and serve the destruction trailer too.
+
+| Scene | Map | What it shows |
+|---|---|---|
+| forest-fire | Lake Ferrix_JM | fire mages and fire demons, each aimed at a tree, light the upwind side of the map's largest group of trees close enough for sparks to carry, and the fire runs on downwind, chars and leaves burnt stages |
+| siege | Alchemist Glen | catapults, trebuchets, cannon, mortars and ballistas from the far start take the walled town's wall down a stage at a time to rubble, then cave in the houses behind it |
+| creon-ruins | Edmont's Field | every Creon kind of scenery set down as a town, shelled and burnt, most of its stages drawn from earlier ones as they have no model yet |
+| spells | Neegam's Pass | frost, dark, lightning, holy, earth, water and wind magic, each on its own trees, each caster waiting for the mana its spell costs |
+| dragon-breath | Black Forest | six dragons of every kingdom breathing through a dark volcanic wood |
+| craters | Edmont's Field | three minutes of cannon, catapults and infantry, the field from above, then units with their rings standing in the craters |
+| rain | New Hindigal | the forest fire in rain, the flames short and steaming |
+| snow | Neegam's Pass | cannon in falling snow, the first craters buried two minutes on and fresh ones dark beside them, then fire in the snow |
+| perf-ulasem, perf-forest | Ulasem Arena, Into the Woods | eight seats fighting at the middle, measured at High and at Low |
+| census | 42 maps | the breakable scenery each map holds and every weapon's kind |
+
+A watch beside each scene checks the plumbing and writes `checks.log`: every feature event the renderer reads and whether it found the feature after indices shifted, whether what is drawn three seconds after each swap is the stage the engine holds there, whether each stage with no model is drawn from an earlier one, whether a breaking feature's spot on screen blinks for a single frame, and whether units in craters are drawn in them with their rings on the dented ground.
+
+Over the scenes every swap checked was drawn as the engine holds it, 16 of 16 in the Creon town, 18 of 18 among the spells, 13 of 13 in the rain and 9 of 9 in the craters, and every one of the 15 Creon stages with no model of its own that the town reached was drawn from an earlier stage. No breaking spot blinked for a frame. Every unit standing in a crater was drawn lowered into it, its ring on the dented ground. The first runs found event lookups that missed their feature, up to 9 in 50 in the long battle, all for scenery set down or swapped within the frame the event came in, which the fixes below answer. Hail Shower frosts what it reaches once its caster has the mana for it. The Weather Witch's Tornado reports no blast at all, as the engine flies it as a plain shot that never bursts, so wind leaves nothing on scenery until the engine has wandering weapons.
+
+What the maps hold matters as much as the code. Placed walls are rare: of the 209 maps the game ships, Hall of Heroes, Talgath's Toll, Ulasem, Alchemist Glen and Walls of Elam hold over 100 pieces of wall each and the castle maps none. No skirmish map holds Creon scenery, so the 51 stages with no model are reached only on mission maps, or when a map editor sets Creon scenery down, which the Creon scene does. And with the original's spark a fire barely spreads on shipped maps. A spark lights flammable scenery within three cells of the burning one, and its five steps downwind move a small fraction of a cell each, while the trees on shipped maps stand four or more cells apart nearly everywhere. The largest group of trees each within three cells of another is 20 on Lake Ferrix_JM, then 14 on New Hindigal and 10 on Per Mare Per Terras, and most maps have none above 5. Under the remastered rules a spark now reaches out to six cells, eight downwind (engine build 34), so the scenes light the largest group of trees each within six cells of another, and Lake Ferrix_JM's and New Hindigal's burn through.
+
+What the pass changed. An event for scenery set down or swapped since the last frame is read again once the features are, and an event finds its feature across stages that came and went within one frame, as they do when the battle runs on fast. A body set down and taken away within a frame is counted apart. Dark magic's smoke lay as a sheet of purple over the ground, in puffs over three units across that kept growing, and now rises in wisps a unit or two across. Every puff of smoke starts at most 2.4 units across, a little more than a man, so a big blast reads as many puffs rather than one cloud. Chunks are drawn nearest first up to the setting's cap, a chunk under a pixel and a half across on screen is left out, and only chunks within the setting's shadow reach cast shadows. The stamp shader's passes and the first read of the backend's blasts happen while the battle loads, and each weapon is sorted into its kind once, with nothing allocated per blast after. Films hide the health bars over damaged units unless they show the HUD. The flash lights needed nothing: every map is lit by the same sun, so a dark map is dark ground, and a flash on it reads as it should.
+
+Two costs were over the plan. Drawing chunks took 3.6 ms of a 2560 by 1440 frame in the stress battle on the mock, because every chunk is its own piece of a shared mesh and so its own draw, three times over for the shadow cascades and the depth pass. Chunks are now drawn nearest first up to the setting's cap, 1,800 at High, a chunk under a pixel and a half across on screen is left out, and only chunks within 55 units of the camera at High cast shadows. The cap is found in the same pass as the drawing, from the frame before, so it costs the main thread nothing extra. In the same stress battle, with 3,701 chunks in view, drawing every one with its shadow as before cost 3.57 ms of the frame and drawing them as capped 1.33 ms, chunks and dust together. Breaking took 1.62 ms of main thread a frame on average and 2.21 ms at the 95th percentile.
+
+The scar map's update had single frames of 3 to 9 ms. Timing each part of the slowest updates found three causes. A region of ground the first crater reached was given a material of its own to dip by, which cost 2 to 6 ms the frame it was made, and now a property block on the region does the same with nothing made. The regions were built on the thread pool, which made threads for them on the main thread now and then for 1.5 to 5 ms, and now one thread of the ground's own builds them. And the first stamp and the first blast of a battle ran code for the first time, 3 to 8 ms, which now runs while the battle loads, with every weapon sorted into its kind once and nothing allocated per blast after. In the eight seat battle on the mock with two marks a frame over a 512 unit map, the update took 0.32 ms a frame on average and 9.42 ms at worst over 900 frames before, and 0.28 ms on average and 1.72 ms at worst after. Five thousand blasts at once still drain within the texel budget, at 2.8 ms at worst a frame, slower than before as the varied outlines reach further.
+
+On the real engine, eight seats fighting at the middle of Ulasem Arena at High took 0.57 ms of main thread a frame for all of destruction at the median, 0.70 ms at the 95th percentile and 0.97 ms at worst, breaking 0.17 ms of it, scars 0.08, fire and magic 0.08 and the explosions 0.25. At Low it was 0.46, 0.54 and 2.50 ms. Into the Woods at High took 0.94 ms at the median and 1.19 ms at the 95th percentile, and 0.52 and 0.72 ms at Low. Real battles break far less than the stress battle, 39 to 163 chunks in play at once, and the chunks added 0.44 to 0.48 ms to the graphics card's opaque pass.
 
 ## Workstreams
 

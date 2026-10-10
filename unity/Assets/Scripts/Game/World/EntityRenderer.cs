@@ -444,6 +444,7 @@ namespace OpenKingdomsUnity.Game.World
                 foreach (var h in new List<int>(buildShown.Keys)) if (!buildSeen.Contains(h)) buildShown.Remove(h);
 
             AddFeatures(cam);
+            RetryEvents();
 
             breakFrom = System.Diagnostics.Stopwatch.GetTimestamp();
             StepDebris(cam);
@@ -476,6 +477,8 @@ namespace OpenKingdomsUnity.Game.World
         // Leaves out the units' and features' models, rings and overlays
         // still drawn: the smoke test's picture without them.
         public bool HideModels;
+        // Leaves out the health and mana bars, for films of the field.
+        public bool HideBars;
 
         // Each unit drawn this frame and how big it is: height and radius in
         // world units. Picking uses it, so a unit is picked where it shows.
@@ -740,7 +743,7 @@ namespace OpenKingdomsUnity.Game.World
                 if (air > 0f) SelectionRing.Add(ground, r, null, ground.y, ringVerts, ringTris);
                 else SelectionRing.Add(u.Position, r, groundAt, kind != FloatKind.None && sea > 0 ? sea + 0.08f : float.MinValue, ringVerts, ringTris);
             }
-            if (selected || u.Health < u.MaxHealth)
+            if (!HideBars && (selected || u.Health < u.MaxHealth))
             {
                 float f = u.MaxHealth > 0 ? Mathf.Clamp01((float)u.Health / u.MaxHealth) : 1f;
                 var face = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);

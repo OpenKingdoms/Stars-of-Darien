@@ -102,7 +102,35 @@ namespace OpenKingdomsUnity.Game.World
             Dents = new DentField(TexW, TexH, size.x, size.y);
             MakeGpu();
             SetGlobals();
+            Warm();
         }
+
+        // Everything the first blast of the battle would run for the first
+        // time done here, while it loads: every weapon sorted into its kind,
+        // a stamp made, dented and drawn, and the backend's blasts read.
+        void Warm()
+        {
+            var defs = backend.UnitDefs;
+            if (defs != null)
+                foreach (var d in defs)
+                    foreach (int slot in WarmSlots)
+                    {
+                        var w = backend.Weapon(d.Id, slot);
+                        if (w != null) FxKinds.Of(w, d.Name);
+                    }
+            // A stamp that leaves nothing, at the map's corner.
+            var nothing = ScarStamps.Make(ScarKind.Gunpowder, Vector3.zero, 2f, Vector3.forward, 0f, 1);
+            nothing.Dent = 0.5f;
+            nothing.Depth = nothing.Rim = 0f;
+            Dents.Stamp(nothing);
+            batch.Clear();
+            batch.Add(nothing);
+            DrawStamps(batch);
+            batch.Clear();
+            ReadBlasts();
+        }
+
+        static readonly int[] WarmSlots = { 0, 1, 2, WeaponSlot.Death };
 
         // Starts the battle's scar map, the one GroundOffset reads.
         public static ScarMap Begin(IGameBackend backend, TerrainView ground, string climate, EffectsQuality level)
@@ -128,22 +156,47 @@ namespace OpenKingdomsUnity.Game.World
         public void Update(float simSeconds)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
+            int gcs = System.GC.CollectionCount(0);
             if (FxQuality.Current.Level != Level) Requalify(FxQuality.Current.Level);
             if (simSeconds < now) steppedAt = simSeconds;
             now = simSeconds;
             ReadBlasts();
+            double read = clock.Elapsed.TotalMilliseconds;
             StampSome();
+            double stamped = clock.Elapsed.TotalMilliseconds;
+            string put = ground != null ? ground.LastPut : "";
             ground?.StepRefine();
+            double refined = clock.Elapsed.TotalMilliseconds;
+            if (ground != null && !ReferenceEquals(put, ground.LastPut)) put = ground.LastPut; else put = "";
             StepFading();
             SetGlobals();
             LastMs = clock.Elapsed.TotalMilliseconds;
+            if (LastMs > WorstMs)
+            {
+                WorstMs = LastMs;
+                WorstParts = $"read {read:0.00} ({blastsRead} blasts, {engineMs:0.00} in the backend) stamp {stamped - read:0.00} ({StampedLastFrame}) refine {refined - stamped:0.00}{(put.Length > 0 ? " [" + put + "]" : "")} fade {LastMs - refined:0.00}" +
+                             (System.GC.CollectionCount(0) != gcs ? ", a collection ran" : "");
+            }
         }
+
+        // The slowest update so far and what it spent its time on, for tests.
+        public double WorstMs { get; private set; }
+        public string WorstParts { get; private set; } = "";
+        public void ResetWorst() { WorstMs = 0; WorstParts = ""; }
+
+        double engineMs;
+        int blastsRead;
 
         void ReadBlasts()
         {
+            engineMs = 0;
+            blastsRead = 0;
             for (int round = 0; round < 8; round++)
             {
+                long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 int n = backend.ReadBlasts(lastBlast, blasts);
+                engineMs += (System.Diagnostics.Stopwatch.GetTimestamp() - t0) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                blastsRead += n;
                 for (int i = 0; i < n; i++)
                 {
                     lastBlast = Mathf.Max(lastBlast, blasts[i].Id);

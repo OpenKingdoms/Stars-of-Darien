@@ -299,8 +299,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.Greater(Chunks(Debris.State.Resting).Count, 0, "the pieces lie on the ground");
         }
 
-        double drawWith, drawWithout;
-        int gpuChunks;
+        double drawWith, drawWithout, drawUncapped;
+        int gpuChunks, gpuUncapped;
 
         // A frame drawn at 1440p and waited for, with the chunks and dust and without.
         IEnumerator GpuCost()
@@ -320,21 +320,28 @@ namespace OpenKingdomsUnity.Tests
                 cam.targetTexture = old;
                 return clock.Elapsed.TotalMilliseconds;
             }
-            gpuChunks = Ents.Debris.Drawn;
             var with = new List<double>();
             var without = new List<double>();
-            for (int round = 0; round < 6; round++)
+            var uncapped = new List<double>();
+            // Drawn as the setting caps it, not at all, and every chunk in view with its shadow.
+            for (int round = 0; round < 9; round++)
             {
-                Ents.DrawBreaking = round % 2 == 0;
+                Ents.DrawBreaking = round % 3 != 1;
+                Debris.Capped = round % 3 != 2;
                 yield return null;
+                if (round == 0) gpuChunks = Ents.Debris.Drawn;
+                if (round == 2) gpuUncapped = Ents.Debris.Drawn;
                 for (int k = 0; k < 2; k++) Draw();
-                for (int k = 0; k < 8; k++) (Ents.DrawBreaking ? with : without).Add(Draw());
+                for (int k = 0; k < 8; k++) (!Ents.DrawBreaking ? without : Debris.Capped ? with : uncapped).Add(Draw());
             }
             Ents.DrawBreaking = true;
+            Debris.Capped = true;
             with.Sort();
             without.Sort();
+            uncapped.Sort();
             drawWith = with[with.Count / 2];
             drawWithout = without[without.Count / 2];
+            drawUncapped = uncapped[uncapped.Count / 2];
             Object.Destroy(rt);
             Object.Destroy(px);
         }
@@ -388,13 +395,15 @@ namespace OpenKingdomsUnity.Tests
             }
             ms.Sort();
             double mean = ms.Average(), p95 = ms[(int)(ms.Count * 0.95)], worst = ms[ms.Count - 1];
-            Debug.Log($"Drawing the breaking at 1440p with {gpuChunks} chunks drawn: {drawWith:0.00} ms a frame with it and {drawWithout:0.00} ms without, {drawWith - drawWithout:0.00} ms for the chunks and dust");
+            Debug.Log($"Drawing the breaking at 1440p with {gpuChunks} chunks drawn: {drawWith:0.00} ms a frame with it and {drawWithout:0.00} ms without, {drawWith - drawWithout:0.00} ms for the chunks and dust; " +
+                      $"every one of {gpuUncapped} chunks in view with its shadow, as before the cap: {drawUncapped:0.00} ms, {drawUncapped - drawWithout:0.00} ms for them");
             Assert.AreEqual(GameStatus.Running, mock.Status, "the war went on to the end");
             Debug.Log($"Breaking in a battle of deaths, {targets.Count} pieces of scenery under fire and two armies routed, effects {Ents.Debris.Budget.Level}: {mean:0.000} ms a frame on average, " +
                       $"{p95:0.000} ms at the 95th percentile, {worst:0.00} ms at worst; at most {peakMoving} chunks moving, {peakActive} in play and {peakDrawn} drawn; " +
                       $"{Ents.Fractures.Ready} kinds split; {broke} frames with scenery breaking");
             Assert.Greater(broke, 30, "scenery broke");
             Assert.Less(mean, 2.0, "inside the plan's 2 ms of main thread");
+            Assert.LessOrEqual(drawWith - drawWithout, 2.5, "inside the plan's 2.5 ms of graphics time at High");
             Assert.LessOrEqual(peakMoving, Ents.Debris.Budget.Flying, "inside the setting's flying chunks");
         }
     }

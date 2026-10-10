@@ -47,7 +47,7 @@ namespace OpenKingdomsUnity.Game.World
         public int Stamp(in ScarStamp s)
         {
             if (s.Dent <= 0f || s.Depth <= 0f && s.Rim <= 0f) return 0;
-            float reach = s.Dent * 1.5f;
+            float reach = s.DentReach;
             int i0 = Mathf.Max(0, Mathf.FloorToInt((s.X - reach) / SizeX * W - 0.5f));
             int i1 = Mathf.Min(W - 1, Mathf.CeilToInt((s.X + reach) / SizeX * W - 0.5f));
             int j0 = Mathf.Max(0, Mathf.FloorToInt((1f + (s.Z - reach) / SizeZ) * H - 0.5f));
@@ -66,14 +66,18 @@ namespace OpenKingdomsUnity.Game.World
                     if (r2 >= reach2) continue;
                     visited++;
                     float r = Mathf.Sqrt(r2), x = r * invDent;
+                    // The stamp's own frame, as the stamp shader sees it.
+                    float c = 1f, sn = 0f;
+                    if (r > 1e-5f)
+                    {
+                        float inv = 1f / r;
+                        c = (dx * s.DirZ - dz * s.DirX) * inv;
+                        sn = (dx * s.DirX + dz * s.DirZ) * inv;
+                        x /= ScarStamps.Outline(c, sn, s.Stretch, s.Lobes, phases);
+                    }
                     byte qd = 0, qr = 0;
                     if (x < 1f) qd = Quantise(d01 * ScarStamps.DepthAt(x, s.Floor));
-                    if (x > 0.6f)
-                    {
-                        // The stamp's own frame, as the stamp shader sees it.
-                        float inv = 1f / r, c = (dx * s.DirZ - dz * s.DirX) * inv, sn = (dx * s.DirX + dz * s.DirZ) * inv;
-                        qr = Quantise(r01 * ScarStamps.RimAt(x, c, sn, phases));
-                    }
+                    if (x > 0.6f) qr = Quantise(r01 * ScarStamps.RimAt(x, c, sn, phases));
                     if (qd == 0 && qr == 0) continue;
                     int k = j * W + i;
                     bool was = depth[k] != 0 || rim[k] != 0;

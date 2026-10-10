@@ -21,7 +21,14 @@ namespace OpenKingdomsUnity.Tests.Trailer
 {
     public sealed partial class TrailerDirector
     {
-        public const int W = 1920, H = 1080, Fps = 60;
+        // The frame's size, 1080p unless a run asks for another before Boot.
+        public static int W = 1920, H = 1080;
+        public const int Fps = 60;
+        // Stills saved from each shot for review and contact sheets, evenly spaced.
+        public int StillsPerShot = 5;
+        // Called with the frame's index after each frame of a shot is read back, while FrameTexture holds it.
+        public Action<int> AfterFrame;
+        public Texture2D FrameTexture => tex;
 
         public readonly string OutDir, Ffmpeg;
         public GameRoot Root { get; private set; }
@@ -55,15 +62,18 @@ namespace OpenKingdomsUnity.Tests.Trailer
 
         // ---- The run ----
 
-        public IEnumerator Run(string which)
+        public IEnumerator Run(string which) => Run(which, Scenes);
+
+        public IEnumerator Run(string which, (string Name, Func<TrailerDirector, IEnumerator> Run)[] scenes)
         {
             Directory.CreateDirectory(OutDir);
             var want = new HashSet<string>((which ?? "all").Split(',').Select(s => s.Trim().ToLowerInvariant()).Where(s => s.Length > 0));
             yield return Boot();
-            foreach (var (name, scene) in Scenes)
+            foreach (var (name, scene) in scenes)
             {
                 if (!want.Contains("all") && !want.Contains(name)) continue;
-                if (want.Contains("all") && name.StartsWith("probe")) continue;
+                // "all" films the shots: probes, the census and the measures run by name.
+                if (want.Contains("all") && (name.StartsWith("probe") || name.StartsWith("perf") || name == "census")) continue;
                 Note($"scene {name}");
                 float began = Time.realtimeSinceStartup;
                 yield return Safe(name, scene(this));
@@ -269,6 +279,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             {
                 done += B.Advance(Mathf.Min(perFrame, ticks - done));
                 yield return null;
+                WatchFrame();
             }
         }
 
@@ -331,11 +342,14 @@ namespace OpenKingdomsUnity.Tests.Trailer
             if (!Playing) throw new InvalidOperationException($"{name}: no battle");
             int frames = Mathf.Max(1, Mathf.RoundToInt(seconds * Fps));
             ShowHud(hud);
+            // Bars over the damaged show only as a player sees the field, with the HUD.
+            Root.World.Entities.HideBars = !hud;
             Pose(path(0));
             for (int i = 0; i < 6; i++) yield return null;
             WarmWeather();
             BeginShot(name);
-            var stills = new HashSet<int> { 0, frames / 4, frames / 2, frames * 3 / 4, frames - 1 };
+            var stills = new HashSet<int>();
+            for (int k = 0; k < StillsPerShot; k++) stills.Add(StillsPerShot > 1 ? (frames - 1) * k / (StillsPerShot - 1) : 0);
             for (int f = 0; f < frames; f++)
             {
                 Frame = f;
@@ -346,7 +360,9 @@ namespace OpenKingdomsUnity.Tests.Trailer
                 if (!hud) Cam.rect = new Rect(0, 0, 1, 1);
                 if (hud) GrabWithHud(); else GrabWorld();
                 sink.Write(tex.GetRawTextureData<byte>());
-                Tap.Frame(f);
+                Tap?.Frame(f);
+                AfterFrame?.Invoke(f);
+                WatchFrame();
                 if (stills.Contains(f)) Still(f);
             }
             EndShot();

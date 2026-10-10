@@ -45,6 +45,18 @@ namespace OpenKingdomsUnity.Game.World
         public static BlastKind Of(WeaponInfo w, string caster = null)
         {
             if (w == null) return BlastKind.None;
+            // Every blast asks, so each weapon is sorted once, with nothing allocated after.
+            var key = (w, caster);
+            if (known.TryGetValue(key, out var kind)) return kind;
+            if (known.Count > 4096) known.Clear();
+            return known[key] = Sort(w, caster);
+        }
+
+        static readonly System.Collections.Generic.Dictionary<(WeaponInfo, string), BlastKind> known =
+            new System.Collections.Generic.Dictionary<(WeaponInfo, string), BlastKind>();
+
+        static BlastKind Sort(WeaponInfo w, string caster)
+        {
             string type = Low(w.Type), sub = Low(w.Subtype), damage = Low(w.DamageKind), art = Low(w.ExplosionClass), name = Low(w.Name);
             bool fire = (w.Flags & WeaponFlags.FireStarter) != 0;
             bool divine = IsDivine(caster) || IsDivine(FirstWord(w.Name));

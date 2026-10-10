@@ -199,12 +199,21 @@ namespace OpenKingdomsUnity.Game.World
         // Regions the scar map dents, rebuilt near with factor times their
         // samples on a worker and drawn with a material that dips by it.
         readonly Dictionary<(int, int), int> refined = new Dictionary<(int, int), int>();
-        readonly List<(int rx, int ry, int factor, System.Threading.Tasks.Task<GroundBuffers> job)> refining =
-            new List<(int, int, int, System.Threading.Tasks.Task<GroundBuffers>)>();
         readonly Queue<(int rx, int ry, int factor)> toRefine = new Queue<(int, int, int)>();
         readonly HashSet<(int, int)> dented = new HashSet<(int, int)>();
-        // Regions built at once, so the workers leave the game its cores.
+        // One thread of its own builds the regions, made when the first
+        // crater lands, so a battle never waits on the thread pool making one.
+        readonly object refineLock = new object();
+        readonly Queue<(int rx, int ry, int factor)> refineIn = new Queue<(int, int, int)>();
+        readonly Queue<(int rx, int ry, int factor, GroundBuffers data)> refineOut = new Queue<(int, int, int, GroundBuffers)>();
+        System.Threading.Thread refineThread;
+        bool refineStop;
+        int inFlight;
+        // Regions handed to the worker at once, so it never runs far ahead of what is put in place.
         const int RefiningAtOnce = 2;
+        // The dip is set per region by a property block, with no material made for it.
+        MaterialPropertyBlock dipBlock;
+        static readonly int DipId = Shader.PropertyToID("_OkuDip");
         public int RefinedRegions => dented.Count;
 
         public int RefinedFactor(int rx, int ry) => refined.TryGetValue((rx, ry), out int f) ? f : 1;
@@ -221,23 +230,66 @@ namespace OpenKingdomsUnity.Game.World
         // still being built.
         public int StepRefine()
         {
+            if (toRefine.Count == 0 && inFlight == 0) return 0;
+            (int rx, int ry, int factor, GroundBuffers data) done = default;
+            bool got = false;
+            lock (refineLock)
+            {
+                while (inFlight < RefiningAtOnce && toRefine.Count > 0)
+                {
+                    refineIn.Enqueue(toRefine.Dequeue());
+                    inFlight++;
+                }
+                if (refineOut.Count > 0)
+                {
+                    done = refineOut.Dequeue();
+                    inFlight--;
+                    got = true;
+                }
+                System.Threading.Monitor.Pulse(refineLock);
+            }
+            if (refineThread == null) StartRefining();
+            if (got && done.data != null && regions != null && refined.TryGetValue((done.rx, done.ry), out int f) && f == done.factor)
+                PutRefined(done.rx, done.ry, done.data);
+            return inFlight + toRefine.Count;
+        }
+
+        void StartRefining()
+        {
             var t = backend.Terrain;
-            while (refining.Count < RefiningAtOnce && toRefine.Count > 0)
+            refineStop = false;
+            refineThread = new System.Threading.Thread(() =>
             {
-                var (rx, ry, factor) = toRefine.Dequeue();
-                // Room in its bounds for the deepest dip and the highest rim.
-                refining.Add((rx, ry, factor, System.Threading.Tasks.Task.Run(() => GroundBuffers.From(TerrainBuilder.Refined(t, rx, ry, factor), 1f, 1f))));
-            }
-            for (int i = 0; i < refining.Count; i++)
+                while (true)
+                {
+                    (int rx, int ry, int factor) job;
+                    lock (refineLock)
+                    {
+                        while (refineIn.Count == 0 && !refineStop) System.Threading.Monitor.Wait(refineLock);
+                        if (refineStop) return;
+                        job = refineIn.Dequeue();
+                    }
+                    GroundBuffers data = null;
+                    // Room in its bounds for the deepest dip and the highest rim.
+                    try { data = GroundBuffers.From(TerrainBuilder.Refined(t, job.rx, job.ry, job.factor), 1f, 1f); }
+                    catch (System.Exception e) { Debug.LogException(e); }
+                    lock (refineLock) refineOut.Enqueue((job.rx, job.ry, job.factor, data));
+                }
+            }) { IsBackground = true, Name = "Dented ground", Priority = System.Threading.ThreadPriority.BelowNormal };
+            refineThread.Start();
+        }
+
+        void StopRefining()
+        {
+            lock (refineLock)
             {
-                var (rx, ry, factor, job) = refining[i];
-                if (!job.IsCompleted) continue;
-                refining.RemoveAt(i);
-                if (job.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && regions != null && refined.TryGetValue((rx, ry), out int f) && f == factor)
-                    PutRefined(rx, ry, job.Result);
-                break;
+                refineStop = true;
+                refineIn.Clear();
+                refineOut.Clear();
+                inFlight = 0;
+                System.Threading.Monitor.PulseAll(refineLock);
             }
-            return refining.Count + toRefine.Count;
+            refineThread = null;
         }
 
         void PutRefined(int rx, int ry, GroundBuffers data)
@@ -247,21 +299,28 @@ namespace OpenKingdomsUnity.Game.World
             if (near == null || !regionOwned.TryGetValue(region, out var mine)) return;
             var filter = near.GetComponent<MeshFilter>();
             var renderer = near.GetComponent<MeshRenderer>();
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             var mesh = data.ToMesh($"terrain dented {rx},{ry}");
+            long t1 = System.Diagnostics.Stopwatch.GetTimestamp();
             mine.Add(mesh);
             var old = filter.sharedMesh;
             filter.sharedMesh = mesh;
             if (old != null) { mine.Remove(old); Looks.Release(old); }
-            if (renderer.sharedMaterial != null && renderer.sharedMaterial.GetFloat("_OkuDip") < 0.5f)
+            if (dipBlock == null)
             {
-                var dip = new Material(renderer.sharedMaterial) { hideFlags = HideFlags.DontSave };
-                dip.SetFloat("_OkuDip", 1f);
-                mine.Add(dip);
-                renderer.sharedMaterial = dip;
+                dipBlock = new MaterialPropertyBlock();
+                dipBlock.SetFloat(DipId, 1f);
             }
+            renderer.SetPropertyBlock(dipBlock);
+            long t2 = System.Diagnostics.Stopwatch.GetTimestamp();
             region.GetComponent<LODGroup>()?.RecalculateBounds();
             dented.Add((rx, ry));
+            double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            LastPut = $"mesh {(t1 - t0) * f:0.00} ({data.Vertices.Length} vertices) swap {(t2 - t1) * f:0.00} bounds {(System.Diagnostics.Stopwatch.GetTimestamp() - t2) * f:0.00}";
         }
+
+        // What the last dented region cost to put in place, for tests.
+        public string LastPut { get; private set; } = "";
 
         // Rebuilds the regions that cover a rectangle of blocks, after the
         // ground there was edited: heights, or which picture a block shows.
@@ -412,8 +471,8 @@ namespace OpenKingdomsUnity.Game.World
             regionOwned.Clear();
             regions = null;
             Regions = 0;
+            StopRefining();
             refined.Clear();
-            refining.Clear();
             toRefine.Clear();
             dented.Clear();
         }

@@ -8,13 +8,14 @@ using UnityEngine;
 namespace OpenKingdomsUnity.Game.World
 {
     // What the Battle effects setting allows breaking: chunks moving and
-    // lying at once, the scale on how many a kind breaks into, and how long
-    // a chunk lies before it sinks.
+    // lying at once, the scale on how many a kind breaks into, how long a
+    // chunk lies before it sinks, how many are drawn in a frame, nearest
+    // first, and how near one must be to cast a shadow.
     public struct BreakBudget
     {
         public EffectsQuality Level;
-        public int Flying, Rubble;
-        public float Chunks, Rest;
+        public int Flying, Rubble, Drawn;
+        public float Chunks, Rest, ShadowReach;
 
         public static BreakBudget For(EffectsQuality level) => From(FxQuality.For(level));
 
@@ -23,10 +24,10 @@ namespace OpenKingdomsUnity.Game.World
             var b = new BreakBudget { Level = q.Level, Flying = q.FlyingChunks, Rubble = q.RubbleKept };
             switch (q.Level)
             {
-                case EffectsQuality.Low: b.Chunks = 0.5f; b.Rest = 3f; break;
-                case EffectsQuality.Medium: b.Chunks = 0.75f; b.Rest = 6f; break;
-                case EffectsQuality.Ultra: b.Chunks = 1.25f; b.Rest = 24f; break;
-                default: b.Chunks = 1f; b.Rest = 12f; break;
+                case EffectsQuality.Low: b.Chunks = 0.5f; b.Rest = 3f; b.Drawn = 300; b.ShadowReach = 0f; break;
+                case EffectsQuality.Medium: b.Chunks = 0.75f; b.Rest = 6f; b.Drawn = 900; b.ShadowReach = 30f; break;
+                case EffectsQuality.Ultra: b.Chunks = 1.25f; b.Rest = 24f; b.Drawn = 3600; b.ShadowReach = 90f; break;
+                default: b.Chunks = 1f; b.Rest = 12f; b.Drawn = 1800; b.ShadowReach = 55f; break;
             }
             return b;
         }
@@ -389,12 +390,29 @@ namespace OpenKingdomsUnity.Game.World
             f.Live = false;
         }
 
-        // Every chunk in the camera's view, faded as it goes.
-        // Every chunk in the camera's view, faded as it goes. Grit and the
-        // smallest chunks go to small, which casts no shadows.
-        public void Draw(InstancedDraws into, InstancedDraws small, Plane[] frustum)
+        // How near each chunk in view was this frame, and the farthest kept
+        // under the cap, which the next frame draws by: chunks move little
+        // from one frame to the next, so the cap takes one pass a frame.
+        float[] seenKey = new float[0];
+        float cut = float.MaxValue;
+
+        // Chunks left out last frame: too small on screen, or past the cap.
+        public int TooSmall { get; private set; }
+        public int OverCap { get; private set; }
+
+        // Every chunk in the camera's view, faded as it goes, nearest first
+        // up to the setting's cap. Grit, the smallest chunks and those past
+        // the shadow reach go to small, which casts no shadows. A chunk
+        // smaller than a pixel or two on screen is left out. eye is the
+        // camera's place and pixels how many pixels a unit spans one unit
+        // in front of it, 0 to draw every one in view.
+        public void Draw(InstancedDraws into, InstancedDraws small, Plane[] frustum, Vector3 eye = default, float pixels = 0f)
         {
-            int drawn = 0;
+            if (!Capped) pixels = 0f;
+            if (seenKey.Length < high) seenKey = new float[Mathf.Max(high, pieces.Length)];
+            int cap = Budget.Drawn > 0 && Capped ? Budget.Drawn : int.MaxValue;
+            float shadow2 = Budget.ShadowReach * Budget.ShadowReach, keep = cap == int.MaxValue || cut == float.MaxValue ? float.MaxValue : cut * 1.2f;
+            int count = 0, tiny = 0, drawn = 0;
             for (int i = 0; i < high; i++)
             {
                 ref var p = ref pieces[i];
@@ -406,21 +424,64 @@ namespace OpenKingdomsUnity.Game.World
                     m = p.M;
                 }
                 else m = MatrixOf(i);
-                if (frustum != null && !InView(frustum, new Vector3(m.m03, m.m13, m.m23), p.Radius + 0.5f)) continue;
+                var at = new Vector3(m.m03, m.m13, m.m23);
+                if (frustum != null && !InView(frustum, at, p.Radius + 0.5f)) continue;
+                float d2 = (at - eye).sqrMagnitude;
+                bool moving = p.State == State.Flying || p.State == State.Riding;
+                if (pixels > 0f)
+                {
+                    // Its radius on screen in pixels, squared: a moving chunk catches the eye sooner.
+                    float px = p.Radius * pixels, least = moving ? MinMovingPixels : MinPixels;
+                    if (px * px < least * least * d2) { tiny++; continue; }
+                }
+                // Moving and whole chunks are kept before grit at the same distance.
+                float key = d2 * (moving ? 0.25f : 1f) * (p.Fine ? 4f : 1f);
+                seenKey[count++] = key;
+                if (key > keep || drawn >= cap) continue;
                 float fade = p.State == State.Sinking || p.State == State.Fading ? Mathf.Clamp(p.Fade, 0.001f, 1f) : 0f;
-                var to = small != null && (p.Fine || p.Radius < SmallRadius) ? small : into;
+                bool shadows = !p.Fine && p.Radius >= SmallRadius && (pixels <= 0f || d2 <= shadow2);
+                var to = small != null && !shadows ? small : into;
                 var draws = p.Draws;
                 for (int k = 0; k < draws.Length; k++)
                     if (draws[k].Mesh != null && draws[k].Material != null) to.Add(draws[k].Mesh, draws[k].Submesh, draws[k].Material, m, 0f, fade);
                 drawn++;
             }
+            // The next frame's cut: the cap's nearest, or all when they fit.
+            cut = count > cap ? Select(seenKey, count, cap - 1) : float.MaxValue;
             Drawn = drawn;
+            TooSmall = tiny;
+            OverCap = count - drawn;
         }
 
         public void Draw(InstancedDraws into, Plane[] frustum) => Draw(into, null, frustum);
 
+        // The k-th smallest of the first n keys, which it reorders.
+        static float Select(float[] a, int n, int k)
+        {
+            int lo = 0, hi = n - 1;
+            while (lo < hi)
+            {
+                float pivot = a[(lo + hi) >> 1];
+                int i = lo, j = hi;
+                while (i <= j)
+                {
+                    while (a[i] < pivot) i++;
+                    while (a[j] > pivot) j--;
+                    if (i <= j) { (a[i], a[j]) = (a[j], a[i]); i++; j--; }
+                }
+                if (k <= j) hi = j;
+                else if (k >= i) lo = i;
+                else break;
+            }
+            return a[k];
+        }
+
         // Chunks smaller than this cast no shadow.
         public const float SmallRadius = 0.15f;
+        // Off, every chunk in view is drawn and casts its shadow, as before the cap, for measuring.
+        public static bool Capped = true;
+        // Pixels across a chunk's radius below which it is not drawn, lying and moving.
+        public const float MinPixels = 1.5f, MinMovingPixels = 0.8f;
 
         static bool InView(Plane[] frustum, Vector3 at, float reach)
         {

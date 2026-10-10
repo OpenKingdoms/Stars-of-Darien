@@ -34,12 +34,21 @@ namespace OpenKingdomsUnity.Game.World
         public float Dent;          // world units: the crater's radius, 0 for none
         public float Depth, Rim;    // pixels, at the centre and along the rim
         public float Floor;         // the share of the dent that is flat floor
+        // The dent's outline: drawn out along Dir by Stretch, narrower across,
+        // and pushed in and out round its length by up to Lobes of its radius.
+        public float Stretch, Lobes;
         public float Char, Soil, Blight, Stone, Crack;
         public float Frost, Wet, Holy, Heat;
         public int Seed;
 
         // The farthest the stamp reaches from its centre, swath and all.
         public float Extent => Reach + Length;
+
+        // The farthest the dip and its rim reach from the centre.
+        public float DentReach => Dent * 1.5f * (1f + Stretch) * (1f + Lobes);
+
+        // Stretch and Lobes in one number, as the stamp shader reads them.
+        public float Outline => Stretch + Mathf.Round(Lobes * 100f);
     }
 
     public static class ScarStamps
@@ -90,8 +99,8 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
-        static string Lower(string s) => string.IsNullOrEmpty(s) ? "" : s.ToLowerInvariant();
-        static bool Has(string s, string part) => s.IndexOf(part, System.StringComparison.Ordinal) >= 0;
+        static string Lower(string s) => s ?? "";
+        static bool Has(string s, string part) => s.IndexOf(part, System.StringComparison.OrdinalIgnoreCase) >= 0;
 
         // ── Stamps ────────────────────────────────────────────────────
 
@@ -123,7 +132,11 @@ namespace OpenKingdomsUnity.Game.World
                 flat = new Vector2(Mathf.Cos(a), Mathf.Sin(a));
             }
             flat.Normalize();
+            bool aimed = flat.sqrMagnitude >= 1e-6f;
             var s = new ScarStamp { Kind = kind, X = at.x, Z = at.z, DirX = flat.x, DirZ = flat.y, Seed = ((seed % 1024) + 1024) % 1024 };
+            // No two craters alike: each blast's own size, depth, floor, rim
+            // and outline, drawn out along the shot's flight when it had one.
+            float J(int n) => Hash01(seed * 8 + n);
             switch (kind)
             {
                 case ScarKind.Gunpowder:
@@ -133,27 +146,33 @@ namespace OpenKingdomsUnity.Game.World
                         s.Reach = 0.45f; s.Char = 0.55f; s.Soil = 0.35f; s.Heat = 2f;
                         break;
                     }
-                    s.Dent = Mathf.Min(0.8f * r, 4f);
-                    s.Depth = Mathf.Min(2f + 1.6f * r, CannonDepthPx);
-                    s.Rim = 0.4f * s.Depth;
-                    s.Floor = 0.3f;
-                    s.Char = 0.8f; s.Soil = 0.9f; s.Heat = 4f;
+                    s.Dent = Mathf.Min(0.8f * r, 4f) * Mathf.Lerp(0.85f, 1.15f, J(1));
+                    s.Depth = Mathf.Min(2f + 1.6f * r, CannonDepthPx) * Mathf.Lerp(0.6f, 1f, J(2));
+                    s.Rim = Mathf.Lerp(0.28f, 0.55f, J(3)) * s.Depth;
+                    s.Floor = Mathf.Lerp(0.1f, 0.42f, J(4));
+                    s.Char = Mathf.Lerp(0.6f, 0.9f, J(5)); s.Soil = Mathf.Lerp(0.65f, 0.95f, J(6)); s.Heat = 4f;
+                    s.Stretch = aimed ? Mathf.Lerp(0.12f, 0.4f, J(7)) : Mathf.Lerp(0f, 0.18f, J(7));
+                    s.Lobes = Mathf.Lerp(0.05f, 0.16f, J(8));
                     s.Reach = 2.4f * s.Dent;
                     break;
                 case ScarKind.Siege:
-                    s.Dent = Mathf.Clamp(0.45f * r, 0.45f, 2.2f);
-                    s.Depth = Mathf.Min(2f + 1.2f * r, 5f);
-                    s.Rim = 0.25f * s.Depth;
-                    s.Floor = 0.12f;
-                    s.Soil = 0.75f; s.Stone = 0.85f;
+                    s.Dent = Mathf.Clamp(0.45f * r, 0.45f, 2.2f) * Mathf.Lerp(0.85f, 1.2f, J(1));
+                    s.Depth = Mathf.Min(2f + 1.2f * r, 5f) * Mathf.Lerp(0.7f, 1f, J(2));
+                    s.Rim = Mathf.Lerp(0.15f, 0.35f, J(3)) * s.Depth;
+                    s.Floor = Mathf.Lerp(0.04f, 0.2f, J(4));
+                    s.Soil = Mathf.Lerp(0.6f, 0.85f, J(6)); s.Stone = 0.85f;
+                    s.Stretch = aimed ? Mathf.Lerp(0.15f, 0.45f, J(7)) : Mathf.Lerp(0f, 0.2f, J(7));
+                    s.Lobes = Mathf.Lerp(0.08f, 0.2f, J(8));
                     s.Reach = 2.8f * s.Dent;
                     break;
                 case ScarKind.Impact:
-                    s.Dent = Mathf.Clamp(0.55f * r, 0.8f, 5f);
-                    s.Depth = Mathf.Min(3f + 1.4f * r, SpellDepthPx);
-                    s.Rim = 0.35f * s.Depth;
-                    s.Floor = 0.3f;
-                    s.Char = 1f; s.Soil = 0.8f; s.Heat = 25f;
+                    s.Dent = Mathf.Clamp(0.55f * r, 0.8f, 5f) * Mathf.Lerp(0.9f, 1.1f, J(1));
+                    s.Depth = Mathf.Min(3f + 1.4f * r, SpellDepthPx) * Mathf.Lerp(0.75f, 1f, J(2));
+                    s.Rim = Mathf.Lerp(0.25f, 0.45f, J(3)) * s.Depth;
+                    s.Floor = Mathf.Lerp(0.2f, 0.4f, J(4));
+                    s.Char = 1f; s.Soil = Mathf.Lerp(0.7f, 0.9f, J(6)); s.Heat = 25f;
+                    s.Stretch = Mathf.Lerp(0f, 0.15f, J(7));
+                    s.Lobes = Mathf.Lerp(0.04f, 0.1f, J(8));
                     s.Reach = 2.2f * s.Dent;
                     break;
                 case ScarKind.Fire:
@@ -191,6 +210,9 @@ namespace OpenKingdomsUnity.Game.World
             s.Char *= k; s.Soil *= k; s.Blight *= k; s.Stone *= k; s.Crack *= k;
             s.Frost *= k; s.Wet *= k; s.Holy *= k; s.Heat *= k;
             if (s.Depth < 0.25f) s.Dent = s.Depth = s.Rim = 0f;
+            // As the shader unpacks them, so both draw the same outline.
+            s.Stretch = Mathf.Round(Mathf.Clamp(s.Stretch, 0f, 0.45f) * 1000f) / 1000f;
+            s.Lobes = Mathf.Round(Mathf.Clamp(s.Lobes, 0f, 0.25f) * 100f) / 100f;
             return s;
         }
 
@@ -211,6 +233,21 @@ namespace OpenKingdomsUnity.Game.World
         // How deep a crater is at x, its distance from the centre over its
         // radius, as a share of its depth: a flat floor, then a smooth wall.
         public static float DepthAt(float x, float floor) => 1f - SmoothStep(floor, 1f, x);
+
+        // The dent's radius toward a direction, as a share of Dent: c and s
+        // are the cosine and sine of its angle from the stamp's right, so s
+        // runs along the stamp's direction. An ellipse drawn out along it,
+        // pushed in and out by two and five lobes.
+        public static float Outline(float c, float s, float stretch, float lobes, Vector4 phases)
+        {
+            float ax = c / (1f - 0.4f * stretch), ay = s / (1f + stretch);
+            float ell = 1f / Mathf.Sqrt(ax * ax + ay * ay);
+            float cos2 = c * c - s * s, sin2 = 2f * s * c;
+            float c2 = c * c, s2 = s * s;
+            float cos5 = c * (c2 * c2 - 10f * c2 * s2 + 5f * s2 * s2), sin5 = s * (5f * c2 * c2 - 10f * c2 * s2 + s2 * s2);
+            float lobe = 0.55f * (cos2 * phases.x - sin2 * phases.y) + 0.45f * (sin5 * phases.z + cos5 * phases.w);
+            return ell * (1f + lobes * lobe);
+        }
 
         // How high its thrown rim stands at x and angle a, as a share of the
         // rim's height: a ring just outside the dip, lumpy round its length.

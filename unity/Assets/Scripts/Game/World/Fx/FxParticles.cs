@@ -238,6 +238,8 @@ namespace OpenKingdomsUnity.Game.World
 
         public void Smoke(Vector3 at, Vector3 velocity, float size, float seconds, Color32 colour, float heat = 0f, float rise = 0.6f, bool tinted = false)
         {
+            // A puff no bigger than a few men, so a big blast reads as many puffs, not one cloud.
+            size = Mathf.Min(size, MaxPuff);
             Add(new Particle
             {
                 Pos = at, Vel = velocity, Size = size * R(0.8f, 1.2f), Grow = size * R(0.35f, 0.6f), Life = seconds * R(0.8f, 1.2f) * FxQuality.Current.SmokeLife,
@@ -248,9 +250,13 @@ namespace OpenKingdomsUnity.Game.World
         }
 
         // A column puffing for seconds, each puff living about half as long again.
+        // The widest a puff of smoke starts, world units. A man stands about two.
+        public const float MaxPuff = 2.4f;
+
         public void Column(Vector3 at, float seconds, float size, Color32 colour, float heat = 0f)
         {
             if (seconds <= 0f) return;
+            size = Mathf.Min(size, MaxPuff);
             // As many columns as lights at a time, the oldest giving way.
             if (columns.Count >= Mathf.Max(6, FxQuality.Current.Lights)) columns.RemoveAt(0);
             columns.Add(new Plume { At = at, Left = seconds * FxQuality.Current.SmokeLife, Seconds = seconds, Size = size, Colour = colour, Heat = heat });

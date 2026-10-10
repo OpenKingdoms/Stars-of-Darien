@@ -122,6 +122,7 @@ float3 OkuScarCells(float2 q)
 half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, inout half gloss, out half3 emit)
 {
     emit = 0;
+    half3 ground = c;
     half lum = dot(c, half3(0.3, 0.59, 0.11));
     half mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));
     half sat = (mx - mn) / max(mx, 0.001);
@@ -135,7 +136,13 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
     half3 soil = lerp(_OkuScarSoil.rgb, c * 0.55, 0.25);
     soil = lerp(soil, _OkuScarSnow.rgb, snowy * 0.7);
     half dug = s.shape.r;
-    c = lerp(c, soil * (0.7 + 0.6 * fine), OkuScarCrisp(s.marks.g, grain) * 0.92);
+    // Broad patches of darker and lighter earth, seen from any distance, so
+    // a field of craters is never one even colour, and dry thrown earth
+    // lighter on the rims than the dug floors.
+    half patch = OkuScarNoise(p.xz * 0.45) * 0.6 + OkuScarNoise(p.xz * 1.3 + 7.7) * 0.4;
+    soil *= lerp(0.78, 1.18, patch);
+    soil = lerp(soil, soil * 1.3 + 0.008, saturate(s.shape.g * 2.5) * (1 - saturate(dug * 3)));
+    c = lerp(c, soil * (0.7 + 0.6 * fine), OkuScarCrisp(s.marks.g, grain) * lerp(0.74, 0.94, OkuScarNoise(p.xz * 0.8 + 3.3)));
     c *= 1 - saturate(dug * 1.5) * 0.3;
     // Dug earth is rough, its clods catching the light up close.
     half rough = OkuScarCrisp(s.marks.g, grain) * near;
@@ -206,7 +213,10 @@ half3 OkuScarColour(half3 c, OkuScarHere s, float3 p, half near, inout half3 n, 
         half cover = saturate((_OkuScarSnowing.x - max(since, _OkuScarSnowing.y)) / _OkuScarSnowing.z);
         half scarred = saturate(dot(s.marks, 1) * 2 + s.shape.r * 4 + s.shape.b + s.left.w * 0.1);
         half lay = cover * scarred * (0.7 + 0.3 * grain);
-        c = lerp(c, half3(0.84, 0.87, 0.92) * (0.9 + 0.2 * fine), lay);
+        // Buried as the ground round it lies: white on snowy ground, and on
+        // green ground back to the ground's own colour under a light dusting.
+        half3 snowLook = half3(0.84, 0.87, 0.92) * (0.9 + 0.2 * fine);
+        c = lerp(c, lerp(lerp(ground, snowLook, 0.2), snowLook, snowy), lay);
         gloss = lerp(gloss, 0.3, lay);
         emit *= 1 - lay;
     }

@@ -323,17 +323,19 @@ namespace OpenKingdomsUnity.Game.World
                 }
                 case BlastKind.Dark:
                 {
-                    int body = Count(8 + 3 * r, n);
+                    // Wisps of dark smoke that rise and thin, a unit or two across
+                    // whatever the spell's reach, rather than a sheet over the ground.
+                    int body = Count(5 + 2 * r, n);
                     for (int i = 0; i < body; i++)
                     {
-                        var o = Random(0.6f * r);
+                        var o = Random(0.5f * r);
                         o.y = Mathf.Abs(o.y) * 0.3f;
-                        P.Smoke(floor + o + up * 0.3f, o * 0.6f + up * Random01(0.2f, 0.8f), 0.8f * r, 3f, C(70, 40, 92, 190), 0.35f, 0.3f, true);
+                        P.Smoke(floor + o + up * 0.3f, o * 0.25f + up * Random01(0.7f, 1.6f), Mathf.Min(0.35f * r + 0.4f, 1.6f), 2.4f, C(44, 32, 54, 150), 0.25f, 0.8f, true);
                     }
                     P.Embers(at, Count(8 + 3 * r, n), 0.8f * r, 3f, C(170, 80, 255));
-                    shock.Add(floor, 1.8f * r, 0.4f * r, 0.6f, C(150, 70, 220, 80), 1f, P.Ground);
+                    shock.Add(floor, 1.8f * r, 0.4f * r, 0.6f, C(120, 70, 170, 60), 1f, P.Ground);
                     Light(at + up * 1.2f, new Color(0.55f, 0.25f, 0.9f), 1.8f * r, 0.6f, 0.5f, key, true);
-                    P.Column(floor, 6f, 0.7f * r, C(62, 38, 76, 140), 0.15f);
+                    P.Column(floor, 5f, Mathf.Min(0.5f * r, 1.6f), C(40, 30, 48, 110), 0.15f);
                     break;
                 }
                 case BlastKind.Holy:
