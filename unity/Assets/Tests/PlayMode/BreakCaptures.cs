@@ -192,7 +192,6 @@ namespace OpenKingdomsUnity.Tests
             var hdr = RenderTexture.GetTemporary(W, H, 24, RenderTextureFormat.DefaultHDR, RenderTextureReadWrite.Linear);
             var rt = RenderTexture.GetTemporary(W, H, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
             var old = cam.targetTexture;
-            float aspect = cam.aspect;
             cam.targetTexture = hdr;
             cam.aspect = W / (float)H;
             cam.Render();
@@ -204,7 +203,8 @@ namespace OpenKingdomsUnity.Tests
             tex.Apply();
             RenderTexture.active = null;
             cam.targetTexture = old;
-            cam.aspect = aspect;
+            // Back to the screen's own shape, so later tests see the view they expect.
+            cam.ResetAspect();
             RenderTexture.ReleaseTemporary(rt);
             File.WriteAllBytes(path, tex.EncodeToPNG());
             Object.Destroy(tex);

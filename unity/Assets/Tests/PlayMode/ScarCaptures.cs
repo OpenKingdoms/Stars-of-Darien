@@ -103,6 +103,8 @@ namespace OpenKingdomsUnity.Tests
             tex.Apply();
             RenderTexture.active = null;
             cam.targetTexture = old;
+            // Back to the screen's own shape, so later tests see the view they expect.
+            cam.ResetAspect();
             RenderTexture.ReleaseTemporary(rt);
             File.WriteAllBytes(Path.Combine(dir, name + ".png"), tex.EncodeToPNG());
             Object.Destroy(tex);
@@ -303,6 +305,8 @@ namespace OpenKingdomsUnity.Tests
             double sum = 0, worst = 0;
             int frames = 0;
             string[] rows = { "ground", "ranged", "fire", "magic", "magic2", "bolts" };
+            scars.ResetWorst();
+            var slow = new List<string>();
             for (int f = 0; f < 900; f++)
             {
                 if (f % 150 == 0) mock.StageFx(rows[f / 150 % rows.Length], 1f);
@@ -315,8 +319,10 @@ namespace OpenKingdomsUnity.Tests
                 yield return null;
                 sum += scars.LastMs;
                 worst = System.Math.Max(worst, scars.LastMs);
+                if (scars.LastMs > 1.5 && slow.Count < 12) { slow.Add($"frame {f} {scars.LastMs:0.00} ms: {scars.WorstParts}"); scars.ResetWorst(); }
                 frames++;
             }
+            foreach (var line in slow) log.Add("cost: slow " + line);
             log.Add($"cost: mock_marches, {root.Setup.Seats.Count} seats and {root.World.Entities.UnitCount} units, {frames} frames with staged rows and 2 marks a frame over the map: " +
                     $"scar update {sum / frames:0.000} ms a frame on average, {worst:0.00} ms at worst; {scars.Stamped} stamps, " +
                     $"{root.World.Terrain.RefinedRegions} regions dented, {scars.Bytes / 1048576f:0.0} MB");
