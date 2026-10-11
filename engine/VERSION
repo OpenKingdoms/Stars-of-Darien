@@ -1,3 +1,3 @@
 okengine-api23.dll  okengine API 23, unity-embed 4f9f118, main 6006937, wandering shots that wander and burst on their way, hover attackers that circle and wake, flyers kept off the water, the remastered spark fix, endless summoned Harpies, and the engine's options kept in its own folder, engine build 40, published at openkingdoms-unity 01cb02d
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
-okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 60417f8, published at openkingdoms-unity da418fa
+okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 4f9f118, published at openkingdoms-unity 6034232
