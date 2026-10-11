@@ -26,6 +26,8 @@ namespace OpenKingdomsUnity.Tests.Trailer
             ("siege", d => d.Siege()),
             ("creon-ruins", d => d.CreonRuins()),
             ("spells", d => d.Spells()),
+            // The Tornado alone, as in the full run the witch may not live to cast it.
+            ("tornado", d => d.Spells(BlastKind.Wind)),
             ("dragon-breath", d => d.DragonBreath()),
             ("craters", d => d.Craters()),
             ("rain", d => d.ForestFire(RainMap, WeatherChoice.Rain, "rain")),
@@ -352,14 +354,17 @@ namespace OpenKingdomsUnity.Tests.Trailer
                 forest = FireGroup();
             }
             StartWatch(name);
+            // The wood at peace before anyone comes.
+            var calm = Sunny(forest.At, 46f, 16f, name + " calm", forest.At);
+            yield return Shot($"{name}-calm", 6f, TrailerKit.Move(calm, Toward(calm, 0.9f, 3f)));
             int me = PlayerOf(0);
-            var army = Army(me, ("TARMAGE", 4), ("TARFIRE", 2), ("TARARCH", 6));
+            var army = Army(me, ("TARMAGE", 6), ("TARFIRE", 3), ("TARARCH", 6));
             yield return FastForward(30);
             var wind = Wind(out float strength);
             Note($"{name}: wind toward {wind} at {strength:0.00}, {forest.Count} trees close enough for fire to run, at {forest.At}");
             // Lit on its upwind edge, so the fire runs on through it, each fire
             // starter aimed at a tree, as a shot between trees lights nothing.
-            var upwind = forest.Members.OrderBy(f => Vector3.Dot(f.Position - forest.At, wind)).Take(3).Select(f => f.Position).ToList();
+            var upwind = forest.Members.OrderBy(f => Vector3.Dot(f.Position - forest.At, wind)).Take(6).Select(f => f.Position).ToList();
             if (upwind.Count == 0) upwind.Add(forest.At);
             var light = upwind[0];
             Vector3 stood = default;
@@ -402,13 +407,16 @@ namespace OpenKingdomsUnity.Tests.Trailer
             StartWatch("siege");
             if (walls.Count == 0) { Note("siege: no walls"); EndWatch(); yield break; }
             int me = PlayerOf(0);
-            var army = Army(me, ("ARAPULT", 3), ("ARATRE", 2), ("ARACAN", 6), ("VERMORT", 2), ("VERBAL", 2));
+            var army = Army(me, ("ARAPULT", 4), ("ARATRE", 3), ("ARACAN", 8), ("VERMORT", 3), ("VERBAL", 2));
             yield return FastForward(30);
             // The wall nearest the army's side of the patch.
             var home = Centre(Of(army));
             var target = walls.Members.OrderBy(f => (f.Position - home).sqrMagnitude).First();
             var wall = target.Position;
             Note($"siege: {walls.Count} walls, first {FDef(target.Def).Name} at {wall}");
+            // The walls standing, before the guns come up.
+            var calm = Sunny(walls.At, 44f, 26f, "siege calm", walls.At);
+            yield return Shot("siege-calm", 6f, TrailerKit.Move(calm, Toward(calm, 0.9f, 3f)));
             Vector3 stood = default;
             yield return StageBefore(army, wall, 26f, s => stood = s);
             var side = Vector3.Cross(Vector3.up, (wall - stood).normalized);
@@ -427,6 +435,34 @@ namespace OpenKingdomsUnity.Tests.Trailer
                 yield return FastForward(B.TicksPerSecond * 4);
                 var hpose = Sunny(house, 28f, 20f, "siege house", house);
                 yield return Shot("siege-cavein", 10f, TrailerKit.Move(hpose, Toward(hpose, 0.88f, 3f)));
+            }
+            // Then every gun on the town at once, and what is left of it.
+            var homes = Densest(IsHouse, 40f, wall, 60f).Members.Select(f => f.Position).ToList();
+            if (homes.Count > 0)
+            {
+                var town = Ground(homes.Average(p => p.x), homes.Average(p => p.z));
+                Note($"siege: {homes.Count} houses under every gun round {town}, {Seen(FeatureEventKind.Dead)} fallen so far");
+                yield return StageBefore(army, town, 24f, s => stood = s);
+                // Three buildings at a time under every gun, so each one falls.
+                var order = homes.OrderBy(p => (p - stood).sqrMagnitude).ToList();
+                void Volley(int round)
+                {
+                    for (int i = 0; i < army.Count; i++)
+                        B.Command(GameCommand.To(CommandKind.AttackGround, army[i], order[(round * 3 + i % 3) % order.Count]));
+                }
+                Volley(0);
+                var bpose = Sunny(town, 46f, 34f, "siege barrage", town);
+                yield return Shot("siege-barrage", 12f, TrailerKit.Move(bpose, Toward(bpose, 0.88f, 3f)));
+                for (int round = 1; round < 10; round++)
+                {
+                    Volley(round);
+                    yield return FastForward(B.TicksPerSecond * 9);
+                }
+                Halt(army);
+                yield return FastForward(B.TicksPerSecond * 3);
+                Note($"siege: {Seen(FeatureEventKind.Dead)} fallen after the barrage");
+                var rpose = Sunny(town, 56f, 42f, "siege ruins", town);
+                yield return Shot("siege-ruins", 9f, TrailerKit.Move(rpose, Toward(rpose, 0.9f, 3f)));
             }
             Halt(army);
             EndWatch();
@@ -470,6 +506,9 @@ namespace OpenKingdomsUnity.Tests.Trailer
             for (int f = 0; f < 1800 && Root.World.Entities.Fractures.Waiting > 0; f++) yield return null;
             Note($"creon-ruins: {Root.World.Entities.Fractures.Ready} kinds split, {Root.World.Entities.Fractures.Waiting} waiting");
             var centre = Ground(town.Average(p => p.x), town.Average(p => p.z));
+            // The town whole, before the guns come.
+            var calm = Sunny(centre, 50f, 30f, "creon calm", centre);
+            yield return Shot("creon-calm", 5f, TrailerKit.Move(calm, Toward(calm, 0.9f, 3f)));
             var army = Army(me, ("CRETORT", 3), ("ARACAN", 8), ("ARAPULT", 2), ("CREFIRE", 2));
             yield return FastForward(30);
             Vector3 stood = default;
@@ -498,17 +537,19 @@ namespace OpenKingdomsUnity.Tests.Trailer
 
         static readonly (BlastKind kind, string name, string[] prefer)[] SpellKinds =
         {
+            // The Fire Vortex wanders the wood for minutes and kills the casters
+            // still waiting, so it goes last, after the Tornado, which wanders too.
             (BlastKind.Frost, "frost", new[] { "ARAPRIES", "TARWITCH", "CREGOD" }),
-            (BlastKind.Dark, "dark", new[] { "TARGOD", "TARLICH" }),
             (BlastKind.Lightning, "lightning", new[] { "ZONSHAM", "TARWITCH", "ARAKING", "CREPRIS" }),
             (BlastKind.Holy, "holy", new[] { "VERLIHR", "ARAPRIES", "ARAGOD", "VERGOD" }),
             (BlastKind.Earth, "earth", new[] { "ARAGOD", "ARAPRIES", "CREGOD" }),
             (BlastKind.Water, "water", new[] { "VERMAGE", "VERDRAG", "VERGOD" }),
             (BlastKind.Wind, "wind", new[] { "TARWITCH" }),
+            (BlastKind.Dark, "dark", new[] { "TARGOD", "TARLICH" }),
         };
 
         // Each side's magic on a wood, one kind at a time, each on its own trees.
-        IEnumerator Spells()
+        IEnumerator Spells(params BlastKind[] only)
         {
             Patch wood = default;
             yield return BattleNear(SpellMap, WeatherChoice.Off, "ARAMON", "TAROS", IsTree, 40f, p => wood = p);
@@ -517,6 +558,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             var casters = new List<(BlastKind kind, string name, int unit, int slot)>();
             foreach (var (kind, name, prefer) in SpellKinds)
             {
+                if (only.Length > 0 && !only.Contains(kind)) continue;
                 // Holy light is a divine caster's, here the Priest of Lihr's water ball,
                 // since the only holy spell of its own turns a unit to stone.
                 var (def, slot) = kind == BlastKind.Holy && Def("VERLIHR") >= 0 ? (Def("VERLIHR"), 0) : Caster(kind, prefer);

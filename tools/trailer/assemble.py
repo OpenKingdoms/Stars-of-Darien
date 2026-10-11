@@ -82,8 +82,10 @@ def card(ff, seg, path, work, discord):
     return frames
 
 
-def shot(ff, seg, path, shots):
-    """A shot trimmed to its from and to (seconds), with its mixed sound."""
+def shot(ff, seg, path, shots, sharpen=0.0):
+    """A shot trimmed to its from and to (seconds), with its mixed sound.
+    crop [w, h, x, y] punches in on part of the frame, and sharpen is an
+    unsharp mask's strength (the timeline's own unless the shot gives one)."""
     name = seg["shot"]
     src = os.path.join(shots, name + ".mp4")
     wav = os.path.join(shots, name + ".wav")
@@ -95,6 +97,11 @@ def shot(ff, seg, path, shots):
     vf = "trim=start_frame=%d:end_frame=%d,setpts=PTS-STARTPTS" % (f0, f1)
     if seg.get("slow"):
         vf += ",setpts=%s*PTS" % seg["slow"]
+    if seg.get("crop"):
+        vf += ",crop=%d:%d:%d:%d,scale=%d:%d:flags=lanczos" % (tuple(seg["crop"]) + (W, H))
+    amount = float(seg.get("sharpen", sharpen))
+    if amount > 0:
+        vf += ",unsharp=5:5:%.2f:5:5:0" % amount
     vf += ",format=yuv420p"
     args = [ff, "-y", "-loglevel", "error", "-i", src]
     if os.path.exists(wav):
@@ -138,7 +145,7 @@ def main():
     segs = []
     for i, seg in enumerate(tl["segments"]):
         path = os.path.join(work, "%02d.mkv" % i)
-        frames = card(ff, seg, path, work, a.discord) if "card" in seg else shot(ff, seg, path, a.shots)
+        frames = card(ff, seg, path, work, a.discord) if "card" in seg else shot(ff, seg, path, a.shots, float(tl.get("sharpen", 0)))
         segs.append((seg, path, frames))
         print("segment %02d %-28s %5.2fs" % (i, seg.get("shot") or seg["card"][0]["text"][:28], frames / FPS))
 
@@ -187,7 +194,7 @@ def main():
     run(args)
 
     # The shot list, with each segment's start in the finished trailer.
-    lines = ["# Stars of Darien, Alpha 1 trailer: shot list", "", "Length %d:%05.2f, %dx%d at %d fps." % (int(t // 60), t % 60, W, H, FPS), ""]
+    lines = ["# " + tl.get("title", "Stars of Darien, Alpha 1 trailer: shot list"), "", "Length %d:%05.2f, %dx%d at %d fps." % (int(t // 60), t % 60, W, H, FPS), ""]
     for (seg, _, frames), s in zip(segs, starts):
         what = ("Card: " + " / ".join(l["text"] for l in seg["card"])) if "card" in seg else seg.get("note", seg["shot"])
         lines.append("%d:%05.2f  %-6s %s" % (int(s // 60), s % 60, "(%.1fs)" % (frames / FPS), what.replace("[DISCORD LINK]", a.discord or "[DISCORD LINK]")))

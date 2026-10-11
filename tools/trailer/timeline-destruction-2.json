@@ -1,0 +1,35 @@
+{
+  "title": "Stars of Darien, destruction trailer 2: shot list",
+  "sharpen": 0.5,
+  "segments": [
+    {"shot": "fire-calm", "from": 0.3, "to": 5.0, "note": "A Taros camp by a lake at Lake Ferrix, the palms still"},
+    {"shot": "siege-calm", "from": 0.3, "to": 4.3, "trans": 0.7, "note": "The walled town of Alchemist Glen, before the guns come up"},
+    {"card": [{"text": "Stars of Darien", "font": "title", "size": 150, "rule": 520}, {"text": "Nothing stands forever", "font": "caps", "size": 44, "delay": 0.6}], "seconds": 3.8, "trans": 0.7, "style": "fadeblack"},
+    {"shot": "siege-wall", "from": 2.8, "to": 7.6, "trans": 0.5, "style": "fadeblack", "note": "The first volley finds the wall, and a tower bursts apart"},
+    {"shot": "siege-rubble", "from": 0.0, "to": 3.6, "trans": 0.25, "note": "The wall breached in dust and thrown stone"},
+    {"shot": "fire-catch", "from": 1.0, "to": 5.6, "trans": 0.25, "note": "Fire mages set the lakeside palms alight"},
+    {"shot": "fire-spread", "from": 0.0, "to": 4.2, "trans": 0.25, "note": "The fire runs on through the wood with the wind, smoke drifting"},
+    {"shot": "spell-frost", "from": 0.6, "to": 3.0, "trans": 0.2, "note": "A Hail Shower freezes the ground white"},
+    {"shot": "spell-earth", "from": 3.6, "to": 6.4, "trans": 0.2, "note": "An Earthquake throws the trees down"},
+    {"shot": "tornado", "from": 1.2, "to": 6.0, "trans": 0.2, "note": "The Weather Witch's Tornado wanders through the wood"},
+    {"shot": "vortex-cast", "from": 0.8, "to": 3.6, "trans": 0.2, "note": "The Taros god's Fire Vortex opens"},
+    {"shot": "vortex-sweep", "from": 0.0, "to": 3.0, "trans": 0.2, "note": "Fire Vortices sweep the wood, felling everything in their path"},
+    {"shot": "dragon-breath", "from": 3.4, "to": 8.6, "trans": 0.25, "note": "Six dragons breathe fire over the Black Forest"},
+    {"shot": "dragon-after", "from": 0.0, "to": 3.0, "trans": 0.2, "note": "Dragon fire raking the ground"},
+    {"shot": "siege-cavein", "from": 0.8, "to": 5.2, "trans": 0.25, "note": "Houses cave in under the guns"},
+    {"shot": "creon-ruins", "from": 1.2, "to": 6.0, "trans": 0.25, "note": "A Creon town shelled to pieces"},
+    {"shot": "siege-ruins", "from": 4.0, "to": 7.4, "trans": 0.3, "note": "Alchemist Glen's square in ruins, dust rising", "crop": [1422, 800, 250, 280]},
+    {"shot": "creon-after", "from": 0.0, "to": 4.8, "trans": 0.4, "note": "What is left of the Creon town: rubble and craters"},
+    {"shot": "craters-field", "from": 1.0, "to": 5.4, "trans": 0.8, "style": "fadeblack", "note": "After three minutes of battle, a cratered field"},
+    {"shot": "fire-char", "from": 0.5, "to": 4.5, "trans": 0.6, "note": "Burnt trunks where the palms stood"},
+    {"card": [{"text": "Alpha 1", "font": "title", "size": 130, "rule": 380}, {"text": "Join us on Discord", "font": "caps", "size": 50, "delay": 0.6}, {"text": "[DISCORD LINK]", "font": "body", "size": 56, "delay": 0.9, "colour": "0xE8C67E"}], "seconds": 5.5, "trans": 0.8, "style": "fadeblack"}
+  ],
+  "stills": [
+    {"name": "01-the-wood-alight", "shot": "fire-catch", "frame": 136},
+    {"name": "02-a-tower-bursts", "shot": "siege-wall", "frame": 410},
+    {"name": "03-dragon-fire", "shot": "dragon-breath", "frame": 385},
+    {"name": "04-the-tornado", "shot": "tornado", "frame": 239},
+    {"name": "05-fire-vortex", "shot": "vortex-cast", "frame": 179},
+    {"name": "06-a-house-caves-in", "shot": "siege-cavein", "frame": 171}
+  ]
+}
