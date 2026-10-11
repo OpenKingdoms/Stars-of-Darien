@@ -118,6 +118,10 @@ namespace OpenKingdomsUnity.Tests
             int up = 0;
             for (int k = 0; k < flyerDefs.Count; k++)
             {
+                // Each flyer handed over stays the computer's and goes for your
+                // monarch, so the battle can be lost part way. A lost battle
+                // takes no clicks, so the walk ends there.
+                if (OkEngine.okx_outcome() != 0) break;
                 int h = OkEngine.okx_place_unit(flyerDefs[k], me);
                 if (h < 0) continue;
                 string name = defs[flyerDefs[k]].Name;
@@ -172,7 +176,7 @@ namespace OpenKingdomsUnity.Tests
                 root.Orders.Selected.Clear();
                 root.Orders.Classic = true;
             }
-            Debug.Log($"{flyerDefs.Count} flyers, {up} up");
+            Debug.Log($"{flyerDefs.Count} flyers, {up} up, the battle {(OkEngine.okx_outcome() == 0 ? "still on" : "lost")}");
             Assert.Greater(up, 0, "flyers went up to their height");
         }
 
