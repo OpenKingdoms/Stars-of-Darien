@@ -19,6 +19,8 @@ NOT IN THIS ALPHA YET
   setting. The game runs at your desktop's resolution.
 - Key rebinding, chat and the typed + commands of the original.
 - Replays.
+- Craters that slow units down, and cover behind walls and ruins. The
+  craters are only drawn for now, and they slow nothing.
 
 
 ROUGH EDGES WE KNOW ABOUT

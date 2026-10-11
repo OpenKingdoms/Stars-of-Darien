@@ -50,6 +50,44 @@ On the main menu, click the left door (Play the Machine) for a skirmish
 against the computer. Pick a map, your kingdom and your opponents, then
 start. F1 opens the game menu, and F9 saves a screenshot.
 
+Builders can help finish a building that another builder has started.
+Select them and point at its frame. With the Classic controls a hammer
+shows over a frame they can help, and a left click sends them. With the
+Modern controls, right click the frame. Each helper adds its own work and
+pays its own share, so two builders finish in half the time for the same
+mana. A builder with a fixed list, such as a Mage Builder, helps only with
+what is on its list, while a monarch helps with anything.
+
+
+BATTLES THAT BREAK
+
+Every kind of blast now throws its own fire, smoke, dust and debris, and
+leaves a scar or a crater that the ground keeps for the rest of the battle.
+Trees, walls and buildings break apart in 3D, a dying unit's pieces fly
+off it, scenery burns and the fire spreads, and each kind of magic marks
+the scenery it reaches. Every stage that scenery breaks or burns into has
+a 3D model now, the ruins of Creon's towns included.
+
+Options has a Battle effects row under Display: Low, Medium, High or Ultra,
+for how much smoke, debris, light and scarring a battle shows. Until you
+pick one, the game uses the one that suits your graphics card. If battles
+run slowly, try Low.
+
+
+REMASTERED BATTLEFIELD RULES
+
+Stars of Darien always plays the remastered battlefield rules, which go
+beyond the original game's. There is no setting for them.
+
+- Rocks, ruins, spires and grass can be destroyed too. Lodestones and
+  sacred sites cannot.
+- Walls and buildings leave rubble that blocks the way until a builder
+  clears it with the Clear order.
+- Fire spreads farther from one tree to the next, and it hurts units that
+  stand in it.
+- The computer players clear the rubble their units are stuck at and lead
+  their units out of fire.
+
 
 WHEN SOMETHING GOES WRONG
 
