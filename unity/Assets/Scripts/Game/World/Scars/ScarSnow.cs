@@ -6,6 +6,16 @@ using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
 {
+    // What the snow over the scars held when a game was saved: the battle
+    // second each patch was last scarred, when the snow began (NaN for no
+    // snow) and the clock they were kept by.
+    public sealed class SnowState
+    {
+        public int W, H;
+        public float Now, Since;
+        public float[] Scarred;
+    }
+
     public sealed class ScarSnow
     {
         // World units a texel spans, and how long snow takes to cover a scar.
@@ -87,6 +97,26 @@ namespace OpenKingdomsUnity.Game.World
             }
             Shader.SetGlobalTexture(SnowedId, tex);
             Shader.SetGlobalVector(SnowingId, new Vector4(now, snowing ? since : 0f, CoverSeconds, snowing ? 1f : 0f));
+        }
+
+        // When each patch was last scarred and when the snow began, for a saved game.
+        public SnowState Capture() => new SnowState { W = w, H = h, Now = now, Since = since, Scarred = (float[])scarred.Clone() };
+
+        // Takes what a saved game kept, its times moved onto this battle's
+        // clock, so the snow buries the old scars as it did.
+        public void Restore(SnowState s, float clock)
+        {
+            if (s == null) return;
+            float shift = clock - s.Now;
+            if (s.W == w && s.H == h && s.Scarred != null && s.Scarred.Length == scarred.Length)
+                for (int k = 0; k < scarred.Length; k++) scarred[k] = s.Scarred[k] + shift;
+            else if (s.Scarred != null && s.W > 0 && s.H > 0)
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                        scarred[y * w + x] = s.Scarred[Mathf.Min(s.H - 1, y * s.H / h) * s.W + Mathf.Min(s.W - 1, x * s.W / w)] + shift;
+            since = float.IsNaN(s.Since) ? float.NaN : s.Since + shift;
+            now = clock;
+            dirty = true;
         }
 
         public void Dispose()

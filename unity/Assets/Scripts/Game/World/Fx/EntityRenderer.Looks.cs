@@ -42,6 +42,17 @@ namespace OpenKingdomsUnity.Game.World
             return e != null ? LookOf(e) : null;
         }
 
+        // Each look with a mark on it and the feature it is kept with, by
+        // that feature's index in the list, for a saved game.
+        public void MarkedLooks(List<(int index, int def, Vector3 at, SceneryLook look)> into)
+        {
+            for (int i = 0; i < featureEntries.Count; i++)
+            {
+                var e = featureEntries[i];
+                if (e.Look != null && e.Def != int.MinValue && !e.Look.Gone && e.Look.Marked) into.Add((i, e.Def, e.Position, e.Look));
+            }
+        }
+
         // The look of whatever feature stands nearest a point within reach, or null.
         public SceneryLook LookNear(Vector3 at, float within)
         {

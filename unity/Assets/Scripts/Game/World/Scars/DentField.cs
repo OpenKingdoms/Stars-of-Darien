@@ -136,6 +136,23 @@ namespace OpenKingdomsUnity.Game.World
             }
         }
 
+        // Copies of the dips and the rims, for a saved game.
+        public byte[] Depths() => (byte[])depth.Clone();
+        public byte[] Rims() => (byte[])rim.Clone();
+
+        // Takes the dips and rims a saved game kept, at this field's size.
+        public void Load(byte[] depths, byte[] rims)
+        {
+            if (depths == null || rims == null || depths.Length != depth.Length || rims.Length != rim.Length)
+                throw new System.ArgumentException("the dips were kept at another size");
+            System.Buffer.BlockCopy(depths, 0, depth, 0, depth.Length);
+            System.Buffer.BlockCopy(rims, 0, rim, 0, rim.Length);
+            Dented = 0;
+            System.Array.Clear(tiles, 0, tiles.Length);
+            for (int k = 0; k < depth.Length; k++)
+                if (depth[k] != 0 || rim[k] != 0) Mark(k % W, k / W);
+        }
+
         // Whether any dip or rim lies within a world rectangle.
         public bool AnyIn(float x0, float z0, float x1, float z1)
         {

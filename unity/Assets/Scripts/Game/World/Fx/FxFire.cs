@@ -14,6 +14,17 @@ using UnityEngine;
 
 namespace OpenKingdomsUnity.Game.World
 {
+    // A fire as a saved game keeps it, its times on the battle's clock then.
+    public struct FireState
+    {
+        public Vector3 At, From, Way;
+        public int Def, Seed, Marks;
+        public float Start, Seconds, SparkAt, OutAt, DousedAt, FanUntil, SmoulderFor, WispSize;
+        public bool Out, Doused, Sparked, Wisp;
+        // Its scenery's place among the saved looks, -1 for none.
+        public int Look;
+    }
+
     public sealed class FxFire
     {
         // A patch of forest that shares its smoke column and light, world units.
@@ -132,6 +143,41 @@ namespace OpenKingdomsUnity.Game.World
         public void BurningPlaces(List<Vector3> into)
         {
             foreach (var f in fires) if (!f.Out && !f.Wisp) into.Add(f.At);
+        }
+
+        // Every fire burning or smouldering now, for a saved game. lookOf
+        // gives a look's place among the saved looks, -1 for none.
+        public void Capture(List<FireState> into, System.Func<SceneryLook, int> lookOf)
+        {
+            foreach (var f in fires)
+                into.Add(new FireState
+                {
+                    At = f.At, From = f.From, Way = f.Way, Def = f.Def, Seed = f.Seed, Marks = f.Marks,
+                    Start = f.Start, Seconds = f.Seconds, SparkAt = f.SparkAt, OutAt = f.OutAt, DousedAt = f.DousedAt,
+                    FanUntil = f.FanUntil, SmoulderFor = f.SmoulderFor, WispSize = f.WispSize,
+                    Out = f.Out, Doused = f.Doused, Sparked = f.Sparked, Wisp = f.Wisp,
+                    Look = f.Look != null && lookOf != null ? lookOf(f.Look) : -1,
+                });
+        }
+
+        // The fires a saved game kept, their times moved by shift onto this
+        // battle's clock, so they burn and smoulder on from where they were.
+        public void Restore(IReadOnlyList<FireState> list, System.Func<int, SceneryLook> lookAt, float shift)
+        {
+            if (list == null) return;
+            foreach (var s in list)
+            {
+                var f = spare.Count > 0 ? spare.Pop() : new Fire();
+                f.Look = s.Look >= 0 && lookAt != null ? lookAt(s.Look) : null;
+                f.At = s.At; f.From = s.From; f.Way = s.Way; f.Def = s.Def; f.Seed = s.Seed; f.Marks = s.Marks;
+                f.Start = s.Start + shift; f.Seconds = s.Seconds; f.SparkAt = s.SparkAt + shift; f.OutAt = s.OutAt + shift;
+                f.DousedAt = s.DousedAt + shift; f.FanUntil = s.FanUntil + shift; f.SmoulderFor = s.SmoulderFor; f.WispSize = s.WispSize;
+                f.Out = s.Out; f.Doused = s.Doused; f.Sparked = s.Sparked; f.Wisp = s.Wisp;
+                f.FlameDebt = f.TongueDebt = f.EmberDebt = f.HaloDebt = 0f;
+                f.Intensity = f.Smoulder = 0f;
+                f.Seen = false;
+                fires.Add(f);
+            }
         }
 
         public void Clear()

@@ -57,6 +57,14 @@ namespace OpenKingdomsUnity.Game.World
             later.Clear();
         }
 
+        // A look a saved game brought back, drawn as it is at now and
+        // stepped on each frame while its marks still change.
+        public void Resume(SceneryLook l, float now)
+        {
+            if (l == null || l.Gone) return;
+            if (l.Step(now) && movingSet.Add(l)) moving.Add(l);
+        }
+
         // Reads the frame's blasts, marks what each reaches, and steps the marks still changing.
         public void Update(float now, float dt)
         {

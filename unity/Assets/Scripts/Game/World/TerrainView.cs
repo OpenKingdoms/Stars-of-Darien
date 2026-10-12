@@ -226,6 +226,26 @@ namespace OpenKingdomsUnity.Game.World
             toRefine.Enqueue((rx, ry, factor));
         }
 
+        // The regions asked to dip and how finely, for a saved game.
+        public List<(int x, int y, int factor)> RefinedList()
+        {
+            var list = new List<(int, int, int)>(refined.Count);
+            foreach (var kv in refined) list.Add((kv.Key.Item1, kv.Key.Item2, kv.Value));
+            list.Sort((a, b) => a.Item2 != b.Item2 ? a.Item2.CompareTo(b.Item2) : a.Item1.CompareTo(b.Item1));
+            return list;
+        }
+
+        // Builds a region to dip and puts it in place on this thread, so a
+        // loaded game's craters are there for its first frame.
+        public void RefineNow(int rx, int ry, int factor)
+        {
+            var t = backend.Terrain;
+            if (regions == null || t == null || factor <= 1 || rx < 0 || ry < 0 || rx >= regions.GetLength(0) || ry >= regions.GetLength(1)) return;
+            if (dented.Contains((rx, ry)) && refined.TryGetValue((rx, ry), out int f) && f >= factor) return;
+            refined[(rx, ry)] = factor;
+            PutRefined(rx, ry, GroundBuffers.From(TerrainBuilder.Refined(t, rx, ry, factor), 1f, 1f));
+        }
+
         // Puts at most one finished region in place. Returns how many are
         // still being built.
         public int StepRefine()

@@ -46,7 +46,7 @@ namespace OpenKingdomsUnity.Game
 
         // The longest frame of the last load, for the log and the map sweep.
         public double LoadWorstFrameMs { get; private set; }
-        string pendingLoad;
+        string pendingLoad, restoring;
         bool loadRefused;
         IGameBackend injected;
 
@@ -241,10 +241,12 @@ namespace OpenKingdomsUnity.Game
                     shadersFrom = -1;
 #endif
                     ApplyAudio();
+                    restoring = null;
                     if (pendingLoad != null)
                     {
                         // A refused save leaves the flow to Update, not this handler.
                         loadRefused = !Backend.LoadGame(pendingLoad);
+                        if (!loadRefused) restoring = pendingLoad;
                         pendingLoad = null;
                     }
                     else Backend.StartSkirmish(Setup);
@@ -362,6 +364,9 @@ namespace OpenKingdomsUnity.Game
                         builtFrom = Time.realtimeSinceStartup;
                         World = new WorldView(Backend);
                         World.Build(CurrentMap(), Options, false);
+                        // A loaded game's scars and marks, before its first frame.
+                        if (restoring != null) World.RestoreField(restoring);
+                        restoring = null;
                         buildTotal = Mathf.Max(1, World.StepsLeft);
                     }
                     // The world builds a slice a frame, so the screen keeps drawing.
@@ -518,17 +523,25 @@ namespace OpenKingdomsUnity.Game
             public DateTime SavedAt;
         }
 
-        // Writes the running game, named by the time and the map.
+        // Writes the running game, named by the time and the map, and beside
+        // it the look of its field, which only this game draws.
         public bool SaveNow(out string path)
         {
             path = null;
+            LastFieldBytes = -1;
             if (!GameFlow.InGame(Flow.State) && !Flow.InGameNow) return false;
             Directory.CreateDirectory(SavesDir);
             string map = CurrentMap()?.Name ?? "game";
             foreach (var c in Path.GetInvalidFileNameChars()) map = map.Replace(c, '_');
             path = Path.Combine(SavesDir, $"{DateTime.Now:yyyy-MM-dd HH-mm-ss} {map}.oksav");
-            return Backend.SaveGame(path);
+            FieldSave.Forget(path);
+            if (!Backend.SaveGame(path)) return false;
+            LastFieldBytes = World != null ? FieldSave.Save(path, World, Backend, CurrentMap()?.Id) : -1;
+            return true;
         }
+
+        // The size of the field kept with the last save, -1 when none was.
+        public long LastFieldBytes { get; private set; } = -1;
 
         // Every save this backend can read, newest first.
         public List<SaveEntry> ListSaves()

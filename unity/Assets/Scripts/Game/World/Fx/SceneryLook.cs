@@ -59,6 +59,11 @@ namespace OpenKingdomsUnity.Game.World
             Char > 0.002f || Glow > 0.002f || Frost > 0.002f || Wither > 0.002f || Bare > 0.002f || Sheen > 0.002f || Wet > 0.002f ||
             Split > 0.0005f || Bend.sqrMagnitude > 1e-6f;
 
+        // Whether anything has marked it, shown yet or still to come, for a saved game.
+        public bool Marked =>
+            Char > 0f || Bare > 0f || Split > 0f || WitherTo > 0f || FrostPeak > 0f || SheenPeak > 0f || WetPeak > 0f || GlowPeak > 0f ||
+            FireGlow > 0f || ShakeAmp > 0f || GustAmp > 0f;
+
         // The drawn marks at a battle time. True while any of them still changes.
         public bool Step(float now)
         {

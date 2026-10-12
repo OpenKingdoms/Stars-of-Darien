@@ -83,6 +83,44 @@ namespace OpenKingdomsUnity.Game.World
             if (now) while (!BuildSome(double.MaxValue)) System.Threading.Thread.Yield();
         }
 
+        public const string FieldPart = "the battlefield";
+        // How many looks on scenery the last restore found, for tests and the log.
+        public int LooksRestored { get; private set; }
+        // Why the last restore left the field clean, or null when it did not.
+        public string FieldNote { get; private set; }
+
+        // A saved game's look of the field, put back as the build's last
+        // steps so the battle's first frame already shows it: the scars and
+        // the snow, the dented ground, then the marks on scenery and the fires.
+        public void RestoreField(string save)
+        {
+            FieldState field = null;
+            float clock = 0f;
+            building.Enqueue((FieldPart, () =>
+            {
+                field = FieldSave.Load(save, out string why);
+                FieldNote = why;
+                if (field == null)
+                {
+                    Debug.Log($"The battlefield of {System.IO.Path.GetFileName(save)} starts clean: {why}.");
+                    return true;
+                }
+                clock = backend.Tick / (float)Mathf.Max(1, backend.TicksPerSecond);
+                FieldSave.RestoreScars(this, field, clock);
+                return true;
+            }));
+            building.Enqueue((FieldPart, () => field == null || Scars == null || Scars.RestoreGround(ScenerySliceMs)));
+            building.Enqueue((FieldPart, () =>
+            {
+                if (field == null) return true;
+                LooksRestored = FieldSave.RestoreLooks(this, field, clock);
+                Debug.Log($"The battlefield of {System.IO.Path.GetFileName(save)} is restored: {Terrain.RefinedRegions} regions dented, " +
+                          $"{LooksRestored} of {field.Looks.Count} pieces of scenery marked, {field.Fires.Count} fires");
+                field = null;
+                return true;
+            }));
+        }
+
         // Runs steps for about budgetMs, at least one, and stops early at a
         // step that is not done. True once none are left.
         public bool BuildSome(double budgetMs)
@@ -210,9 +248,13 @@ namespace OpenKingdomsUnity.Game.World
             ModelCount = building.Count - before;
         }
 
+        // Frames the field has been drawn, behind the loading screen or not.
+        public int FramesDrawn { get; private set; }
+
         public void Render()
         {
             if (Root == null || Camera == null) return;
+            FramesDrawn++;
             var cam = Camera.GetComponent<UnityEngine.Camera>();
             // Shadows reach a little past what the camera frames, so the
             // cascades spend their texels where the eye is.
