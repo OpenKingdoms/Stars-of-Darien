@@ -110,7 +110,7 @@ namespace OpenKingdomsUnity.Game.World
             float shift = clock - s.Now;
             if (s.W == w && s.H == h && s.Scarred != null && s.Scarred.Length == scarred.Length)
                 for (int k = 0; k < scarred.Length; k++) scarred[k] = s.Scarred[k] + shift;
-            else if (s.Scarred != null && s.W > 0 && s.H > 0)
+            else if (s.Scarred != null && s.W > 0 && s.H > 0 && s.Scarred.Length >= (long)s.W * s.H)
                 for (int y = 0; y < h; y++)
                     for (int x = 0; x < w; x++)
                         scarred[y * w + x] = s.Scarred[Mathf.Min(s.H - 1, y * s.H / h) * s.W + Mathf.Min(s.W - 1, x * s.W / w)] + shift;

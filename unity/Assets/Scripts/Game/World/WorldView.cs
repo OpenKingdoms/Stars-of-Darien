@@ -106,19 +106,33 @@ namespace OpenKingdomsUnity.Game.World
                     return true;
                 }
                 clock = backend.Tick / (float)Mathf.Max(1, backend.TicksPerSecond);
-                FieldSave.RestoreScars(this, field, clock);
-                return true;
+                return Safely(() => FieldSave.RestoreScars(this, field, clock));
             }));
-            building.Enqueue((FieldPart, () => field == null || Scars == null || Scars.RestoreGround(ScenerySliceMs)));
+            building.Enqueue((FieldPart, () => field == null || Scars == null || Safely(() => Scars.RestoreGround(ScenerySliceMs))));
             building.Enqueue((FieldPart, () =>
             {
                 if (field == null) return true;
-                LooksRestored = FieldSave.RestoreLooks(this, field, clock);
+                Safely(() => LooksRestored = FieldSave.RestoreLooks(this, field, clock));
                 Debug.Log($"The battlefield of {System.IO.Path.GetFileName(save)} is restored: {Terrain.RefinedRegions} regions dented, " +
                           $"{LooksRestored} of {field.Looks.Count} pieces of scenery marked, {field.Fires.Count} fires");
                 field = null;
                 return true;
             }));
+        }
+
+        // A restore step that throws is logged and passed by, so a field kept
+        // badly never stops the battle loading.
+        bool Safely(System.Action step) => Safely(() => { step(); return true; });
+
+        bool Safely(System.Func<bool> step)
+        {
+            try { return step(); }
+            catch (System.Exception e)
+            {
+                FieldNote = "its field could not be restored: " + e.Message;
+                Debug.LogWarning("The battlefield was not wholly restored: " + e);
+                return true;
+            }
         }
 
         // Runs steps for about budgetMs, at least one, and stops early at a

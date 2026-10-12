@@ -365,6 +365,20 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AFieldAtOddsWithItselfLeavesTheFieldCleanAndThrowsNothing()
+        {
+            var b = Game("mock_frost");
+            map = ScarMap.Begin(b, null, "snow", EffectsQuality.High);
+            snow = new ScarSnow(b, map);
+            // A snow record claiming more patches than it holds, and textures smaller than they say.
+            snow.Restore(new SnowState { W = 999, H = 999, Now = 1f, Since = 0f, Scarred = new float[10] }, 1f);
+            map.Restore(new ScarState { TexW = 100, TexH = 100, SizeX = 96f, SizeZ = 96f, Marks = new byte[7], Shape = new byte[7], Fade = new byte[7], Depth = new byte[3], Rim = new byte[3] }, 1f);
+            snow.Update(true, 1f);
+            Assert.AreEqual(0, map.Dents.Dented, "the field stays clean");
+            Assert.AreEqual(0f, ScarMap.GroundOffset(48f, -48f));
+        }
+
+        [Test]
         public void ALongBattlesFieldStaysSmall()
         {
             // The largest maps the scar map covers in full at High: 512 units, 2048 texels across.
