@@ -14,7 +14,9 @@ namespace OpenKingdomsUnity.Game.Capture
         public const string PrefKey = "oku.capture.dir";
         // Wins over the setting, for scripts and tests.
         public const string EnvKey = "OKU_SHOTS_DIR";
-        public const string OwnerDefault = @"D:\OKBuild\owner-shots";
+        public static string OwnerDefault => Path.DirectorySeparatorChar == '\\'
+            ? @"D:\OKBuild\owner-shots"
+            : (Environment.GetEnvironmentVariable("HOME") ?? "") + "/OKBuild/owner-shots";
         public const string LatestFile = "LATEST.txt";
 
         // The folder captures go to now.

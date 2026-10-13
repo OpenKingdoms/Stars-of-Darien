@@ -11,11 +11,12 @@ namespace OpenKingdomsUnity.Engine
         // The install to read. OK_GAME_DIR and OK_DATA_DIR override these,
         // and the data folder is optional loose files that win over the
         // archives, read only in the editor unless OK_DATA_DIR names one.
-        // A Mac keeps the game where OpenKingdoms' own Mac build looks.
+        // A Mac or Linux box keeps the game where OpenKingdoms' own build looks.
         public const string WindowsGameDir = "C:/GOG Games/Total Annihilation Kingdoms";
-        public static string MacGameDir => (Environment.GetEnvironmentVariable("HOME") ?? "") + "/Games/Total Annihilation Kingdoms";
-        public static string DefaultGameDir => IsMac ? MacGameDir : WindowsGameDir;
-        public const string DefaultDataDir = "C:/Projects/TAK-RE/data/extracted";
+        static string Home => Environment.GetEnvironmentVariable("HOME") ?? "";
+        public static string HomeGameDir => Home + "/Games/Total Annihilation Kingdoms";
+        public static string DefaultGameDir => IsMac || IsLinux ? HomeGameDir : WindowsGameDir;
+        public static string DefaultDataDir => IsMac || IsLinux ? Home + "/Projects/OpenKingdoms/data/extracted" : "C:/Projects/TAK-RE/data/extracted";
 
         // OpenKingdoms > Settings in the editor can name another folder, and
         // OK_GAME_DIR still wins over it. A built player looks for the game

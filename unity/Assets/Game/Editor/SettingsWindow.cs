@@ -179,7 +179,7 @@ namespace OpenKingdomsUnity.Studio
                 }
             }
             GUILayout.Label($"F9 saves a picture of the game or the studio view there, and Shift+F9 records five seconds at {OwnerCapture.ClipFps} frames a second with a contact sheet. " +
-                $"{CaptureFiles.LatestFile} there names the newest. The default is {CaptureFiles.OwnerDefault} when D:\\OKBuild is there, and the Captures folder beside unity/ otherwise." +
+                $"{CaptureFiles.LatestFile} there names the newest. The default is {CaptureFiles.OwnerDefault} when its OKBuild folder is there, and the Captures folder beside unity/ otherwise." +
                 (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable(CaptureFiles.EnvKey)) ? $" The {CaptureFiles.EnvKey} environment variable is set and wins over this." : ""), EditorStyles.wordWrappedMiniLabel);
         }
 
