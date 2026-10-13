@@ -156,6 +156,8 @@ namespace OpenKingdomsUnity.Tests
             Assert.IsTrue(File.Exists(Path.Combine(ReleaseDir, "VERSION")));
             foreach (var mac in Directory.GetFiles(ReleaseDir, "okengine-api*.dylib"))
                 Assert.AreEqual(api, ReadVersion(File.ReadAllBytes(mac), "okx_api_version"), $"{Path.GetFileName(mac)} is the Mac build of the binding's API; run scripts/publish-engine.sh");
+            foreach (var linux in Directory.GetFiles(ReleaseDir, "okengine-api*.so"))
+                Assert.AreEqual(api, ReadVersion(File.ReadAllBytes(linux), "okx_api_version"), $"{Path.GetFileName(linux)} is the Linux build of the binding's API; run scripts/publish-engine.sh");
         }
 
         [Test]

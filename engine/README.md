@@ -7,6 +7,7 @@ This folder holds the engine libraries a fresh clone needs, so nobody has to bui
 | `okengine-api<N>.dll` | The OpenKingdoms engine as a library, for binding API version N (`OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs`) |
 | `SDL2.dll` | SDL 2, which okengine loads for sound. It is under the zlib license |
 | `okengine-api<N>.dylib` | The same engine for a Mac with Apple silicon, with SDL 2 linked in |
+| `okengine-api<N>.so` | The same engine for Linux x86_64, with SDL 2 linked in. It needs glibc 2.35 or later |
 | `VERSION` | Where each file was built from |
 
 ## What the editor does with them
@@ -21,21 +22,41 @@ This folder holds the engine libraries a fresh clone needs, so nobody has to bui
 
 On a Mac the same rules apply to `libokengine.dylib`, published here as `okengine-api<N>.dylib`. SDL is inside it, so nothing goes beside it. The installer also writes the library's `.meta`, which tells Unity to load it in the editor and in a Mac player, and clears the quarantine flag a downloaded zip leaves on it.
 
-On Linux the same rules apply to `libokengine.so`, published here as `okengine-api<N>.so`, and SDL comes from the system rather than from this folder. No Linux build is published yet, so `scripts/cloud-unity-test.sh` builds one and puts it in the plugin folder, where the installer reads its version from the file and leaves it alone.
+On Linux the same rules apply to `libokengine.so`, published here as `okengine-api<N>.so`. SDL is inside it, as on a Mac, so nothing goes beside it. `scripts/cloud-unity-test.sh` builds its own and puts it in the plugin folder, where the installer reads its version from the file and leaves it alone.
 
 Unity cannot unload a native library once it has used it. If a pull brings a new binding while the editor still has the old engine loaded, the installer puts the new file in place for the next start, turns the engine off for this session so nothing calls the old one with the new binding, and asks for a restart. The studio and the game run on the stand-in world until then, and Play in a scene without the game says what is wrong. A new build of the same version is also put in place for the next start, and the loaded one keeps working until then.
 
 ## Publishing a new engine
 
-1. Build okengine as Release with `scripts/build-engine.sh`, or take a published build such as `D:\OKBuild\okengine-published`. A Debug build's version can't be read, and the script refuses it.
+1. Let GitHub build the Windows and Linux libraries, as the next section says, or build okengine as Release with `scripts/build-engine.sh` on Windows. A Debug build's version can't be read, and the script refuses it. A Linux library from `scripts/build-engine-linux.sh` is refused when it needs a glibc newer than 2.35, as one built on a recent distribution does.
 2. Leave the Mac library to GitHub, or build it from the same unity-embed commit on a Mac with `scripts/build-engine-mac.sh`, which leaves `libokengine.dylib` and `VERSION-macos.txt` in `~/okbuild/embed-mac/publish` to copy beside `okengine.dll`. The next section says what GitHub does.
 3. When the API changed, bump `OkEngine.ApiVersion` in `unity/Assets/Engine/OkEngine.cs` to the engine's `OKX_API_VERSION`.
-4. Run `bash scripts/publish-engine.sh <folder>`. It needs Python on PATH. It checks the version of every library in the folder against the binding, writes them here as `okengine-api<N>.dll` with the `SDL2.dll` beside it and `okengine-api<N>.dylib`, removes the older ones and rewrites `VERSION`. A folder with only one of the two publishes that one and keeps the other.
+4. Run `bash scripts/publish-engine.sh <folder>`. It needs Python on PATH. It checks the version of every library in the folder against the binding, writes them here as `okengine-api<N>.dll` with the `SDL2.dll` beside it, `okengine-api<N>.dylib` and `okengine-api<N>.so`, removes the older ones and rewrites `VERSION`. A folder with only some of them publishes those and keeps the others.
 5. Commit this folder in the same commit as the binding change. The EditMode test `EngineInstallerTests` fails if a library here does not match the binding.
 
 A new build of the same API version needs no bump. Publish it the same way and every clone picks it up.
 
-When the API changes and no Mac build comes with it, the script removes the old Mac library, since it can't run with the new binding. A Mac then shows the stand-in world and says so in the editor until a Mac build of the new API is published, or until someone on that Mac builds one with `scripts/build-engine-mac.sh`.
+When the API changes and no Mac or Linux build comes with it, the script removes the old one, since it can't run with the new binding. A Mac then shows the stand-in world and says so in the editor until a Mac build of the new API is published, or until someone on that Mac builds one with `scripts/build-engine-mac.sh`.
+
+## The Windows and Linux libraries from GitHub
+
+The Windows and Linux engine workflow, `.github/workflows/engine.yml`, builds both libraries from a unity-embed commit. Start it on main:
+
+```
+gh workflow run engine.yml -R OpenKingdoms/Stars-of-Darien
+```
+
+It builds the newest commit on unity-embed, or the one `-f embed=<commit>` names. The Windows library is built with MSVC and SDL from vcpkg, as `scripts/build-engine.sh` does, and goes out with the `SDL2.dll` already here once that is shown to export every SDL function the library imports. The Linux library is built on Ubuntu 22.04 with `scripts/build-engine-linux.sh`, which links in SDL 2.32.10 built from source, so it needs nothing beyond glibc 2.35. Neither has FFmpeg. `scripts/check-engine.sh` checks that each exports every `okx_` function `OkEngine.cs` imports and needs nothing a player's machine lacks. Then `scripts/publish-engine.sh` puts both here, and the workflow pushes the result to the `pc-engine` branch, one commit on main that touches only this folder. Both libraries are also kept as the run's artifacts `okengine-windows-x64-<commit>` and `okengine-linux-x86_64-<commit>` for 90 days.
+
+It lands like the Mac library:
+
+```
+gh pr create -R OpenKingdoms/Stars-of-Darien --base main --head pc-engine --fill
+```
+
+The merge changes `VERSION`, which starts the Mac engine workflow below for the same commit. A dispatch builds nothing when main already has both libraries from that commit, unless `-f force=true` says to. A run on any other branch, and a pull request that changes the workflow or its scripts, builds and checks without publishing.
+
+When the API changes, bump the binding on a branch and run the workflow there with `--ref <branch> -f embed=<commit>`. Then take both artifacts into one folder with `gh run download`, put this folder's `SDL2.dll` beside them and publish them on that branch with `scripts/publish-engine.sh`.
 
 ## The Mac library from GitHub
 
