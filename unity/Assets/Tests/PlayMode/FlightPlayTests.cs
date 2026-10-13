@@ -94,7 +94,7 @@ namespace OpenKingdomsUnity.Tests
             bool flapped = false, glided = false, differs = false, ringRode = false;
             var poses = new PiecePose[32];
             float end = Time.realtimeSinceStartup + 20f;
-            while (Time.realtimeSinceStartup < end)
+            while (Time.realtimeSinceStartup < end && !(flapped && glided && differs && ringRode))
             {
                 yield return null;
                 var u = Find(ents, handle);

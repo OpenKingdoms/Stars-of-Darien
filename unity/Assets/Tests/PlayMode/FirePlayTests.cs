@@ -401,6 +401,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest, Timeout(900000)]
         public IEnumerator TheBudgetHoldsInABigForestFireAndMagicBattle()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             var before = FxQuality.Current.Level;
             FxQuality.Use(EffectsQuality.High);
             yield return Begin("mock_marches", 3);

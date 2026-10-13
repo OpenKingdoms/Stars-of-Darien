@@ -10,7 +10,7 @@ A Unity remaster of Total Annihilation: Kingdoms (1999). The game itself runs in
 
 - Nothing from the original game goes into this repository. That means no data files, no pictures, models or sounds extracted from them and nothing painted or traced from them, not even as a test fixture. The game reads the player's own copy at run time.
 - Models are glTF binaries (`.glb`). Their pictures are the artist's own or licensed to share. A model made from the original ships as geometry and is painted at load from the player's files. `docs/CONTRIBUTING-MODELS.md` has the rules and the budgets.
-- Tests first. A change that alters behaviour comes with a test that fails without it, and a bug fix with one that reproduces the bug.
+- No new PlayMode case for every feature or fix. Prove a fix with an existing test, a cheap EditMode test, or a repro in the commit message. PlayMode cases are for saves and loads, the engine binding, cheap crash repeats and what a playtest already caught once. Time budgets and allocation checks run on demand with `OKU_PERF=1`, never in the default run.
 - `OkEngine.ApiVersion` matches the engine's `OKX_API_VERSION`. A change to the embedding API bumps both, and the new libraries go into `engine/` in the same commit, as `engine/README.md` says.
 - Comments are brief, one to three lines saying what a reader can't see from the code. The story of a change goes in the commit message and the pull request.
 - Prose in docs and comments is plain sentences, with no em or en dashes, no semicolons, no bold lead-ins on bullets, no filler and straight quotes only.

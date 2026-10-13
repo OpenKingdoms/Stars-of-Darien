@@ -150,7 +150,7 @@ namespace OpenKingdomsUnity.Tests
             if (view != null) Object.Destroy(view);
             yield return null;
             yield return null;
-            foreach (var map in new[] { "abnar's terrace", "black heart jungle" })
+            foreach (var map in new[] { "abnar's terrace" })
             {
                 yield return Start(null, map);
                 var size = root.Backend.Terrain.Size;

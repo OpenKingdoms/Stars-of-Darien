@@ -251,6 +251,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest]
         public IEnumerator TwoHundredEffectsCostLittleTimeAndNoGarbage()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             var mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f };
             GameRoot root = null;
             yield return Start(mock, r => root = r);

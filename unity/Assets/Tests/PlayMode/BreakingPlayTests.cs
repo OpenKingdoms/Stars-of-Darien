@@ -349,6 +349,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest, Timeout(600000)]
         public IEnumerator ABattleFullOfDeathsBreaksInsideItsBudget()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             // Four kingdoms, so two can be routed and the war goes on.
             yield return Begin("mock_highlands", 3);
             Bare();

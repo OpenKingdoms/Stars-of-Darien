@@ -185,6 +185,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest, Timeout(600000)]
         public IEnumerator TheBudgetHoldsInAnEightSeatBattle()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             var before = FxQuality.Current.Level;
             FxQuality.Use(EffectsQuality.High);
             var mock = new MockBackend { StageSeconds = 0f, DamageScale = 0f, ExtraSoldiers = 120 };

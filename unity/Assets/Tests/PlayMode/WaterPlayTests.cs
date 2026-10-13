@@ -988,6 +988,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest]
         public IEnumerator AFrameAllocatesNothingPerUnit()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             var perFrame = new List<long>();
             foreach (var (soldiers, boats) in new[] { (0, 2), (160, 40) })
             {
@@ -1066,6 +1067,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest]
         public IEnumerator TheSeaCostsLittle()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             yield return Begin("mock_bay", true, false);
             FogView.Disabled = true;
             root.World.Fog.Update(true);

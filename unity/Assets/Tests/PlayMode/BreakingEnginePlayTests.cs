@@ -19,6 +19,7 @@ namespace OpenKingdomsUnity.Tests
         [UnityTest, Timeout(600000)]
         public IEnumerator TakingAFeatureAwayOnAFieldOfScenery()
         {
+            if (System.Environment.GetEnvironmentVariable("OKU_PERF") != "1") Assert.Ignore("a time budget, run on demand with OKU_PERF=1");
             if (GameRoot.BackendFactory == null) Assert.Ignore("the engine or the game files are missing");
             var view = GameObject.Find("OpenKingdoms");
             if (view != null) Object.Destroy(view);
