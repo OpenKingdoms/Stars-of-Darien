@@ -181,7 +181,10 @@ jobs:
     env:
       EMBED: ${{ needs.plan.outputs.embed }}
     steps:
+      # Only a publishing run keeps the token that can push.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: ${{ needs.plan.outputs.publish == 'true' }}
 
       - uses: actions/download-artifact@v7
         with:

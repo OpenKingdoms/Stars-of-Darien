@@ -20,6 +20,7 @@ sdl=2.32.10
 sdl_sha256=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
 
 [ "$(uname)" = Linux ] || { echo "This builds the engine on Linux. On a Mac use scripts/build-engine-mac.sh."; exit 1; }
+[ "$(uname -m)" = x86_64 ] || { echo "This builds the x86_64 library Unity loads, and this machine is $(uname -m)."; exit 1; }
 command -v cmake > /dev/null 2>&1 || { echo "cmake is missing."; exit 1; }
 if [ ! -f "$src/include/ok_embed.h" ]; then
     echo "$src is not an OpenKingdoms checkout of the unity-embed branch. Get one with:"

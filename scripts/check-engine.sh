@@ -21,6 +21,7 @@ pe_exports() { objdump -p "$1" | sed -n '/^\[Ordinal\/Name Pointer\] Table/,/^$/
 case "$(head -c 4 "$lib" | od -An -tx1 | tr -d ' \n')" in
 7f454c46)
     file "$lib"
+    readelf -h "$lib" | grep -q 'Machine:.*X86-64' || fail "not an x86_64 library"
     nm -D --defined-only "$lib" | awk '{ print $NF }' | grep '^okx_' | sort -u > "$tmp/exports" || true
     needed=$(readelf -d "$lib" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
     echo "needs: $(echo $needed)"
