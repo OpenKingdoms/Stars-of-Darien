@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # Publish an engine build for everyone who clones the project: copies
-# okengine.dll into engine/ as okengine-api<N>.dll with SDL2.dll, and
-# libokengine.dylib, the Mac build, as okengine-api<N>.dylib, where the
+# okengine.dll into engine/ as okengine-api<N>.dll with SDL2.dll,
+# libokengine.dylib, the Mac build, as okengine-api<N>.dylib, and
+# libokengine.so, the Linux build, as okengine-api<N>.so, where the
 # editor's EngineInstaller finds them, removes older ones and rewrites
-# VERSION. The folder may hold either build or both. N is
+# VERSION. The folder may hold any of the builds. N is
 # OkEngine.ApiVersion, and each library's own okx_api_version must agree.
 # A new build of the same version is fine: the installer replaces its own
 # copy on every clone. Commit engine/ with the binding change that needs it.
 #   bash scripts/publish-engine.sh [folder with the libraries] [note]
 # The note says where the Windows build came from, VERSION.txt in the
-# folder by default, and VERSION-macos.txt there says it for the Mac one.
+# folder by default, and VERSION-macos.txt and VERSION-linux.txt there say
+# it for the Mac and Linux ones.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 src="${1:-D:/OKBuild/okengine-published}"
 note="${2:-}"
 dll="$src/okengine.dll"
 dylib="$src/libokengine.dylib"
-[ -f "$dll" ] || [ -f "$dylib" ] || { echo "no okengine.dll or libokengine.dylib in $src"; exit 1; }
+so="$src/libokengine.so"
+[ -f "$dll" ] || [ -f "$dylib" ] || [ -f "$so" ] || { echo "no okengine.dll, libokengine.dylib or libokengine.so in $src"; exit 1; }
 [ ! -f "$dll" ] || [ -f "$src/SDL2.dll" ] || { echo "no SDL2.dll beside okengine.dll in $src"; exit 1; }
 api=$(grep -o 'ApiVersion = [0-9]*' "$root/unity/Assets/Engine/OkEngine.cs" | grep -o '[0-9]*$')
 
@@ -27,7 +30,7 @@ done
 [ -n "$py" ] || { echo "publish-engine.sh needs Python on PATH to read the libraries' versions"; exit 1; }
 
 # A library's version from one export: "mov eax, N; ret" in a release
-# build, or "mov w0, #N; ret" on Apple silicon. Windows and Mac files.
+# build, after GCC's endbr64, or "mov w0, #N; ret" on Apple silicon.
 version() {
 "$py" - "$1" "$2" <<'EOF'
 import struct, sys
@@ -67,17 +70,32 @@ def macho():
             for va, _, raw, size in segs:
                 if va <= value < va + size: return b + raw + value - va, cpu == 0x0100000c
     return None, False
-f, arm = pe() if d[:2] == b'MZ' else macho()
+def elf():
+    shoff = struct.unpack_from('<Q', d, 0x28)[0]
+    shentsize, shnum = struct.unpack_from('<HH', d, 0x3a)
+    sec = lambda i: shoff + shentsize * i
+    for i in range(shnum):
+        if struct.unpack_from('<I', d, sec(i) + 4)[0] != 11: continue
+        symoff, symsize = struct.unpack_from('<QQ', d, sec(i) + 24)
+        stroff = struct.unpack_from('<Q', d, sec(struct.unpack_from('<I', d, sec(i) + 40)[0]) + 24)[0]
+        for e in range(symoff, symoff + symsize, 24):
+            s = stroff + struct.unpack_from('<I', d, e)[0]
+            if d[s:d.index(b'\0', s)] == want:
+                addr, raw = struct.unpack_from('<QQ', d, sec(struct.unpack_from('<H', d, e + 6)[0]) + 16)
+                return struct.unpack_from('<Q', d, e + 8)[0] - addr + raw, False
+    return None, False
+f, arm = pe() if d[:2] == b'MZ' else elf() if d[:4] == b'\x7fELF' else macho()
 if f is None: print('?')
 elif arm:
     mov, ret = struct.unpack_from('<II', d, f)
     print((mov >> 5) & 0xffff if mov & 0xffe0001f == 0x52800000 and ret == 0xd65f03c0 else '?')
 else:
+    if d[f:f + 4] == b'\xf3\x0f\x1e\xfa': f += 4
     print(struct.unpack_from('<i', d, f + 1)[0] if d[f] == 0xB8 and d[f + 5] == 0xC3 else '?')
 EOF
 }
 
-for lib in "$dll" "$dylib"; do
+for lib in "$dll" "$dylib" "$so"; do
     [ -f "$lib" ] || continue
     own=$(version "$lib" okx_api_version)
     if [ "$own" != "$api" ]; then
@@ -85,13 +103,22 @@ for lib in "$dll" "$dylib"; do
         exit 1
     fi
 done
+# A Linux build from a newer distribution would not load on an older one.
+if [ -f "$so" ]; then
+    glibc=$("$py" -c "import re, sys; print(max([int(m) for m in re.findall(rb'GLIBC_2\.([0-9]+)', open(sys.argv[1], 'rb').read())] or [0]))" "$so")
+    if [ "$glibc" -gt 35 ]; then
+        echo "libokengine.so needs glibc 2.$glibc, and a published one must run on 2.35. Publish GitHub's build (engine/README.md)."
+        exit 1
+    fi
+fi
 
 mkdir -p "$root/engine"
 head=$(git -C "$root" rev-parse --short HEAD)
 # VERSION keeps the line of a build this run leaves in place.
-keep=$(grep -v -E '^(okengine-api[0-9]+\.dll|SDL2\.dll|okengine-api[0-9]+\.dylib) ' "$root/engine/VERSION" 2>/dev/null || true)
+keep=$(grep -v -E '^(okengine-api[0-9]+\.dll|SDL2\.dll|okengine-api[0-9]+\.dylib|okengine-api[0-9]+\.so) ' "$root/engine/VERSION" 2>/dev/null || true)
 old_dll=$(grep -E '^(okengine-api[0-9]+\.dll|SDL2\.dll) ' "$root/engine/VERSION" 2>/dev/null || true)
 old_mac=$(grep -E "^okengine-api$api\.dylib " "$root/engine/VERSION" 2>/dev/null || true)
+old_so=$(grep -E "^okengine-api$api\.so " "$root/engine/VERSION" 2>/dev/null || true)
 if [ -f "$dll" ]; then
     rm -f "$root"/engine/okengine-api*.dll
     cp "$dll" "$root/engine/okengine-api$api.dll"
@@ -114,6 +141,18 @@ elif ls "$root"/engine/okengine-api*.dylib > /dev/null 2>&1 && [ ! -f "$root/eng
     echo "removed the Mac build of an older API. Until a Mac build of API $api is published,"
     echo "a Mac makes its own with scripts/build-engine-mac.sh from the same unity-embed commit."
 fi
-printf '%s\n' "$old_dll" "$old_mac" "$keep" | grep -v '^$' > "$root/engine/VERSION.new"
+if [ -f "$so" ]; then
+    rm -f "$root"/engine/okengine-api*.so
+    cp "$so" "$root/engine/okengine-api$api.so"
+    from=$(cat "$src/VERSION-linux.txt" 2>/dev/null || echo "a local Linux build")
+    old_so="okengine-api$api.so  $from, published at openkingdoms-unity $head"
+    echo "published engine/okengine-api$api.so"
+elif ls "$root"/engine/okengine-api*.so > /dev/null 2>&1 && [ ! -f "$root/engine/okengine-api$api.so" ]; then
+    rm -f "$root"/engine/okengine-api*.so
+    old_so=""
+    echo "removed the Linux build of an older API. Until a Linux build of API $api is published,"
+    echo "Linux makes its own with scripts/build-engine-linux.sh from the same unity-embed commit."
+fi
+printf '%s\n' "$old_dll" "$old_mac" "$old_so" "$keep" | grep -v '^$' > "$root/engine/VERSION.new"
 mv "$root/engine/VERSION.new" "$root/engine/VERSION"
 echo "Commit engine/ with the binding change."

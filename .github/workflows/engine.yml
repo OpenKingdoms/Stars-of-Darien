@@ -1,0 +1,233 @@
+# Builds the engine for Windows and Linux on GitHub from a unity-embed
+# commit, so no Windows machine has to. A dispatch on main
+# checks both libraries and pushes them to the pc-engine branch as one
+# commit that touches only engine/, ready for a pull request into main.
+# Its new VERSION then starts the Mac engine workflow for the same commit.
+# A pull request that changes this workflow or its scripts builds and
+# checks what main names, and publishes nothing.
+name: Windows and Linux engine
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/engine.yml
+      - scripts/build-engine-linux.sh
+      - scripts/check-engine.sh
+      - scripts/publish-engine.sh
+  workflow_dispatch:
+    inputs:
+      embed:
+        description: The unity-embed commit to build, the branch's newest by default
+        required: false
+        default: ""
+      force:
+        description: Build even when main already has both libraries from that commit
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      embed: ${{ steps.plan.outputs.embed }}
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Decide what to build
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EMBED: ${{ inputs.embed }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          api=$(grep -o 'ApiVersion = [0-9]*' unity/Assets/Engine/OkEngine.cs | grep -o '[0-9]*$')
+          embed_of() { sed -n "s/^$1 .*unity-embed \([0-9a-f]\{7,40\}\).*/\1/p" engine/VERSION | head -1; }
+          full() { [ -z "$1" ] || gh api "repos/OpenKingdoms/OpenKingdoms/commits/$1" --jq .sha; }
+          dll=$(embed_of "okengine-api$api\.dll")
+          so=$(embed_of "okengine-api$api\.so")
+          # A dispatch builds what it is asked for, a pull request what main names.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then want="${EMBED:-unity-embed}"; else want="$dll"; fi
+          [ -n "$want" ] || { echo "::error::engine/VERSION names no unity-embed commit for okengine-api$api.dll"; exit 1; }
+          embed=$(full "$want") || { echo "::error::unity-embed $want is not on GitHub"; exit 1; }
+          publish=false
+          [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] || [ "$GITHUB_REF" != refs/heads/main ] || publish=true
+          build=true
+          if [ "$publish" = true ] && [ "$FORCE" != true ] && [ -f "engine/okengine-api$api.dll" ] && [ -f "engine/okengine-api$api.so" ] \
+              && [ "$(full "$dll" || true)" = "$embed" ] && [ "$(full "$so" || true)" = "$embed" ]; then
+              build=false
+              echo "Main's Windows and Linux libraries already come from unity-embed ${embed:0:10}, so nothing was built." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "binding API $api, Windows library from unity-embed ${dll:-none}, Linux library from ${so:-none}"
+          echo "build $embed: $build, publish to pc-engine: $publish"
+          { echo "embed=$embed"; echo "build=$build"; echo "publish=$publish"; } >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      EMBED: ${{ needs.plan.outputs.embed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: OpenKingdoms/OpenKingdoms
+          ref: ${{ needs.plan.outputs.embed }}
+          path: okengine
+          persist-credentials: false
+
+      # As scripts/build-engine.sh does: MSVC, Release, SDL from vcpkg and no FFmpeg.
+      - name: Build okengine for Windows x64
+        shell: bash
+        run: |
+          build="$RUNNER_TEMP/embed64"
+          cmake -S okengine -B "$build" -A x64 \
+              -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" \
+              -DVCPKG_TARGET_TRIPLET=x64-windows -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON -DTAK_BUILD_EMBED=ON
+          cmake --build "$build" --config Release --target okengine --parallel
+          msvc=$(sed -n 's/^set(CMAKE_C_COMPILER_VERSION "\(.*\)")/\1/p' "$build"/CMakeFiles/*/CMakeCCompiler.cmake 2> /dev/null | head -1 || true)
+          sdl=$(sed -n 's/^set(PACKAGE_VERSION "\(.*\)")/\1/p' "$build"/vcpkg_installed/x64-windows/share/sdl2/*ersion.cmake 2> /dev/null | head -1 || true)
+          echo "generator $(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$build/CMakeCache.txt"), MSVC $msvc, SDL ${sdl:-unknown} from vcpkg"
+          mkdir -p publish
+          cp "$build/src/Release/okengine.dll" publish/
+          echo "Windows x64 built on GitHub with MSVC $msvc against SDL ${sdl:-2} from vcpkg, unity-embed ${EMBED:0:7}" > publish/VERSION.txt
+          cat publish/VERSION.txt
+
+      - name: Attach the library
+        uses: actions/upload-artifact@v7
+        with:
+          name: okengine-windows-x64-${{ needs.plan.outputs.embed }}
+          path: publish/
+          if-no-files-found: error
+          retention-days: 90
+
+  linux:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    # Built on 22.04, so the library runs on glibc 2.35 and later.
+    container: ubuntu:22.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Get the build tools
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              build-essential cmake ninja-build git curl ca-certificates file \
+              libasound2-dev libpulse-dev libpipewire-0.3-dev > /dev/null
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v7
+        with:
+          path: sod
+          persist-credentials: false
+
+      - uses: actions/checkout@v7
+        with:
+          repository: OpenKingdoms/OpenKingdoms
+          ref: ${{ needs.plan.outputs.embed }}
+          path: okengine
+          persist-credentials: false
+
+      - name: Build okengine for Linux x86_64
+        run: |
+          echo "build host: $(. /etc/os-release; echo "$PRETTY_NAME"), $(ldd --version | head -1), $(gcc --version | head -1), $(cmake --version | head -1)"
+          OK_ENGINE_SRC="$GITHUB_WORKSPACE/okengine" OK_ENGINE_BUILD="$GITHUB_WORKSPACE/build" OK_GAME_DIR=/nonexistent \
+              bash sod/scripts/build-engine-linux.sh
+          cat build/publish/VERSION-linux.txt
+
+      - name: Check the library
+        run: bash sod/scripts/check-engine.sh build/publish/libokengine.so
+
+      - name: Keep the build logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: okengine-linux-logs
+          path: build/*.log
+          retention-days: 14
+
+      - name: Attach the library
+        uses: actions/upload-artifact@v7
+        with:
+          name: okengine-linux-x86_64-${{ needs.plan.outputs.embed }}
+          path: |
+            build/publish/libokengine.so
+            build/publish/VERSION-linux.txt
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: [plan, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      EMBED: ${{ needs.plan.outputs.embed }}
+    steps:
+      # Only a publishing run keeps the token that can push.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: ${{ needs.plan.outputs.publish == 'true' }}
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: okengine-*-${{ needs.plan.outputs.embed }}
+          path: ${{ runner.temp }}/publish
+          merge-multiple: true
+
+      # The SDL2.dll already in engine/ goes out with the new library, once
+      # it is shown to export every SDL function the library imports.
+      - name: Check both libraries and put them in engine/
+        run: |
+          pub="$RUNNER_TEMP/publish"
+          cp engine/SDL2.dll "$pub/SDL2.dll"
+          bash scripts/check-engine.sh "$pub/okengine.dll"
+          bash scripts/check-engine.sh "$pub/libokengine.so"
+          bash scripts/publish-engine.sh "$pub"
+          other=$(git status --porcelain | grep -v -E '^.. engine/(okengine-api[0-9]+\.(dll|so)|SDL2\.dll|VERSION)$' || true)
+          [ -z "$other" ] || { echo "::error::publishing touched more than the Windows and Linux libraries: $other"; exit 1; }
+          git status --short
+          cat engine/VERSION
+
+      - name: Put it on the pc-engine branch
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A engine
+          git commit -q -m "Windows and Linux run the engine built from unity-embed ${EMBED:0:10}" \
+              -m "GitHub built okengine for Windows x64 and Linux x86_64 from OpenKingdoms unity-embed $EMBED and checked both in $RUN_URL. Merging this brings every Windows and Linux clone the same engine with a git pull, and its VERSION starts the Mac build of that commit."
+          git push --force origin HEAD:refs/heads/pc-engine
+          base=$(git rev-parse --short HEAD~1)
+          {
+              echo "The Windows and Linux libraries from unity-embed ${EMBED:0:10} are on the [pc-engine branch](${{ github.server_url }}/${{ github.repository }}/tree/pc-engine), one commit on main $base that touches only engine/."
+              echo ""
+              echo "Land it on main:"
+              echo ""
+              echo '```'
+              echo "gh pr create -R ${{ github.repository }} --base main --head pc-engine --fill"
+              echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Say nothing was published
+        if: needs.plan.outputs.publish != 'true'
+        run: echo "Built and checked the libraries from unity-embed ${EMBED:0:10}. Only a dispatch on main publishes." >> "$GITHUB_STEP_SUMMARY"
