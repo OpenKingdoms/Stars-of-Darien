@@ -1,4 +1,4 @@
 okengine-api23.dll  okengine API 23, Windows x64 built on GitHub with MSVC 19.51.36260.0 against SDL 2.32.10 from vcpkg, unity-embed b060f97, published at openkingdoms-unity a9fb0c1
 SDL2.dll            SDL 2, the build okengine links against (zlib license)
-okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed 4f9f118, published at openkingdoms-unity 6034232
+okengine-api23.dylib  okengine API 23 for macOS arm64 with SDL 2.32.10 linked in, unity-embed b060f97, published at openkingdoms-unity 009d728
 okengine-api23.so  okengine API 23 for Linux x86_64 with SDL 2.32.10 linked in, glibc 2.34 or later, unity-embed b060f97, published at openkingdoms-unity a9fb0c1
