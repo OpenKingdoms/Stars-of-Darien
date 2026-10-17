@@ -31,11 +31,13 @@ Models are in map cells. One Blender or glTF unit is one cell, which is 16 pixel
 
 ### Pieces
 
-A unit model can move with the original's animation. Any node whose name matches a piece of the original model (for example `torso`, `head`, `larm`) follows that piece's pose from the unit script. Everything else rides the unit's root. The piece names are listed in the Unit Browser.
+A unit model can move with the original's animation. Any node whose name matches a piece of the original model (for example `torso`, `head`, `larm`) follows that piece's pose from the unit script. Everything else rides the unit's root. The piece names are listed in the Unit Browser. The script turns each piece about the original's own pivot and moves its parts from where they lie in the model at rest, so model every part at rest where the original's piece is. When the script throws a piece as the unit dies, the parts that follow it fly off together. The unit keeps the original's selection ring and health bar.
+
+`tools/units` holds a Blender kit for whole units built this way. It reads the original's pieces, pivots and hierarchy from the player's own game files, so a model built on it is animated by the original's script, and it renders the model beside the original and through the script's own animations for review. `tools/units/elsin.py`, Aramon's monarch, is the first unit made with it.
 
 ### Materials
 
-Plain lit materials work best: a base colour texture and a plain emissive colour for anything that glows. The loader reads a glow as the brightest channel of the emissive colour times the base colour, so give glowing parts a bright base colour too. Transparent pixels in the base colour are cut out, so leaves and fences can be painted on cards. Every drop-in model casts and takes shadows like the originals.
+Plain lit materials work best: a base colour texture and a plain emissive colour for anything that glows. A material may also carry a normal map and a metal and roughness picture, as glTF has them, and the game reads both as data, so fine detail can live in the pictures rather than in triangles. A unit's material with "team" in its name, such as `teamcolor`, takes the colour of the player who owns the unit, multiplied over its own, so paint those parts in light greys. The loader reads a glow as the brightest channel of the emissive colour times the base colour, so give glowing parts a bright base colour too. Transparent pixels in the base colour are cut out, so leaves and fences can be painted on cards. Every drop-in model casts and takes shadows like the originals.
 
 ### Formats and where they load
 

@@ -286,7 +286,7 @@ namespace OpenKingdomsUnity.Studio
             if (sh != StudioSession.Shadows) { StudioSession.Shadows = sh; StudioSession.Stage.SetShadows(sh); StudioSession.Notify(); }
             int team = EditorGUILayout.IntSlider("Team colour", StudioSession.TeamColour, 0, 7);
             if (team != StudioSession.TeamColour) StudioSession.SetTeam(team);
-            GUILayout.Label("Materials with \"team\" in their name take the team colour here. The game does not tint drop-in models yet.", EditorStyles.wordWrappedMiniLabel);
+            GUILayout.Label("Materials with \"team\" in their name take the team colour, here and in the game.", EditorStyles.wordWrappedMiniLabel);
         }
 
         static string Cap(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);

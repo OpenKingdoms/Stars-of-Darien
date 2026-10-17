@@ -18,6 +18,7 @@ namespace OpenKingdomsUnity.Game.World
 
         static readonly Dictionary<string, OverrideModel> plain = new Dictionary<string, OverrideModel>();
         static readonly Dictionary<string, GameObject> templates = new Dictionary<string, GameObject>();
+        static readonly Dictionary<(Material, Color32), Material> tinted = new Dictionary<(Material, Color32), Material>();
 
         // The folder that Assets/Overrides paths start from: the project in
         // the editor, and in a built player its StreamingAssets, where the
@@ -30,7 +31,26 @@ namespace OpenKingdomsUnity.Game.World
             plain.Clear();
             foreach (var t in templates.Values) if (t != null) Looks.Release(t);
             templates.Clear();
+            foreach (var m in tinted.Values) Looks.Release(m);
+            tinted.Clear();
         }
+
+        // A team material in a player's colour: its own colour times the
+        // player's, as Studio Mode previews it. One per material and colour.
+        public static Material Tinted(Material m, Color32 colour)
+        {
+            if (m == null) return null;
+            if (tinted.TryGetValue((m, colour), out var t) && t != null) return t;
+            t = new Material(m) { name = m.name + " " + colour, hideFlags = HideFlags.DontSave };
+            Color c = colour;
+            t.color = new Color(m.color.r * c.r, m.color.g * c.g, m.color.b * c.b, m.color.a);
+            return tinted[(m, colour)] = t;
+        }
+
+        public static bool IsTeam(Material m) => m != null && m.name.IndexOf("team", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        // Whether a material has been drawn in a colour, for tests.
+        public static bool HasTinted(Material m, Color32 colour) => m != null && tinted.ContainsKey((m, colour));
 
         public static OverrideIndex EnsureIndex()
         {
@@ -76,6 +96,7 @@ namespace OpenKingdomsUnity.Game.World
             public Matrix4x4 NodeToRoot;
             public int Piece;           // -1 to ride the model root
             public bool Flat;           // a decal on the ground, which casts no shadow
+            public bool Team;           // takes the owner's colour, its material named for the team
         }
 
         public string Path;
@@ -110,7 +131,7 @@ namespace OpenKingdomsUnity.Game.World
                     var mat = s < mats.Length ? mats[s] : mats.Length > 0 ? mats[mats.Length - 1] : null;
                     if (mat == null) continue;
                     var toModel = toRoot * r.transform.localToWorldMatrix;
-                    o.Parts.Add(new Part { Mesh = mesh, Submesh = s, Material = mat, NodeToRoot = toModel, Piece = piece, Flat = Height(mesh.bounds, toModel) < 0.1f });
+                    o.Parts.Add(new Part { Mesh = mesh, Submesh = s, Material = mat, NodeToRoot = toModel, Piece = piece, Flat = Height(mesh.bounds, toModel) < 0.1f, Team = OverrideLoader.IsTeam(mat) });
                 }
             }
             return o;

@@ -215,6 +215,8 @@ SDL 2 keeps its zlib licence, and the fonts Cinzel, EB Garamond and Uncial Antiq
 
 Total Annihilation: Kingdoms was made by Cavedog Entertainment and came out in 1999. Stars of Darien exists because of it.
 
+The assets from elsewhere that went into the models are listed in [docs/ASSET_CREDITS.md](docs/ASSET_CREDITS.md).
+
 <table>
   <tr>
     <td align="center" valign="top" width="20%">

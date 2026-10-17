@@ -33,7 +33,8 @@ namespace OpenKingdomsUnity.Game.World
         Vector3 Jitter(float s) => new Vector3(Rand() - 0.5f, Rand() - 0.5f, Rand() - 0.5f) * (2f * s);
 
         // Throws one piece. show false only hides it, for a unit nobody sees.
-        public void Throw(in PieceEvent e, PresentedModel model, bool building, bool show)
+        // A drop-in model's team parts fly in the owner's colour.
+        public void Throw(in PieceEvent e, PresentedModel model, bool building, bool show, Color32? team = null)
         {
             if (model == null || e.Piece < 0 || e.Piece >= model.Pieces.Length) return;
             // Only the picture of an explosion, the piece stays.
@@ -46,7 +47,7 @@ namespace OpenKingdomsUnity.Game.World
             bool shatter = (e.How & PieceExplode.Shatter) != 0;
             bool onHit = (e.How & PieceExplode.ExplodeOnHit) != 0;
             var trail = e.How & (PieceExplode.Smoke | PieceExplode.Fire);
-            if (model.Override != null) { ThrowParts(e, model, world, interior, trail, onHit); return; }
+            if (model.Override != null) { ThrowParts(e, model, world, interior, trail, onHit, team ?? new Color32(255, 255, 255, 255)); return; }
             var mesh = model.Pieces[e.Piece];
             if (mesh == null) return;
             var centre = world.MultiplyPoint3x4(mesh.bounds.center);
@@ -76,7 +77,7 @@ namespace OpenKingdomsUnity.Game.World
 
         // A drop-in model's parts that follow the piece, thrown together: one
         // speed and spin about their common middle, so they fly as one until they land.
-        void ThrowParts(in PieceEvent e, PresentedModel model, Matrix4x4 world, Interior interior, PieceExplode trail, bool onHit)
+        void ThrowParts(in PieceEvent e, PresentedModel model, Matrix4x4 world, Interior interior, PieceExplode trail, bool onHit, Color32 team)
         {
             var centre = Vector3.zero;
             int n = 0;
@@ -91,7 +92,8 @@ namespace OpenKingdomsUnity.Game.World
                 if (part.Piece != e.Piece || part.Mesh == null) continue;
                 var m = world * model.RestInverse[e.Piece] * part.NodeToRoot;
                 var pb = part.Mesh.bounds;
-                var draws = new[] { new ChunkDraw { Mesh = part.Mesh, Submesh = part.Submesh, Material = cache.ChunkMaterial(part.Material, interior) } };
+                var mat = part.Team ? OverrideLoader.Tinted(part.Material, team) : part.Material;
+                var draws = new[] { new ChunkDraw { Mesh = part.Mesh, Submesh = part.Submesh, Material = cache.ChunkMaterial(mat, interior) } };
                 debris.Spawn(draws, m, pb.center, Corners(pb), v + Vector3.Cross(w, m.MultiplyPoint3x4(pb.center) - centre), w, 0f, 0, -1, trail, onHit);
             }
         }

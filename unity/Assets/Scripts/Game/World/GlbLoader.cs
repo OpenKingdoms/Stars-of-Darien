@@ -69,7 +69,7 @@ namespace OpenKingdomsUnity.Game.World
             public byte[] Bin;
             public int BinStart, BinLen;
             public readonly Dictionary<int, Material> Materials = new Dictionary<int, Material>();
-            public readonly Dictionary<int, Texture2D> Textures = new Dictionary<int, Texture2D>();
+            public readonly Dictionary<(int, bool), Texture2D> Textures = new Dictionary<(int, bool), Texture2D>();
             public string Name;
             public Faces Faces;
         }
@@ -212,6 +212,8 @@ namespace OpenKingdomsUnity.Game.World
             bool haveNormals = false;
             foreach (var nv in norms) if (nv != Vector3.zero) { haveNormals = true; break; }
             if (haveNormals) mesh.SetNormals(norms); else mesh.RecalculateNormals();
+            foreach (var mat in mats)
+                if (mat != null && mat.IsKeywordEnabled("_NORMALMAP")) { mesh.RecalculateTangents(); break; }
             mesh.RecalculateBounds();
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             go.AddComponent<MeshRenderer>().sharedMaterials = mats.ToArray();
@@ -235,6 +237,7 @@ namespace OpenKingdomsUnity.Game.World
             if (paint != null) m.color = PaintColour(paint, extras, m.color, tex != null);
             m.SetFloat("_Glossiness", (1f - (float)MiniJson.Num(pbr, "roughnessFactor", 1)) * 0.5f);
             Physical(ctx, json, pbr, m);
+            Bumps(ctx, json, m);
             // A plain emissive colour becomes the shader's self light.
             var glow = MiniJson.Arr(json, "emissiveFactor");
             if (glow != null && glow.Count == 3 && MiniJson.Obj(json, "emissiveTexture") == null)
@@ -268,7 +271,7 @@ namespace OpenKingdomsUnity.Game.World
             var mrt = MiniJson.Obj(pbr, "metallicRoughnessTexture");
             if (mrt != null)
             {
-                var tex = TextureFor(ctx, MiniJson.Int(mrt, "index"));
+                var tex = TextureFor(ctx, MiniJson.Int(mrt, "index"), true);
                 if (tex != null) m.SetTexture("_MetalRoughMap", tex);
             }
             var coat = MiniJson.Obj(MiniJson.Obj(json, "extensions"), "KHR_materials_clearcoat");
@@ -282,6 +285,19 @@ namespace OpenKingdomsUnity.Game.World
                     m.SetFloat("_ClearCoatSmoothness", 1f - (float)MiniJson.Num(coat, "clearcoatRoughnessFactor", 0));
                 }
             }
+        }
+
+        // The glTF normal map, in tangent space, read as data. The meshes
+        // that wear one get tangents (AddMesh).
+        static void Bumps(Ctx ctx, object json, Material m)
+        {
+            var nt = MiniJson.Obj(json, "normalTexture");
+            if (nt == null) return;
+            var tex = TextureFor(ctx, MiniJson.Int(nt, "index"), true);
+            if (tex == null) return;
+            m.SetTexture("_BumpMap", tex);
+            m.SetFloat("_BumpScale", (float)MiniJson.Num(nt, "scale", 1));
+            m.EnableKeyword("_NORMALMAP");
         }
 
         // A soft glow or halo: drawn after the solid world, blended over it,
@@ -738,12 +754,15 @@ namespace OpenKingdomsUnity.Game.World
             return json is Dictionary<string, object> d && d.TryGetValue("doubleSided", out var ds) && ds is bool b && b;
         }
 
-        static Texture2D TextureFor(Ctx ctx, int index)
+        // A picture by texture index: colour unless linear, for pictures that
+        // hold data, a normal map or metal and roughness. Textures naming the
+        // same image share one picture, as an atlas's materials do.
+        static Texture2D TextureFor(Ctx ctx, int index, bool linear = false)
         {
             if (index < 0) return null;
-            if (ctx.Textures.TryGetValue(index, out var t)) return t;
             var texJson = MiniJson.Arr(ctx.Json, "textures")[index];
             int src = MiniJson.Int(texJson, "source");
+            if (ctx.Textures.TryGetValue((src, linear), out var t)) return t;
             var img = src >= 0 ? MiniJson.Arr(ctx.Json, "images")[src] : null;
             int view = MiniJson.Int(img, "bufferView");
             if (view >= 0)
@@ -751,7 +770,7 @@ namespace OpenKingdomsUnity.Game.World
                 View(ctx, view, out int off, out int len, out _);
                 var bytes = new byte[len];
                 Buffer.BlockCopy(ctx.Bin, off, bytes, 0, len);
-                t = new Texture2D(2, 2, TextureFormat.RGBA32, true) { hideFlags = HideFlags.DontSave, name = MiniJson.Text(img, "name", "glb texture") };
+                t = new Texture2D(2, 2, TextureFormat.RGBA32, true, linear) { hideFlags = HideFlags.DontSave, name = MiniJson.Text(img, "name", "glb texture") };
                 if (!t.LoadImage(bytes)) t = null;
                 else
                 {
@@ -760,7 +779,7 @@ namespace OpenKingdomsUnity.Game.World
                     t.anisoLevel = 4;
                 }
             }
-            ctx.Textures[index] = t;
+            ctx.Textures[(src, linear)] = t;
             return t;
         }
 
