@@ -238,7 +238,7 @@ namespace OpenKingdomsUnity.Game.World
                 building.Enqueue((ModelsPart, () =>
                 {
                     if (Models.WarmMaterial(unitModel)) return false;
-                    Models.Get(unitModel);
+                    Models.Get(unitModel, OverrideKind.Unit, backend.UnitDefs[unitDef].ModelNames);
                     Entities.WarmFlight(unitDef, unitModel);
                     return true;
                 }));
@@ -253,7 +253,7 @@ namespace OpenKingdomsUnity.Game.World
                     {
                         model ??= backend.LoadModel(backend.UnitDefs[option].ObjectName, colour);
                         if (Models.WarmMaterial(model.Value)) return false;
-                        Models.Get(model.Value);
+                        Models.Get(model.Value, OverrideKind.Unit, backend.UnitDefs[option].ModelNames);
                         Entities.WarmFlight(option, model.Value);
                         return true;
                     }));

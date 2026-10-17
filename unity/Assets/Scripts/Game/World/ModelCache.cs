@@ -16,6 +16,7 @@ namespace OpenKingdomsUnity.Game.World
         public Matrix4x4[] RestInverse;   // per piece, world scale, for overrides that follow pieces
         public Matrix4x4 Unscale;         // right-multiplies a backend pose to suit the scaled meshes
         public Bounds RestBounds;         // the whole model at rest, world units, from its root
+        public bool Named;                // its override was looked for under the names it goes by
     }
 
     public sealed class ModelCache
@@ -55,23 +56,36 @@ namespace OpenKingdomsUnity.Game.World
         public PresentedModel Get(int id) => Get(id, OverrideKind.Unit, null);
 
         // A model, with the drop-in override found under any of the names.
+        // A model first asked for without names, as the loading screen warms
+        // it, looks for its override the first time names come with it.
         public PresentedModel Get(int id, OverrideKind kind, string[] names)
         {
             if (id < 0) return null;
-            if (models.TryGetValue(id, out var m)) return m;
+            if (models.TryGetValue(id, out var m))
+            {
+                if (m != null && !m.Named && names != null) FindOverride(m, kind, names);
+                return m;
+            }
             var data = backend.GetModel(id);
             m = data != null ? Build(data) : null;
             if (m != null)
             {
                 m.Unscale = Matrix4x4.Scale(Vector3.one / Mathf.Max(1e-12f, data.Scale));
-                var all = new List<string>();
-                if (names != null) all.AddRange(names);
-                all.Add(data.Name);
-                m.Override = OverrideLoader.Find(kind, data.Pieces, all.ToArray());
-                if (m.Override != null) m.RestInverse = OverrideModel.RestInverse(data.Pieces, data.Scale);
+                FindOverride(m, kind, names);
             }
             models[id] = m;
             return m;
+        }
+
+        static void FindOverride(PresentedModel m, OverrideKind kind, string[] names)
+        {
+            var data = m.Data;
+            var all = new List<string>();
+            if (names != null) all.AddRange(names);
+            all.Add(data.Name);
+            m.Override = OverrideLoader.Find(kind, data.Pieces, all.ToArray());
+            m.RestInverse = m.Override != null ? OverrideModel.RestInverse(data.Pieces, data.Scale) : null;
+            m.Named = names != null;
         }
 
         // Makes one material the model still lacks, for a loading screen

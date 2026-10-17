@@ -154,6 +154,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             public SeatKind Kind;
             public int Team, Start;
             public AiDifficulty Difficulty;
+            public int? Colour;     // the seat's own number when left out
 
             public static Seat You(string side, int start = -1) => new Seat { Side = side, Kind = SeatKind.Human, Team = 0, Start = start };
             public static Seat Ai(string side, int team, int start = -1, AiDifficulty d = AiDifficulty.Easy) =>
@@ -191,7 +192,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             s.RandomStarts = false;
             s.Seats.Clear();
             for (int i = 0; i < seats.Length; i++)
-                s.Seats.Add(new SeatSetup { Kind = seats[i].Kind, Side = seats[i].Side, Colour = i, Team = seats[i].Team, Start = seats[i].Start, Difficulty = seats[i].Difficulty });
+                s.Seats.Add(new SeatSetup { Kind = seats[i].Kind, Side = seats[i].Side, Colour = seats[i].Colour ?? i, Team = seats[i].Team, Start = seats[i].Start, Difficulty = seats[i].Difficulty });
             Root.Screens.StartGame();
             float deadline = Time.realtimeSinceStartup + 300f;
             while (Root.Flow.State != FlowState.Playing && Time.realtimeSinceStartup < deadline) yield return null;

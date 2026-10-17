@@ -253,13 +253,17 @@ namespace OpenKingdomsUnity.Game.World
             chipsThisFrame++;
         }
 
+        // Throws a piece as the engine's piece events do. Tests throw one by hand.
+        public void ThrowPiece(in PieceEvent e) => OnPiece(e);
+
         void OnPiece(in PieceEvent e)
         {
             var def = e.Def >= 0 && e.Def < backend.UnitDefs.Count ? backend.UnitDefs[e.Def] : null;
             if (def != null && CardOverride.For(def.ObjectName) != null) return;
             var model = models.Get(e.Model, OverrideKind.Unit, def?.ModelNames);
             bool show = !e.OutOfSight && InView(e.Pose.GetColumn(3), 6f);
-            pieceFalls.Throw(e, model, def != null && def.IsBuilding, show);
+            var owner = backend.PlayerById(e.Player);
+            pieceFalls.Throw(e, model, def != null && def.IsBuilding, show, owner != null ? owner.Tint : (Color32)Color.white);
         }
 
         void StepDebris(Camera cam)

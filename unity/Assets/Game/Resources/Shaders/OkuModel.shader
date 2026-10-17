@@ -29,6 +29,8 @@ Shader "OpenKingdoms/Presentation/Model"
         _Metallic ("Metallic", Range(0, 1)) = 0
         _Smoothness ("Smoothness, lit physically", Range(0, 1)) = 0.5
         _MetalRoughMap ("Metal (b) and roughness (g)", 2D) = "white" {}
+        _BumpMap ("Normal map", 2D) = "bump" {}
+        _BumpScale ("Normal strength", Float) = 1
         _ClearCoat ("Clear coat", Range(0, 1)) = 0
         _ClearCoatSmoothness ("Clear coat smoothness", Range(0, 1)) = 1
         _Interior ("Back faces show the interior", Float) = 0
@@ -44,6 +46,7 @@ Shader "OpenKingdoms/Presentation/Model"
         TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
         TEXTURE2D(_EmissionMap); SAMPLER(sampler_EmissionMap);
         TEXTURE2D(_MetalRoughMap); SAMPLER(sampler_MetalRoughMap);
+        TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
         CBUFFER_START(UnityPerMaterial)
             float4 _MainTex_ST;
             half4 _Color;
@@ -54,8 +57,9 @@ Shader "OpenKingdoms/Presentation/Model"
             half _Metallic, _Smoothness, _ClearCoat, _ClearCoatSmoothness;
             half _Interior;
             half4 _InteriorColor;
+            half _BumpScale;
         CBUFFER_END
-        struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
+        struct Attributes { float4 positionOS : POSITION; float3 normalOS : NORMAL; float4 tangentOS : TANGENT; float2 uv : TEXCOORD0; half4 color : COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
         // Something being built: solid up to the cut, a glowing edge just
         // under it, and above it a faint screen-door ghost in team colour.
         float _BuildCut;        // world height of the cut
@@ -210,9 +214,11 @@ Shader "OpenKingdoms/Presentation/Model"
             #pragma multi_compile_local _ _EMISSION
             #pragma multi_compile_local _ _OKU_PBR
             #pragma multi_compile_local _ _CLEARCOAT
+            // A drop-in model's normal map, multi_compile for the same reason.
+            #pragma multi_compile_local _ _NORMALMAP
             #include "../../Shaders/OkuLit.hlsl"
             #include "../../Shaders/OkuFog.hlsl"
-            struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; nointerpolation float fade : TEXCOORD4; float2 slit : TEXCOORD5; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct Varyings { float4 positionCS : SV_POSITION; float3 positionWS : TEXCOORD0; half3 normalWS : TEXCOORD1; float2 uv : TEXCOORD2; half4 color : COLOR; half fog : TEXCOORD3; nointerpolation float fade : TEXCOORD4; float2 slit : TEXCOORD5; half4 tangentWS : TEXCOORD6; UNITY_VERTEX_INPUT_INSTANCE_ID };
             Varyings vert(Attributes v)
             {
                 Varyings o;
@@ -221,6 +227,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 o.positionWS = OkuSceneryBend(TransformObjectToWorld(v.positionOS.xyz), UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuBend), UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuFoot), o.slit);
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
+                o.tangentWS = half4(TransformObjectToWorldDir(v.tangentOS.xyz), v.tangentOS.w * GetOddNegativeScale());
                 o.uv = TRANSFORM_TEX(v.uv, _MainTex);
                 o.color = v.color;
                 o.fog = ComputeFogFactor(o.positionCS.z);
@@ -236,9 +243,19 @@ Shader "OpenKingdoms/Presentation/Model"
                 float4 mark = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuMark);
                 float4 heat = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuHeat);
                 OkuSceneryClip(c.rgb, i.positionWS, heat.y, i.slit);
+                half3 n = normalize(i.normalWS);
+            #if defined(_NORMALMAP)
+                // Tangent space, the map's green toward +v, read as data.
+                half3 nt = SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, i.uv).rgb * 2 - 1;
+                nt.xy *= _BumpScale;
+                half3 t = i.tangentWS.xyz - n * dot(n, i.tangentWS.xyz);
+                t = t * rsqrt(max(dot(t, t), 1e-6));
+                half3 b = cross(n, t) * (i.tangentWS.w < 0 ? -1 : 1);
+                n = normalize(t * nt.x + b * nt.y + n * max(nt.z, 1e-3));
+            #endif
                 // A face seen from behind, where culling is off, is lit as
                 // its other side.
-                half3 n = normalize(i.normalWS) * (front ? 1 : -1);
+                n *= front ? 1 : -1;
                 half gloss = _Glossiness;
                 half3 marked = 0;
                 if (any(mark != 0) || heat.x != 0 || heat.z != 0)

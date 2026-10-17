@@ -63,7 +63,7 @@ namespace OpenKingdomsUnity.Tests
 
         // A triangle with a vertex colour and a material using a picture
         // whose texels are all clear, in the given alpha mode.
-        static byte[] Painted(string alphaMode, string extra = "")
+        static byte[] Painted(string alphaMode, string extra = "", string pbr = "", string textures = "[{\"source\":0}]")
         {
             var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             tex.SetPixels32(new[] { new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0), new Color32(200, 100, 50, 0) });
@@ -80,8 +80,8 @@ namespace OpenKingdomsUnity.Tests
             string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}]," +
                 "\"nodes\":[{\"name\":\"tri\",\"mesh\":0}]," +
                 "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"COLOR_0\":1,\"TEXCOORD_0\":2},\"material\":0}]}]," +
-                "\"materials\":[{" + mat + extra + "\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}]," +
-                "\"textures\":[{\"source\":0}],\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}]," +
+                "\"materials\":[{" + mat + extra + "\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}" + pbr + "}}]," +
+                "\"textures\":" + textures + ",\"images\":[{\"bufferView\":3,\"mimeType\":\"image/png\"}]," +
                 $"\"buffers\":[{{\"byteLength\":{bin.Count}}}]," +
                 "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}," +
                 $"{{\"buffer\":0,\"byteOffset\":72,\"byteLength\":24}},{{\"buffer\":0,\"byteOffset\":{imageAt},\"byteLength\":{png.Length}}}]," +
@@ -189,6 +189,74 @@ namespace OpenKingdomsUnity.Tests
                 Assert.IsTrue(mat.IsKeywordEnabled("_CLEARCOAT"));
                 Assert.AreEqual(0.7f, mat.GetFloat("_ClearCoat"), 1e-4f);
                 Assert.AreEqual(0.9f, mat.GetFloat("_ClearCoatSmoothness"), 1e-4f);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        // A normal map is data: read linear, apart from the same picture
+        // used as colour, and the mesh that wears it gets tangents.
+        [Test]
+        public void ANormalMapIsReadAsDataAndItsMeshGetsTangents()
+        {
+            var root = GlbLoader.Load(Painted("OPAQUE", "\"normalTexture\":{\"index\":0,\"scale\":0.8},"), "bumped", out var error);
+            Assert.IsNull(error);
+            var plain = GlbLoader.Load(Painted("OPAQUE"), "plain", out _);
+            try
+            {
+                var r = root.GetComponentInChildren<MeshRenderer>(true);
+                var mat = r.sharedMaterial;
+                Assert.IsTrue(mat.IsKeywordEnabled("_NORMALMAP"), "the normal map is on");
+                var bump = mat.GetTexture("_BumpMap") as Texture2D;
+                Assert.IsNotNull(bump);
+                Assert.IsFalse(bump.isDataSRGB, "a normal map is data, not colour");
+                Assert.AreEqual(0.8f, mat.GetFloat("_BumpScale"), 1e-4f);
+                var colour = mat.mainTexture as Texture2D;
+                Assert.IsNotNull(colour);
+                Assert.IsTrue(colour.isDataSRGB, "the same picture as colour stays colour");
+                Assert.AreNotSame(colour, bump);
+                var mesh = r.GetComponent<MeshFilter>().sharedMesh;
+                Assert.AreEqual(mesh.vertexCount, mesh.tangents.Length, "tangents for the normal map");
+                Assert.Greater(mesh.tangents[0].sqrMagnitude, 0.5f);
+                var pm = plain.GetComponentInChildren<MeshRenderer>(true);
+                Assert.IsFalse(pm.sharedMaterial.IsKeywordEnabled("_NORMALMAP"), "no normal map, no keyword");
+                Assert.AreEqual(0, pm.GetComponent<MeshFilter>().sharedMesh.tangents.Length, "and no tangents");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+                UnityEngine.Object.DestroyImmediate(plain);
+            }
+        }
+
+        // An atlas's materials each name their own texture of one image: the
+        // picture is read once and shared.
+        [Test]
+        public void TexturesOfOneImageShareOnePicture()
+        {
+            string extra = "\"emissiveFactor\":[1,1,1],\"emissiveTexture\":{\"index\":1},";
+            var root = GlbLoader.Load(Painted("OPAQUE", extra, "", "[{\"source\":0},{\"source\":0}]"), "atlas", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                Assert.IsNotNull(mat.mainTexture);
+                Assert.AreSame(mat.mainTexture, mat.GetTexture("_EmissionMap"), "one picture for both");
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        // Metal and roughness in a picture are data too.
+        [Test]
+        public void TheMetalAndRoughnessPictureIsReadAsData()
+        {
+            var root = GlbLoader.Load(Painted("OPAQUE", "", ",\"metallicRoughnessTexture\":{\"index\":0}"), "mr", out var error);
+            Assert.IsNull(error);
+            try
+            {
+                var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                var mr = mat.GetTexture("_MetalRoughMap") as Texture2D;
+                Assert.IsNotNull(mr);
+                Assert.IsFalse(mr.isDataSRGB);
             }
             finally { UnityEngine.Object.DestroyImmediate(root); }
         }

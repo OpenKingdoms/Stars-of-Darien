@@ -687,7 +687,8 @@ namespace OpenKingdomsUnity.Game.World
             if (model != null && model.Override != null)
             {
                 int n = posedCount = Pose(u, def, model, sway, out air);
-                AddOverride(model, n, u.Handle);
+                var owner = backend.PlayerById(u.Player);
+                AddOverride(model, n, u.Handle, owner != null ? owner.Tint : (Color32)Color.white);
             }
             else if (model != null)
             {
@@ -711,6 +712,10 @@ namespace OpenKingdomsUnity.Game.World
                     var mats = model.Materials[p];
                     for (int s = 0; s < mats.Length; s++) Put(mesh, s, mats[s], posed[p]);
                 }
+            }
+            if (model != null)
+            {
+                // A drop-in model takes the original's ring and bar, sized by the original at rest.
                 var b = model.RestBounds;
                 height = Mathf.Max(Mathf.Abs(b.max.y), Mathf.Abs(b.min.y)) + 0.4f;
                 radius = Mathf.Clamp(Mathf.Max(b.extents.x, b.extents.z) * 0.9f, 0.4f, 6f);
@@ -788,8 +793,8 @@ namespace OpenKingdomsUnity.Game.World
 
         // A drop-in model: parts named like a piece follow that piece, the
         // rest ride the root. Overrides are in cells, so the model's own
-        // unit scale comes off first.
-        void AddOverride(PresentedModel model, int n, int handle)
+        // unit scale comes off first. Team parts take the owner's colour.
+        void AddOverride(PresentedModel model, int n, int handle, Color32 team)
         {
             var d = model.Data;
             int root = 0;
@@ -805,7 +810,7 @@ namespace OpenKingdomsUnity.Game.World
                     m = posed[part.Piece] * model.RestInverse[part.Piece] * part.NodeToRoot;
                 }
                 else m = basis * part.NodeToRoot;
-                Put(part.Mesh, part.Submesh, part.Material, m);
+                Put(part.Mesh, part.Submesh, part.Team ? OverrideLoader.Tinted(part.Material, team) : part.Material, m);
             }
         }
 

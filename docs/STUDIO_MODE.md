@@ -120,7 +120,7 @@ Pressing Play in the editor while Studio Mode is on starts the game from its mai
 
 ## Experimenting
 
-The Look part of the Studio panel changes the stage, not your model. Ground picks a neutral island or a real map's terrain. Climate changes the ground's colour and the sky to grass, snow, desert, swamp or volcanic. Sea turns the water around the neutral island on or off. Weather adds rain, snow or fog, Time of day moves the sun from morning to night, and Shadows turns shadows off and on. Team colour tints any material with "team" in its name, to preview a player's colour on it. The game itself does not tint drop-in models yet.
+The Look part of the Studio panel changes the stage, not your model. Ground picks a neutral island or a real map's terrain. Climate changes the ground's colour and the sky to grass, snow, desert, swamp or volcanic. Sea turns the water around the neutral island on or off. Weather adds rain, snow or fog, Time of day moves the sun from morning to night, and Shadows turns shadows off and on. Team colour tints any material with "team" in its name, to preview a player's colour on it. The game tints a unit's team materials the same way, in the colour of the player who owns it.
 
 The Material part changes your model. Tint and Brightness change its colour, Roughness makes it shinier or duller (untick Keep own roughness first), and Self light makes it glow, for braziers, crystals and magic. Reset the material puts it back. With Self light at 0, a glow you set in Blender shows as it will in the game. The game draws a glow as the brightest part of the emission colour over the part's own colour, so an orange glow on a black surface shows little. Give glowing parts a bright colour of their own.
 
