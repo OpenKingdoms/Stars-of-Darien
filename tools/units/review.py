@@ -78,14 +78,16 @@ def _idle(rig, nodes, poses):
         uk.rest(nodes, rig)
 
 
-def run(rig, nodes, out, rig_json=None, colour=0, samples=48, quick=False):
+def run(rig, nodes, out, rig_json=None, colour=0, samples=48, quick=False, views=None, anims=ANIMS, target=TARGET, dist=8.6):
+    """views and anims replace the defaults for a unit of another size or
+    with other animations, and target and dist frame the turntable and anims."""
     os.makedirs(out, exist_ok=True)
     poses = uk.Poses(rig_json) if rig_json else None
     onodes, coll = uk.original(rig, colour=colour)
     uk.stage()
     manifest = {"views": [], "turn": [], "anims": {}}
     cams = {k: uk.camera("rv_" + k, v.get("target", TARGET), v["yaw"], v["pitch"], v["dist"], v.get("lens", 50), v.get("ortho"))
-            for k, v in VIEWS.items()}
+            for k, v in (views or VIEWS).items()}
     tint()
 
     def both(tag, cam, w, h, s=samples):
@@ -111,12 +113,12 @@ def run(rig, nodes, out, rig_json=None, colour=0, samples=48, quick=False):
     # the turntable: the remaster alone, eight turns, low and level
     _show(coll, None, False)
     for i in range(8):
-        cam = uk.camera("rv_turn", TARGET, i * 45, 8, 8.6, 55)
+        cam = uk.camera("rv_turn", target, i * 45, 8, dist, 55)
         uk.render(os.path.join(out, "turn_%d.png" % i), cam, 600, 600, samples)
         manifest["turn"].append(i * 45)
     if poses is not None:
-        cam = uk.camera("rv_anim", TARGET, 30, 10, 9.5, 50)
-        for anim, f0, f1, count in ANIMS:
+        cam = uk.camera("rv_anim", target, 30, 10, dist * 1.1, 50)
+        for anim, f0, f1, count in anims:
             if anim not in poses.anims:
                 continue
             frames = [round(f0 + (f1 - f0) * j / (count - 1)) for j in range(count)]
