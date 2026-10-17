@@ -504,10 +504,12 @@ namespace OpenKingdomsUnity.Engine
                 var flags = u.state == OkEngine.UnitActive ? UnitFlags.Active : UnitFlags.Dying;
                 if (u.building != 0) flags |= UnitFlags.Building;
                 var at = EngineSettings.ToUnity(u.x, u.y, u.z);
-                if (Floating(u.def, at, out float drawn, out float ground))
+                // The engine poses a unit at the height it reports.
+                float posed = at.y;
+                if (Floating(u.def, at, out float drawn, out _))
                 {
                     at.y = drawn;
-                    lifts[u.handle] = drawn - ground;
+                    lifts[u.handle] = drawn - posed;
                 }
                 into[i] = new UnitState
                 {
@@ -540,8 +542,8 @@ namespace OpenKingdomsUnity.Engine
         }
 
         // A ship is drawn with its origin just under the surface and a
-        // hovering unit on it, from the ground under them, whether the engine
-        // reports them at the sea floor (before API 20) or at the sea.
+        // hovering unit on it, from the ground under them, wherever the
+        // engine reports them.
         bool Floating(int def, Vector3 at, out float drawn, out float ground)
         {
             drawn = ground = at.y;
@@ -618,8 +620,7 @@ namespace OpenKingdomsUnity.Engine
             int nodes = OkEngine.okx_unit_pose(handle, pose, hidden, 128);
             if (nodes <= 0) return 0;
             WritePose(nodes, into, true);
-            // The engine poses a unit on the ground under it, even a floater
-            // it reports at the sea.
+            // Lifted from where the engine poses it to where it is drawn.
             if (into != null && lifts.TryGetValue(handle, out float lift) && lift != 0f)
             {
                 var up = Matrix4x4.Translate(new Vector3(0, lift, 0));
