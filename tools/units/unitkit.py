@@ -557,6 +557,48 @@ def unwrap(obs, margin=0.002, scale=None):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
+def tuck_slivers(obs, size, texels=0.5, anchor=2.0):
+    """Faces too small in the atlas to own a texel (under texels) bake
+    nothing and show whatever lies beside their island. Their UVs are drawn
+    to a point inside the nearest face that owns at least anchor texels, so
+    they take its colour. Returns how many."""
+    count = 0
+    for o in obs:
+        if o.type != "MESH" or not o.data.uv_layers:
+            continue
+        bm = bmesh.new()
+        bm.from_mesh(o.data)
+        uv = bm.loops.layers.uv[o.data.uv_layers[0].name]
+
+        def area(f):
+            p = [l[uv].uv for l in f.loops]
+            a = sum(abs((p[i].x - p[0].x) * (p[i + 1].y - p[0].y) - (p[i + 1].x - p[0].x) * (p[i].y - p[0].y)) for i in range(1, len(p) - 1))
+            return a * 0.5 * size * size
+
+        # a point inside each face that owns texels, then passed on to small faces next to one, ring by ring
+        size_of = {f: area(f) for f in bm.faces}
+        point = {f: sum((l[uv].uv for l in f.loops), Vector((0.0, 0.0))) / len(f.loops) for f in bm.faces if size_of[f] >= anchor}
+        todo = [f for f in bm.faces if f not in point]
+        while todo:
+            later = []
+            for f in todo:
+                g = next((g for e in f.edges for g in e.link_faces if g in point), None)
+                if g is None:
+                    later.append(f)
+                    continue
+                point[f] = point[g].copy()
+                if size_of[f] < texels:
+                    for l in f.loops:
+                        l[uv].uv = point[f]
+                    count += 1
+            if len(later) == len(todo):
+                break
+            todo = later
+        bm.to_mesh(o.data)
+        bm.free()
+    return count
+
+
 def cycles(samples, gpu=True):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -844,27 +886,35 @@ def human_bundle(assets):
     return blend
 
 
-def human_head(assets, eye_z, neck=(0.0, 0.03), scale=2.35, cut_z=None, shape=None):
+def human_head(assets, eye_z, neck=(0.0, 0.03), scale=2.35, cut_z=None, shape=None, source=HUMAN_HEAD, eye=".sclera", multires=0):
     """The bundle's realistic head, its neck's axis standing at neck (x, y)
     and its eyes at height eye_z, scale cells to a metre. shape(p, marks)
     moves a vertex given in the bundle's metres, centred between the eyes,
     for a face of the unit's own. Returns the head and its eyes as
-    (centre, radius) pairs, in this frame; the neck is cut at cut_z."""
+    (centre, radius) pairs, in this frame; the neck is cut at cut_z.
+    source names another of the bundle's meshes with eyes named source +
+    eye + ".L", such as a whole body, and multires keeps that many levels
+    of its sculpted detail."""
     path = human_bundle(assets)
-    names = [HUMAN_HEAD, HUMAN_HEAD + ".sclera.L", HUMAN_HEAD + ".sclera.R"]
+    names = [source, source + eye + ".L", source + eye + ".R"]
     with bpy.data.libraries.load(path, link=False) as (src, dst):
         dst.objects = [n for n in src.objects if n in names]
     objs = {o.name: o for o in dst.objects}
     for o in objs.values():
         bpy.context.scene.collection.objects.link(o)
     bpy.context.view_layer.update()
-    head = objs[HUMAN_HEAD]
+    head = objs[source]
     for m in list(head.modifiers):
-        head.modifiers.remove(m)
+        if m.type == "MULTIRES" and multires:
+            m.levels = min(multires, m.total_levels)
+            bpy.context.view_layer.objects.active = head
+            bpy.ops.object.modifier_apply(modifier=m.name)
+        else:
+            head.modifiers.remove(m)
     mw = head.matrix_world.copy()
     eyes = []
     for side in ("L", "R"):
-        e = objs[HUMAN_HEAD + ".sclera." + side]
+        e = objs[source + eye + "." + side]
         ws = [e.matrix_world @ v.co for v in e.data.vertices]
         c = sum(ws, Vector()) / len(ws)
         r = max((w - c).length for w in ws)
