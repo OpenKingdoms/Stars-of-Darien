@@ -1,7 +1,8 @@
 // Afloat.cs - where a unit over water is drawn. Before API 20 the engine
 // reported every unit at the ground under it, a ship on the sea floor, and
-// now it reports a floater at the sea. Either way the backends draw a
-// ship's origin just under the surface and a hovering unit on it.
+// now it reports and poses a floater at its waterline under the sea. Either
+// way the backends draw a ship's origin just under the surface and a
+// hovering unit on it.
 // Presentation only: the simulation never sees these heights.
 using System;
 using System.Collections.Generic;
