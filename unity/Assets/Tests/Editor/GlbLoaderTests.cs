@@ -133,6 +133,22 @@ namespace OpenKingdomsUnity.Tests
         }
 
         [Test]
+        public void AMaskedModelSoftensItsCutOutEdgesAndAnOpaqueOneDoesNot()
+        {
+            foreach (var (mode, want) in new[] { ("MASK", 1f), ("OPAQUE", 0f) })
+            {
+                var root = GlbLoader.Load(Painted(mode), "painted", out var error);
+                Assert.IsNull(error);
+                try
+                {
+                    var mat = root.GetComponentInChildren<MeshRenderer>(true).sharedMaterial;
+                    Assert.AreEqual(want, mat.GetFloat("_AlphaToMask"), mode);
+                }
+                finally { UnityEngine.Object.DestroyImmediate(root); }
+            }
+        }
+
+        [Test]
         public void AnEmissiveMaterialGlowsAtItsStrength()
         {
             string extra = "\"emissiveFactor\":[1,0.5,0.25],\"emissiveTexture\":{\"index\":0}," +

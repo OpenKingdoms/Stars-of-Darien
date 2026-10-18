@@ -14,6 +14,7 @@ Shader "OpenKingdoms/Presentation/Model"
         _MainTex ("Texture", 2D) = "white" {}
         _Color ("Tint", Color) = (1, 1, 1, 1)
         _Cutoff ("Alpha cutoff", Range(0, 1)) = 0.5
+        _AlphaToMask ("Alpha to coverage", Float) = 0
         _Glossiness ("Smoothness", Range(0, 1)) = 0.2
         _Rim ("Rim light", Range(0, 1)) = 0.3
         _Emission ("Self light", Range(0, 4)) = 0
@@ -50,7 +51,7 @@ Shader "OpenKingdoms/Presentation/Model"
         CBUFFER_START(UnityPerMaterial)
             float4 _MainTex_ST;
             half4 _Color;
-            half _Cutoff, _Glossiness, _Rim, _Cull, _Emission;
+            half _Cutoff, _AlphaToMask, _Glossiness, _Rim, _Cull, _Emission;
             half _OffsetFactor, _OffsetUnits;
             half4 _EmissionColor;
             half _Surface, _SrcBlend, _DstBlend, _ZWrite;
@@ -198,6 +199,7 @@ Shader "OpenKingdoms/Presentation/Model"
             Offset [_OffsetFactor], [_OffsetUnits]
             Blend [_SrcBlend] [_DstBlend]
             ZWrite [_ZWrite]
+            AlphaToMask [_AlphaToMask]
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
@@ -238,7 +240,10 @@ Shader "OpenKingdoms/Presentation/Model"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 c = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, i.uv) * i.color * _Color;
-                clip(c.a - _Cutoff);
+                // A cut-out that asks for it fades its edge over a pixel, as coverage of the samples.
+                half fw = max(fwidth(c.a), 1e-4);
+                half coverage = _AlphaToMask > 0.5 ? saturate((c.a - _Cutoff) / fw + 0.5) : 1;
+                clip(_AlphaToMask > 0.5 ? coverage - 1e-3 : c.a - _Cutoff);
                 OkuFadeClip(i.fade, i.positionCS.xy);
                 float4 mark = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuMark);
                 float4 heat = UNITY_ACCESS_INSTANCED_PROP(OkuPulse, _OkuHeat);
@@ -316,7 +321,7 @@ Shader "OpenKingdoms/Presentation/Model"
                 rgb += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, i.uv).rgb * _EmissionColor.rgb * breath;
             #endif
                 rgb *= OkuFogLight(i.positionWS);
-                return half4(MixFog(rgb, i.fog), _Surface > 0.5 ? c.a : 1);
+                return half4(MixFog(rgb, i.fog), _Surface > 0.5 ? c.a : coverage);
             }
             ENDHLSL
         }
