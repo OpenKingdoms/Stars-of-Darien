@@ -193,6 +193,9 @@ namespace OpenKingdomsUnity.Tests
             var place = LandToward(harpy, home, 18f);
             var stand = place + (home - place).normalized * 6f;
             engine.Command(GameCommand.To(CommandKind.Move, kirenna, stand));
+            // She reaches it before the flock is set down round the start,
+            // where the landed Harpies would box her in.
+            engine.Advance(600);
             const int Count = 30;
             var flock = new List<int>();
             for (int i = 0; i < Count; i++)
