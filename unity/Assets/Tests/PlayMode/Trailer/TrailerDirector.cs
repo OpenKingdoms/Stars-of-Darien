@@ -127,7 +127,7 @@ namespace OpenKingdomsUnity.Tests.Trailer
             Root.Options.Shadows = true;
             Root.Options.PostEffects = true;
             Root.Options.GameSpeed = 1;
-            rt = new RenderTexture(W, H, 24, RenderTextureFormat.ARGB32) { name = "Trailer frame" };
+            rt = new RenderTexture(W, H, 24, RenderTextureFormat.ARGB32) { name = "Trailer frame", antiAliasing = 4 };
             rt.Create();
             tex = new Texture2D(W, H, TextureFormat.RGB24, false);
             Time.captureFramerate = Fps;

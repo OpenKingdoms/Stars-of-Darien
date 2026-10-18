@@ -254,6 +254,8 @@ namespace OpenKingdomsUnity.Game.World
             // A painted picture's clear texels cut out only when okPaint says so.
             if (paint != null) mode = MiniJson.Text(paint, "alpha", "opaque") == "mask" ? "MASK" : "OPAQUE";
             m.SetFloat("_Cutoff", mode == "MASK" ? (float)MiniJson.Num(json, "alphaCutoff", 0.5) : mode == "BLEND" ? 0.004f : 0f);
+            // A cut-out's edges soften as coverage where the frame is multisampled.
+            m.SetFloat("_AlphaToMask", mode == "MASK" ? 1f : 0f);
             if (mode == "OPAQUE") m.color = new Color(m.color.r, m.color.g, m.color.b, 1f);
             if (mode == "BLEND") Blended(m);
             Emission(ctx, json, m);
